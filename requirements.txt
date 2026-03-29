@@ -1,0 +1,8 @@
+flask
+icalendar
+anthropic
+apscheduler
+requests
+pytz
+psycopg2-binary
+gunicorn
