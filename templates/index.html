@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Daily Assistant</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+–bg:           #F2F2F7;
+–surface:      #FFFFFF;
+–surface2:     #F2F2F7;
+–border:       rgba(0,0,0,0.08);
+–text:         #1C1C1E;
+–text2:        #3C3C43;
+–text3:        #8E8E93;
+–accent:       #007AFF;
+–accent-soft:  rgba(0,122,255,0.10);
+–green:        #34C759;
+–green-soft:   rgba(52,199,89,0.12);
+–orange:       #FF9500;
+–red:          #FF3B30;
+–shadow-sm:    0 1px 4px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04);
+–shadow-md:    0 6px 20px rgba(0,0,0,0.09), 0 2px 6px rgba(0,0,0,0.05);
+–radius:       16px;
+–radius-sm:    10px;
+–tab-h:        80px;
+}
+
+html, body {
+height: 100%;
+overflow: hidden;
+background: var(–bg);
+font-family: -apple-system, BlinkMacSystemFont, “SF Pro Text”, “Helvetica Neue”, sans-serif;
+color: var(–text);
+-webkit-font-smoothing: antialiased;
+}
+
+#app {
+display: flex;
+flex-direction: column;
+height: 100vh;
+overflow: hidden;
+}
+
+/* Header */
+#header {
+flex-shrink: 0;
+padding: 52px 20px 14px;
+display: flex;
+align-items: flex-end;
+justify-content: space-between;
+background: var(–bg);
+}
+.header-left h1 {
+font-size: 28px;
+font-weight: 700;
+letter-spacing: -0.5px;
+line-height: 1.1;
+}
+.header-left .subtitle {
+font-size: 13px;
+color: var(–text3);
+margin-top: 3px;
+}
+.gear-btn {
+width: 36px;
+height: 36px;
+border-radius: 50%;
+border: none;
+background: var(–surface);
+color: var(–text3);
+font-size: 20px;
+cursor: pointer;
+display: flex;
+align-items: center;
+justify-content: center;
+box-shadow: var(–shadow-sm);
+transition: transform 0.2s ease, background 0.2s ease;
+flex-shrink: 0;
+line-height: 1;
+-webkit-tap-highlight-color: transparent;
+}
+.gear-btn:active { transform: scale(0.88); background: var(–surface2); }
+
+/* Pages */
+#pages {
+flex: 1;
+position: relative;
+overflow: hidden;
+}
+.page {
+position: absolute;
+inset: 0;
+overflow-y: auto;
+overflow-x: hidden;
+padding: 8px 16px calc(var(–tab-h) + 24px);
+opacity: 0;
+pointer-events: none;
+transform: translateX(40px);
+transition: opacity 0.28s cubic-bezier(0.4,0,0.2,1),
+transform 0.28s cubic-bezier(0.4,0,0.2,1);
+-webkit-overflow-scrolling: touch;
+}
+.page.active      { opacity: 1; pointer-events: all; transform: translateX(0); }
+.page.slide-left  { transform: translateX(-40px); opacity: 0; }
+.page.slide-right { transform: translateX(40px);  opacity: 0; }
+
+/* Tab bar */
+#tab-bar {
+position: fixed;
+bottom: 0; left: 0; right: 0;
+height: var(–tab-h);
+background: rgba(255,255,255,0.94);
+backdrop-filter: blur(24px);
+-webkit-backdrop-filter: blur(24px);
+border-top: 1px solid var(–border);
+display: flex;
+align-items: center;
+justify-content: space-around;
+padding-bottom: env(safe-area-inset-bottom, 0);
+z-index: 100;
+}
+.tab-btn {
+flex: 1;
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 4px;
+border: none;
+background: none;
+cursor: pointer;
+padding: 8px 0;
+color: var(–text3);
+transition: color 0.18s ease;
+-webkit-tap-highlight-color: transparent;
+}
+.tab-btn.active { color: var(–accent); }
+.tab-icon  { font-size: 22px; line-height: 1; }
+.tab-label { font-size: 10px; font-weight: 500; letter-spacing: 0.2px; }
+
+/* Cards */
+.card { background: var(–surface); border-radius: var(–radius); box-shadow: var(–shadow-sm); margin-bottom: 12px; overflow: hidden; }
+.card-pad { padding: 16px; }
+.section-label { font-size: 11px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase; color: var(–text3); margin-bottom: 12px; }
+.gap { margin-top: 20px; }
+.no-data { font-size: 14px; color: var(–text3); padding: 8px 0; line-height: 1.5; }
+
+/* Shimmer */
+.shimmer { background: linear-gradient(90deg,#ececec 25%,#e0e0e0 50%,#ececec 75%); background-size:200% 100%; animation:shimmer 1.4s infinite; border-radius:6px; height:14px; margin-bottom:10px; }
+@keyframes shimmer { to { background-position:-200% 0; } }
+
+/* Schedule */
+.event-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(–border); }
+.event-row:last-child { border-bottom:none; }
+.event-time { font-size:13px; color:var(–text3); min-width:64px; font-variant-numeric:tabular-nums; flex-shrink:0; }
+.event-dot  { width:8px; height:8px; border-radius:50%; background:var(–accent); flex-shrink:0; }
+.event-name { font-size:15px; font-weight:500; flex:1; }
+.event-dur  { font-size:12px; color:var(–text3); flex-shrink:0; }
+.no-events  { font-size:14px; color:var(–text3); padding:8px 0; }
+
+/* Briefing */
+.briefing-text { font-size:15px; line-height:1.65; color:var(–text2); min-height:40px; transition:opacity 0.3s ease; }
+.briefing-text.fading { opacity:0; }
+.briefing-footer { display:flex; justify-content:flex-end; margin-top:12px; }
+.refresh-btn { border:none; background:var(–accent-soft); color:var(–accent); font-size:13px; font-weight:600; padding:6px 14px; border-radius:20px; cursor:pointer; display:flex; align-items:center; gap:5px; transition:transform 0.14s ease; -webkit-tap-highlight-color:transparent; }
+.refresh-btn:active { transform:scale(0.92); }
+.ricon { display:inline-block; font-size:14px; }
+.ricon.spinning { animation:spin 0.7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* Assignment cards */
+.acard { background:var(–surface); border-radius:var(–radius); box-shadow:var(–shadow-sm); margin-bottom:10px; overflow:hidden; transition:box-shadow 0.3s ease,transform 0.3s ease,max-height 0.38s cubic-bezier(0.4,0,0.2,1); max-height:110px; }
+.acard.timer-on { max-height:280px; box-shadow:var(–shadow-md); transform:scale(1.015); background:#FAFEFF; }
+.acard.completing { animation:complete-out 0.48s cubic-bezier(0.4,0,0.2,1) forwards; }
+@keyframes complete-out {
+0%   { opacity:1; transform:scale(1.015); max-height:280px; }
+25%  { background:var(–green-soft); }
+100% { opacity:0; transform:scale(0.93) translateX(14px); max-height:0; margin-bottom:0; }
+}
+
+.acard-inner { padding:14px 16px; }
+.acard-row   { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.acard-info  { flex:1; min-width:0; }
+.acard-name  { font-size:16px; font-weight:600; letter-spacing:-0.2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.acard-meta  { display:flex; align-items:center; gap:7px; margin-top:4px; }
+.acard-class { font-size:12px; color:var(–text3); }
+.udot        { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.u-high      { background:var(–red); }
+.u-medium    { background:var(–orange); }
+.u-low       { background:var(–green); }
+.acard-due   { font-size:12px; font-weight:500; }
+.d-high      { color:var(–red); }
+.d-medium    { color:var(–orange); }
+.d-low       { color:var(–text3); }
+
+.acard-btns  { display:flex; gap:7px; flex-shrink:0; }
+.btn-done, .btn-start { border:none; font-size:13px; font-weight:600; padding:7px 14px; border-radius:20px; cursor:pointer; transition:transform 0.13s ease; -webkit-tap-highlight-color:transparent; }
+.btn-done:active, .btn-start:active { transform:scale(0.88); }
+.btn-done  { background:var(–green-soft); color:var(–green); }
+.btn-start { background:var(–accent); color:white; }
+
+/* Timer body */
+.timer-body { padding:0 16px 14px; display:flex; flex-direction:column; gap:10px; opacity:0; transition:opacity 0.25s ease 0.1s; }
+.timer-on .timer-body { opacity:1; }
+.timer-row { display:flex; align-items:center; justify-content:space-between; }
+.timer-num { font-size:30px; font-weight:300; letter-spacing:-1.5px; color:var(–accent); font-variant-numeric:tabular-nums; }
+.timer-est { font-size:12px; color:var(–text3); text-align:right; }
+.prog-track { height:3px; background:var(–surface2); border-radius:2px; overflow:hidden; }
+.prog-fill  { height:100%; background:var(–accent); border-radius:2px; transition:width 60s linear; }
+.prog-fill.over { background:var(–orange); }
+.timer-btns { display:flex; gap:8px; }
+.btn-pause, .btn-finish { border:none; font-size:13px; font-weight:600; padding:8px 18px; border-radius:20px; cursor:pointer; transition:transform 0.13s ease; -webkit-tap-highlight-color:transparent; }
+.btn-pause:active, .btn-finish:active { transform:scale(0.88); }
+.btn-pause  { background:var(–surface2); color:var(–text2); }
+.btn-finish { background:var(–green); color:white; }
+
+/* Done today */
+.done-wrap { margin-top:4px; }
+.done-toggle { width:100%; display:flex; align-items:center; gap:8px; background:none; border:none; cursor:pointer; color:var(–text3); font-size:13px; font-weight:500; padding:10px 2px; -webkit-tap-highlight-color:transparent; }
+.chev { display:inline-block; transition:transform 0.22s ease; font-size:14px; }
+.done-toggle.open .chev { transform:rotate(180deg); }
+.done-list { max-height:0; overflow:hidden; transition:max-height 0.35s cubic-bezier(0.4,0,0.2,1); }
+.done-list.open { max-height:600px; }
+.done-item { display:flex; align-items:center; gap:10px; padding:10px 16px; background:var(–surface); border-bottom:1px solid var(–border); animation:fade-up 0.3s ease; }
+.done-item:first-child { border-radius:var(–radius-sm) var(–radius-sm) 0 0; }
+.done-item:last-child  { border-radius:0 0 var(–radius-sm) var(–radius-sm); border-bottom:none; }
+@keyframes fade-up { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+.chk-circle { width:22px; height:22px; border-radius:50%; background:var(–green); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:13px; color:white; line-height:1; }
+.done-info  { flex:1; min-width:0; }
+.done-name  { font-size:14px; font-weight:500; color:var(–text2); }
+.done-class { font-size:12px; color:var(–text3); margin-top:1px; }
+.done-time  { font-size:12px; color:var(–text3); font-variant-numeric:tabular-nums; }
+
+/* Empty state */
+.empty-state { text-align:center; padding:28px 20px 20px; }
+.empty-emoji { font-size:44px; margin-bottom:12px; }
+.empty-title { font-size:19px; font-weight:700; margin-bottom:8px; }
+.empty-body  { font-size:14px; color:var(–text3); line-height:1.6; max-width:280px; margin:0 auto 16px; }
+.lookahead   { background:var(–accent-soft); border-radius:var(–radius-sm); padding:12px 14px; text-align:left; }
+.lookahead p { font-size:14px; color:var(–accent); line-height:1.55; }
+
+/* Stats */
+.streak-card   { background:linear-gradient(135deg,#FF9500,#FF6000); border-radius:var(–radius); padding:22px 20px; margin-bottom:12px; display:flex; align-items:center; gap:18px; box-shadow:0 4px 20px rgba(255,149,0,0.28); }
+.streak-flame  { font-size:42px; }
+.streak-num    { font-size:42px; font-weight:700; color:white; letter-spacing:-2px; line-height:1; }
+.streak-lbl    { font-size:13px; color:rgba(255,255,255,0.82); margin-top:2px; }
+.stat-row      { display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(–border); }
+.stat-row:last-child { border-bottom:none; }
+.stat-name     { font-size:15px; color:var(–text2); }
+.stat-val      { font-size:15px; font-weight:600; color:var(–accent); }
+.acc-block     { display:flex; align-items:center; justify-content:space-between; padding:12px 0; }
+.acc-num       { font-size:26px; font-weight:700; color:var(–accent); letter-spacing:-0.5px; }
+.acc-sub       { font-size:12px; color:var(–text3); margin-top:2px; text-align:right; }
+
+/* Completed week */
+.day-hdr  { font-size:12px; font-weight:600; letter-spacing:0.7px; text-transform:uppercase; color:var(–text3); padding:16px 0 6px; }
+.week-item { display:flex; align-items:center; gap:12px; padding:12px 16px; background:var(–surface); border-bottom:1px solid var(–border); }
+.week-item:first-of-type { border-radius:var(–radius-sm) var(–radius-sm) 0 0; }
+.week-item:last-of-type  { border-bottom:none; border-radius:0 0 var(–radius-sm) var(–radius-sm); }
+.wk-chk   { width:24px; height:24px; border-radius:50%; background:var(–green); display:flex; align-items:center; justify-content:center; flex-shrink:0; font-size:14px; color:white; }
+.wk-info  { flex:1; min-width:0; }
+.wk-name  { font-size:15px; font-weight:500; }
+.wk-class { font-size:12px; color:var(–text3); margin-top:2px; }
+.wk-dur   { font-size:13px; color:var(–text3); font-variant-numeric:tabular-nums; }
+
+/* Settings overlay */
+#settings-overlay { position:fixed; inset:0; z-index:200; opacity:0; pointer-events:none; transition:opacity 0.28s ease; display:flex; flex-direction:column; }
+#settings-overlay.open { opacity:1; pointer-events:all; }
+.settings-scrim  { position:absolute; inset:0; background:rgba(0,0,0,0.38); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); }
+.settings-sheet  { position:absolute; bottom:0; left:0; right:0; background:var(–surface); border-radius:24px 24px 0 0; padding:20px 20px calc(env(safe-area-inset-bottom,0px) + 32px); transform:translateY(100%); transition:transform 0.38s cubic-bezier(0.4,0,0.2,1); max-height:88vh; overflow-y:auto; }
+#settings-overlay.open .settings-sheet { transform:translateY(0); }
+.sheet-handle { width:38px; height:4px; background:var(–border); border-radius:2px; margin:0 auto 22px; }
+.sheet-title  { font-size:20px; font-weight:700; margin-bottom:24px; }
+.field        { margin-bottom:20px; }
+.field-label  { font-size:12px; font-weight:600; letter-spacing:0.6px; text-transform:uppercase; color:var(–text3); margin-bottom:7px; }
+.field-input  { width:100%; padding:12px 14px; border:1.5px solid var(–border); border-radius:var(–radius-sm); font-size:15px; font-family:inherit; color:var(–text); background:var(–surface2); outline:none; transition:border-color 0.2s ease; -webkit-appearance:none; }
+.field-input:focus { border-color:var(–accent); }
+.save-btn     { width:100%; padding:14px; border:none; border-radius:var(–radius-sm); background:var(–accent); color:white; font-size:16px; font-weight:600; cursor:pointer; margin-top:8px; transition:opacity 0.18s ease,transform 0.14s ease; -webkit-tap-highlight-color:transparent; }
+.save-btn:active { transform:scale(0.97); opacity:0.88; }
+
+/* Cutoff overlay */
+#cutoff-overlay { position:fixed; inset:0; z-index:300; display:flex; align-items:center; justify-content:center; padding:20px; opacity:0; pointer-events:none; transition:opacity 0.25s ease; }
+#cutoff-overlay.open { opacity:1; pointer-events:all; }
+.cutoff-scrim { position:absolute; inset:0; background:rgba(0,0,0,0.45); backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); }
+.cutoff-card  { position:relative; z-index:1; background:var(–surface); border-radius:var(–radius); padding:24px; max-width:320px; width:100%; box-shadow:var(–shadow-md); transform:scale(0.90); transition:transform 0.28s cubic-bezier(0.4,0,0.2,1); }
+#cutoff-overlay.open .cutoff-card { transform:scale(1); }
+.cutoff-title { font-size:18px; font-weight:700; margin-bottom:8px; }
+.cutoff-body  { font-size:14px; color:var(–text3); line-height:1.55; margin-bottom:20px; }
+.cutoff-btns  { display:flex; gap:10px; }
+.cutoff-btns button { flex:1; padding:12px; border:none; border-radius:var(–radius-sm); font-size:15px; font-weight:600; cursor:pointer; transition:transform 0.13s ease; -webkit-tap-highlight-color:transparent; }
+.cutoff-btns button:active { transform:scale(0.93); }
+.btn-discard  { background:var(–surface2); color:var(–text2); }
+.btn-confirm  { background:var(–accent); color:white; }
+</style>
+
+</head>
+<body>
+<div id="app">
+
+  <header id="header">
+    <div class="header-left">
+      <h1 id="greeting">Good morning</h1>
+      <div class="subtitle" id="date-line">Loading...</div>
+    </div>
+    <button class="gear-btn" onclick="openSettings()" aria-label="Settings">&#9881;</button>
+  </header>
+
+  <div id="pages">
+
+```
+<!-- HOME -->
+<div class="page active" id="page-home">
+  <div class="card card-pad">
+    <div class="section-label">Today</div>
+    <div id="schedule-list"><div class="shimmer"></div><div class="shimmer" style="width:70%"></div></div>
+  </div>
+  <div class="card card-pad">
+    <div class="section-label">Your Plan</div>
+    <p class="briefing-text" id="briefing-text"><span class="shimmer" style="display:block"></span><span class="shimmer" style="display:block;width:85%"></span><span class="shimmer" style="display:block;width:60%"></span></p>
+    <div class="briefing-footer">
+      <button class="refresh-btn" id="refresh-btn" onclick="refreshBriefing()">
+        <span class="ricon" id="ricon">&#8635;</span> Refresh
+      </button>
+    </div>
+  </div>
+  <div id="assignments-list"></div>
+  <div class="done-wrap" id="done-wrap" style="display:none">
+    <button class="done-toggle" id="done-toggle" onclick="toggleDone()">
+      <span class="chev">&#8964;</span>
+      <span id="done-label">Completed today</span>
+    </button>
+    <div class="done-list" id="done-list"></div>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="page" id="page-stats">
+  <div class="gap">
+    <div id="streak-wrap"></div>
+    <div class="card card-pad" id="weekly-card"></div>
+    <div class="card card-pad" id="class-card"></div>
+    <div class="card card-pad" id="acc-card"></div>
+  </div>
+</div>
+
+<!-- COMPLETED -->
+<div class="page" id="page-completed">
+  <div class="gap" id="week-list">
+    <div class="card card-pad"><div class="shimmer"></div><div class="shimmer" style="width:70%"></div></div>
+  </div>
+</div>
+```
+
+  </div>
+
+  <nav id="tab-bar">
+    <button class="tab-btn active" id="tab-home" onclick="switchTab('home')">
+      <span class="tab-icon">&#127968;</span>
+      <span class="tab-label">Home</span>
+    </button>
+    <button class="tab-btn" id="tab-stats" onclick="switchTab('stats')">
+      <span class="tab-icon">&#128202;</span>
+      <span class="tab-label">Stats</span>
+    </button>
+    <button class="tab-btn" id="tab-completed" onclick="switchTab('completed')">
+      <span class="tab-icon">&#9989;</span>
+      <span class="tab-label">Completed</span>
+    </button>
+  </nav>
+
+</div>
+
+<!-- Settings -->
+
+<div id="settings-overlay">
+  <div class="settings-scrim" onclick="closeSettings()"></div>
+  <div class="settings-sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-title">Settings</div>
+    <div class="field">
+      <div class="field-label">Your Name</div>
+      <input class="field-input" id="s-name" type="text" placeholder="Finn" autocomplete="off">
+    </div>
+    <div class="field">
+      <div class="field-label">Morning Briefing Time</div>
+      <input class="field-input" id="s-time" type="time">
+    </div>
+    <div class="field">
+      <div class="field-label">Timer Auto-Cutoff (x estimated time)</div>
+      <input class="field-input" id="s-cutoff" type="number" min="1.5" max="5" step="0.5" placeholder="2">
+    </div>
+    <button class="save-btn" onclick="saveSettings()">Save</button>
+  </div>
+</div>
+
+<!-- Cutoff -->
+
+<div id="cutoff-overlay">
+  <div class="cutoff-scrim"></div>
+  <div class="cutoff-card">
+    <div class="cutoff-title">Still going?</div>
+    <div class="cutoff-body" id="cutoff-body">The timer has been running a while. Did you finish, or forget to stop it?</div>
+    <div class="cutoff-btns">
+      <button class="btn-discard" onclick="handleCutoff(false)">Discard</button>
+      <button class="btn-confirm" onclick="handleCutoff(true)">Yes, done</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const S = {
+  tab:"home", assignments:[], events:[], doneToday:[],
+  timer:null, tick:null, refAt:null, refSecs:0, cutoffShown:false, name:"there"
+};
+
+const get  = url  => fetch(url).then(r=>r.json());
+const post = (url,body) => fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(r=>r.json());
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const x = s => String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+const cid = s => String(s).replace(/[^a-zA-Z0-9_-]/g,"_");
+const fmtDur = m => m<60?m+"m":Math.floor(m/60)+"h"+(m%60?" "+m%60+"m":"");
+
+async function init() {
+  updateClock();
+  setInterval(updateClock,30000);
+  try {
+    const cfg = await get("/api/config");
+    S.name = cfg.name||"there";
+    document.getElementById("s-name").value   = cfg.name||"";
+    document.getElementById("s-time").value   = cfg.morning_briefing_time||"07:00";
+    document.getElementById("s-cutoff").value = cfg.timer_cutoff_multiplier||2;
+    updateClock();
+  } catch(e){}
+  loadHome();
+  resumeTimerIfActive();
+  setInterval(resumeTimerIfActive,60000);
+}
+
+function updateClock() {
+  const now=new Date(), h=now.getHours();
+  const DAYS=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const MONS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  let g="Good morning";
+  if(h>=12&&h<17)g="Good afternoon";else if(h>=17)g="Good evening";
+  document.getElementById("greeting").textContent=g+", "+S.name;
+  document.getElementById("date-line").textContent=DAYS[now.getDay()]+", "+MONS[now.getMonth()]+" "+now.getDate();
+}
+
+function switchTab(tab) {
+  if(tab===S.tab)return;
+  const ORDER=["home","stats","completed"];
+  const fwd=ORDER.indexOf(tab)>ORDER.indexOf(S.tab);
+  const fromEl=document.getElementById("page-"+S.tab);
+  const toEl=document.getElementById("page-"+tab);
+  fromEl.classList.remove("active");
+  fromEl.classList.add(fwd?"slide-left":"slide-right");
+  toEl.style.transform=fwd?"translateX(40px)":"translateX(-40px)";
+  toEl.style.opacity="0";
+  toEl.classList.add("active");
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{toEl.style.transform="";toEl.style.opacity="";}));
+  setTimeout(()=>fromEl.classList.remove("slide-left","slide-right"),320);
+  document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+  document.getElementById("tab-"+tab).classList.add("active");
+  S.tab=tab;
+  if(tab==="stats")loadStats();
+  if(tab==="completed")loadWeek();
+}
+
+async function loadHome() {
+  await Promise.all([loadSchedule(),loadBriefing(),loadAssignments(),loadDoneToday()]);
+}
+
+async function loadSchedule() {
+  const el=document.getElementById("schedule-list");
+  try {
+    S.events=await get("/api/calendar");
+    if(!S.events.length){el.innerHTML=`<p class="no-events">Nothing scheduled today</p>`;return;}
+    el.innerHTML=S.events.map(e=>`
+      <div class="event-row">
+        <span class="event-time">${x(e.start_friendly)}</span>
+        <div class="event-dot"></div>
+        <span class="event-name">${x(e.name)}</span>
+        ${e.duration_minutes?`<span class="event-dur">${fmtDur(e.duration_minutes)}</span>`:""}
+      </div>`).join("");
+  } catch(e){el.innerHTML=`<p class="no-events">Could not load schedule</p>`;}
+}
+
+async function loadBriefing() {
+  const el=document.getElementById("briefing-text");
+  try{const d=await get("/api/briefing");el.textContent=d.briefing||"Tap refresh for your daily plan.";}
+  catch(e){el.textContent="Could not load briefing.";}
+}
+
+async function refreshBriefing() {
+  const el=document.getElementById("briefing-text");
+  const ic=document.getElementById("ricon");
+  ic.classList.add("spinning");el.classList.add("fading");
+  try{const d=await post("/api/briefing/refresh",{});await sleep(180);el.classList.remove("fading");el.textContent=d.briefing;}
+  catch(e){el.classList.remove("fading");}
+  ic.classList.remove("spinning");
+}
+
+async function refreshBriefingSilent() {
+  try{
+    const el=document.getElementById("briefing-text");
+    const d=await post("/api/briefing/refresh",{});
+    el.classList.add("fading");await sleep(200);el.classList.remove("fading");el.textContent=d.briefing;
+  }catch(e){}
+}
+
+async function loadAssignments() {
+  try{S.assignments=await get("/api/assignments");renderAssignments();}
+  catch(e){document.getElementById("assignments-list").innerHTML=`<p style="font-size:14px;color:var(--text3);padding:8px 0">Could not load assignments.</p>`;}
+}
+
+function renderAssignments() {
+  const el=document.getElementById("assignments-list");
+  if(!S.assignments.length){el.innerHTML=emptyHTML();loadLookahead();return;}
+  el.innerHTML=S.assignments.map(a=>acardHTML(a)).join("");
+}
+
+function acardHTML(a) {
+  const on=S.timer&&S.timer.assignment_id===a.id;
+  return `
+<div class="acard ${on?"timer-on":""}" id="card-${cid(a.id)}">
+  <div class="acard-inner">
+    <div class="acard-row">
+      <div class="acard-info">
+        <div class="acard-name" title="${x(a.name)}">${x(a.name)}</div>
+        <div class="acard-meta">
+          <span class="acard-class">${x(a.class_name)}</span>
+          <span class="udot u-${a.urgency}"></span>
+          <span class="acard-due d-${a.urgency}">${x(a.due_friendly)}</span>
+        </div>
+      </div>
+      ${on?"":`<div class="acard-btns">
+        <button class="btn-done" onclick="markDone('${x(a.id)}','${x(a.name)}','${x(a.class_name)}')">Done</button>
+        <button class="btn-start" onclick="startTimer('${x(a.id)}','${x(a.name)}','${x(a.class_name)}',${a.estimate_minutes})">Start</button>
+      </div>`}
+    </div>
+  </div>
+  ${on?timerBodyHTML(a):""}
+</div>`;
+}
+
+function timerBodyHTML(a) {
+  const elapsed=getElapsed(), est=a.estimate_minutes||30;
+  const pct=Math.min(100,(elapsed/est)*100);
+  return `
+<div class="timer-body">
+  <div class="timer-row">
+    <span class="timer-num" id="timer-display">${Math.round(elapsed)} min</span>
+    <div class="timer-est">est. ${est} min</div>
+  </div>
+  <div class="prog-track"><div class="prog-fill ${elapsed>est?"over":""}" id="prog-fill" style="width:${pct}%"></div></div>
+  <div class="timer-btns">
+    <button class="btn-pause" id="pause-btn" onclick="togglePause()">${S.timer&&S.timer.paused?"Resume":"Pause"}</button>
+    <button class="btn-finish" onclick="finishTimer()">Done</button>
+  </div>
+</div>`;
+}
+
+function emptyHTML() {
+  return `<div class="empty-state">
+    <div class="empty-emoji">&#127881;</div>
+    <div class="empty-title">All caught up</div>
+    <div class="empty-body">Nothing due right now. Nice work.</div>
+    <div class="lookahead"><p id="lookahead-text">Loading what's coming up&#8230;</p></div>
+  </div>`;
+}
+
+async function loadLookahead() {
+  try{const d=await post("/api/briefing/refresh",{});const el=document.getElementById("lookahead-text");if(el)el.textContent=d.briefing;}catch(e){}
+}
+
+async function loadDoneToday() {
+  try{
+    S.doneToday=await get("/api/completions/today");
+    const wrap=document.getElementById("done-wrap");
+    const list=document.getElementById("done-list");
+    const lbl=document.getElementById("done-label");
+    if(!S.doneToday.length){wrap.style.display="none";return;}
+    wrap.style.display="block";
+    lbl.textContent=`Completed today (${S.doneToday.length})`;
+    list.innerHTML=S.doneToday.map(c=>`
+      <div class="done-item">
+        <div class="chk-circle">&#10003;</div>
+        <div class="done-info">
+          <div class="done-name">${x(c.assignment_name)}</div>
+          <div class="done-class">${x(c.class_name||"")}</div>
+        </div>
+        ${c.duration_minutes?`<span class="done-time">${c.duration_minutes} min</span>`:""}
+      </div>`).join("");
+  }catch(e){}
+}
+
+function toggleDone() {
+  document.getElementById("done-toggle").classList.toggle("open");
+  document.getElementById("done-list").classList.toggle("open");
+}
+
+async function startTimer(id,name,cls,est) {
+  if(S.timer)return;
+  await post("/api/timer/start",{assignment_id:id,assignment_name:name,class_name:cls,estimate_minutes:est});
+  S.timer={assignment_id:id,assignment_name:name,class_name:cls,estimate_minutes:est,paused:false,elapsed_seconds:0};
+  S.refAt=Date.now();S.refSecs=0;S.cutoffShown=false;
+  renderAssignments();startTick();
+}
+
+function startTick() {
+  clearInterval(S.tick);
+  S.tick=setInterval(()=>{if(!S.timer||S.timer.paused)return;updateTimerUI();checkCutoff();},60000);
+}
+
+function getElapsed() {
+  if(!S.timer)return 0;
+  let secs=S.refSecs;
+  if(!S.timer.paused&&S.refAt)secs+=(Date.now()-S.refAt)/1000;
+  return secs/60;
+}
+
+function updateTimerUI() {
+  const disp=document.getElementById("timer-display");
+  const bar=document.getElementById("prog-fill");
+  if(!disp||!S.timer)return;
+  const elapsed=getElapsed(),est=S.timer.estimate_minutes||30;
+  const pct=Math.min(100,(elapsed/est)*100);
+  disp.textContent=Math.round(elapsed)+" min";
+  if(bar){bar.style.width=pct+"%";bar.classList.toggle("over",elapsed>est);}
+}
+
+function checkCutoff() {
+  if(!S.timer||S.cutoffShown)return;
+  const elapsed=getElapsed(),cutoff=(S.timer.estimate_minutes||30)*2;
+  if(elapsed>=cutoff){S.cutoffShown=true;showCutoff();}
+}
+
+function showCutoff() {
+  document.getElementById("cutoff-body").textContent=
+    `"${S.timer.assignment_name}" has been running for ${Math.round(getElapsed())} minutes. Did you finish, or forget to stop it?`;
+  document.getElementById("cutoff-overlay").classList.add("open");
+}
+
+async function handleCutoff(done) {
+  document.getElementById("cutoff-overlay").classList.remove("open");
+  if(done)await finishTimer();
+  else{await post("/api/timer/stop",{discard:true});clearTimer();renderAssignments();}
+}
+
+async function togglePause() {
+  if(!S.timer)return;
+  if(S.timer.paused){
+    await post("/api/timer/resume",{});
+    S.refSecs=getElapsed()*60;S.refAt=Date.now();S.timer.paused=false;startTick();
+  } else {
+    S.refSecs=getElapsed()*60;S.timer.elapsed_seconds=S.refSecs;S.timer.paused=true;
+    clearInterval(S.tick);await post("/api/timer/pause",{});
+  }
+  const btn=document.getElementById("pause-btn");
+  if(btn)btn.textContent=S.timer.paused?"Resume":"Pause";
+  updateTimerUI();
+}
+
+async function finishTimer() {
+  const cardId=cid(S.timer?S.timer.assignment_id:"");
+  await post("/api/timer/stop",{discard:false});
+  clearTimer();animateComplete(cardId);
+}
+
+async function markDone(id,name,cls) {
+  await post("/api/complete",{assignment_id:id,assignment_name:name,class_name:cls});
+  animateComplete(cid(id));
+}
+
+function animateComplete(cardId) {
+  const card=document.getElementById("card-"+cardId);
+  if(card){
+    card.classList.add("completing");
+    setTimeout(async()=>{await loadAssignments();await loadDoneToday();refreshBriefingSilent();},480);
+  } else {loadAssignments();loadDoneToday();refreshBriefingSilent();}
+}
+
+function clearTimer() {
+  clearInterval(S.tick);S.timer=null;S.tick=null;S.refAt=null;S.refSecs=0;S.cutoffShown=false;
+}
+
+async function resumeTimerIfActive() {
+  if(S.timer)return;
+  try{
+    const t=await get("/api/timer");if(!t||!t.assignment_id)return;
+    S.timer=t;S.refSecs=(t.elapsed_minutes||0)*60;S.refAt=t.paused?null:Date.now();S.cutoffShown=false;
+    if(!t.paused)startTick();renderAssignments();
+  }catch(e){}
+}
+
+async function loadStats() {
+  try{const s=await get("/api/stats");renderStats(s);}catch(e){}
+}
+
+function renderStats(s) {
+  document.getElementById("streak-wrap").innerHTML=`
+    <div class="streak-card">
+      <div class="streak-flame">&#128293;</div>
+      <div><div class="streak-num">${s.streak_days||0}</div><div class="streak-lbl">day streak</div></div>
+    </div>`;
+  const hrs=Math.floor((s.total_minutes_this_week||0)/60);
+  const min=(s.total_minutes_this_week||0)%60;
+  document.getElementById("weekly-card").innerHTML=`
+    <div class="section-label">This Week</div>
+    <div class="stat-row"><span class="stat-name">Total study time</span><span class="stat-val">${hrs>0?hrs+"h ":""}${min}m</span></div>
+    <div class="stat-row"><span class="stat-name">Assignments completed</span><span class="stat-val">${s.total_completed||0}</span></div>`;
+  const avgs=s.class_averages||{};
+  const avgRows=Object.entries(avgs).map(([cls,avg])=>`
+    <div class="stat-row"><span class="stat-name">${x(cls)}</span><span class="stat-val">${avg} min avg</span></div>`).join("")||
+    `<p class="no-data">Complete timed assignments to see averages per class.</p>`;
+  document.getElementById("class-card").innerHTML=`<div class="section-label">Average by Class</div>${avgRows}`;
+  const ac=document.getElementById("acc-card");
+  if(s.avg_accuracy_minutes!=null){
+    ac.innerHTML=`<div class="section-label">Estimate Accuracy</div>
+      <div class="acc-block">
+        <span class="stat-name">Avg difference from estimate</span>
+        <div><div class="acc-num">&#177;${s.avg_accuracy_minutes} min</div>
+        <div class="acc-sub">${s.avg_accuracy_minutes<8?"Very accurate":"Getting better"}</div></div>
+      </div>`;
+  } else {
+    ac.innerHTML=`<div class="section-label">Estimate Accuracy</div><p class="no-data">Use the timer on a few assignments and the app will show how accurate its estimates are for you.</p>`;
+  }
+}
+
+async function loadWeek() {
+  try{const items=await get("/api/completions/week");renderWeek(items);}catch(e){}
+}
+
+function renderWeek(items) {
+  const el=document.getElementById("week-list");
+  if(!items.length){el.innerHTML=`<div class="card card-pad"><p class="no-data">No completed assignments this week yet.</p></div>`;return;}
+  const DAYS=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const MONS=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const byDay={};
+  items.forEach(c=>{try{const d=new Date(c.completed_at);const k=d.toDateString();(byDay[k]=byDay[k]||[]).push({c,d});}catch(e){}});
+  let html="";
+  Object.keys(byDay).reverse().forEach(key=>{
+    const d=byDay[key][0].d;
+    html+=`<div class="day-hdr">${DAYS[d.getDay()]}, ${MONS[d.getMonth()]} ${d.getDate()}</div>`;
+    html+=byDay[key].map(({c})=>`
+      <div class="week-item">
+        <div class="wk-chk">&#10003;</div>
+        <div class="wk-info"><div class="wk-name">${x(c.assignment_name)}</div><div class="wk-class">${x(c.class_name||"")}</div></div>
+        ${c.duration_minutes?`<span class="wk-dur">${c.duration_minutes} min</span>`:""}
+      </div>`).join("");
+  });
+  el.innerHTML=html;
+}
+
+function openSettings()  { document.getElementById("settings-overlay").classList.add("open"); }
+function closeSettings() { document.getElementById("settings-overlay").classList.remove("open"); }
+
+async function saveSettings() {
+  const name=document.getElementById("s-name").value.trim();
+  const time=document.getElementById("s-time").value;
+  const cutoff=parseFloat(document.getElementById("s-cutoff").value)||2;
+  await post("/api/config",{name,morning_briefing_time:time,timer_cutoff_multiplier:cutoff});
+  S.name=name||"there";updateClock();closeSettings();
+}
+
+init();
+</script>
+
+</body>
+</html>
