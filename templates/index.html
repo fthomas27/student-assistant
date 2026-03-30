@@ -465,6 +465,28 @@ function saveSettings() {
         document.getElementById("save-feedback").textContent = "";
         closeSettings();
         loadConfig();
+       function saveSettings() {
+  var payload = {
+    name: document.getElementById("setting-name").value.trim(),
+    morning_briefing_time: document.getElementById("setting-time").value,
+    timer_cutoff_multiplier: document.getElementById("setting-cutoff").value,
+    canvas_ical_url: document.getElementById("setting-canvas").value.trim(),
+    apple_ical_url: document.getElementById("setting-apple").value.trim()
+  };
+  var apikey = document.getElementById("setting-apikey").value.trim();
+  if (apikey) payload.anthropic_api_key = apikey;
+  fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+    .then(function(r) { return r.json(); })
+    .then(function() {
+      document.getElementById("save-feedback").textContent = "Saved!";
+      setTimeout(function() {
+        document.getElementById("save-feedback").textContent = "";
+        closeSettings();
+        loadConfig();
+        loadSchedule();  // ADD THIS LINE to reload calendar
+      }, 1200);
+    }).catch(function() { document.getElementById("save-feedback").textContent = "Error saving."; });
+}
       }, 1200);
     }).catch(function() { document.getElementById("save-feedback").textContent = "Error saving."; });
 }
