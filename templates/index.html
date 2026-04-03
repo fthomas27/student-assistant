@@ -631,7 +631,7 @@ cursor: pointer; font-family: ‘DM Sans’, sans-serif;
   <button class="tab-item" onclick="switchTab(1)" id="tab-btn-1"><span class="tab-icon">✅</span><span class="tab-label">Tasks</span></button>
   <button class="tab-item" onclick="switchTab(2)" id="tab-btn-2"><span class="tab-icon">📁</span><span class="tab-label">Projects</span></button>
   <button class="tab-item" onclick="switchTab(3)" id="tab-btn-3"><span class="tab-icon">📅</span><span class="tab-label">Calendar</span></button>
-  <button class="tab-item" onclick="switchTab(4)" id="tab-btn-4"><span class="tab-icon">✦</span><span class="tab-label">AI</span></button>
+  <button class="tab-item" onclick="switchTab(4)" id="tab-btn-4"><span class="tab-icon">🤖</span><span class="tab-label">AI</span></button>
 </nav>
 
 <!-- SHEET BACKDROP -->
@@ -716,6 +716,7 @@ document.addEventListener('DOMContentLoaded', function() {
   loadBriefing();
   loadHomeAssignments();
   loadCompletedToday();
+  loadHomeSchedule();
   startTimerPoller();
 });
 
@@ -1309,6 +1310,20 @@ fetch(’/api/projects/’ + currentProjectId, { method: ‘PATCH’, headers: {
 // ══════════════════════════════════════════
 // CALENDAR
 // ══════════════════════════════════════════
+function loadHomeSchedule() {
+fetch(’/api/calendar?days=1’, { credentials: ‘same-origin’ }).then(function(r) { return r.json(); }).then(function(d) {
+var events = (d.events || []).filter(function(e) { return e.source === ‘personal’; });
+var el = document.getElementById(‘home-schedule-list’);
+if (!el) return;
+if (events.length === 0) { el.innerHTML = ‘<div style="font-size:13px;color:var(--text3);text-align:center;padding:6px 0">No events today</div>’; return; }
+el.innerHTML = events.map(function(e) {
+return ‘<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">’ +
+‘<div style="font-size:12px;color:var(--text3);min-width:65px;padding-top:1px">’ + esc(e.start_display) + ‘</div>’ +
+‘<div style="font-size:14px;font-weight:500">’ + esc(e.title) + ‘</div></div>’;
+}).join(’’);
+}).catch(function(){});
+}
+
 function loadCalendar() {
 fetch(’/api/calendar?days=21’).then(function(r) { return r.json(); }).then(function(d) {
 var events = d.events || [];
@@ -1363,9 +1378,9 @@ thread.scrollTop = thread.scrollHeight;
 aiHistory.push({ role: ‘user’, content: msg });
 
 // Build context summary
-var context = ’You are a smart personal assistant for Finn, a high school student and student leader. ‘;
+var context = ’You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. ’;
 if (assignments.length > 0) {
-context += ‘Current assignments: ’ + assignments.slice(0,5).map(function(a) { return a.title + ’ (’ + a.due_display + ‘)’; }).join(’, ’) + ’. ’;
+context += ‘Upcoming assignments: ’ + assignments.map(function(a) { return a.title + ’ (’ + a.class_name + ‘, due ’ + a.due_display + ‘)’; }).join(’; ’) + ’. ’;
 }
 
 fetch(’/api/chat’, {
