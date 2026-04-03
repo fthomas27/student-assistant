@@ -32,7 +32,28 @@ def get_db():
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     return psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
-
+@app.route("/api/chat", methods=["POST"])
+@require_auth
+def api_chat():
+    data = request.get_json(force=True) or {}
+    messages = data.get("messages", [])
+    system = data.get("system", "")
+    cfg = get_config()
+    api_key = cfg.get("anthropic_api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return jsonify({"error": "no api key"}), 400
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1000,
+            system=system,
+            messages=messages
+        )
+        return jsonify({"content": message.content[0].text})
+    except Exception as e:
+        log.error("Chat error: %s", e)
+        return jsonify({"error": str(e)}), 500
 
 def init_db():
     conn = get_db()
