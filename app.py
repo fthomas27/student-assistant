@@ -8,14 +8,27 @@ from zoneinfo import ZoneInfo
 import psycopg2
 import psycopg2.extras
 import requests
-from flask import Flask, request, jsonify, render_template
+from functools import wraps
+from flask import Flask, request, jsonify, render_template, session, redirect
 from icalendar import Calendar
 from apscheduler.schedulers.background import BackgroundScheduler
 import anthropic
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "finn-dashboard-secret-change-me")
+app.permanent_session_lifetime = timedelta(days=30)
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "finn2025")
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
+
+
+def login_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("authenticated"):
+            return redirect("/login")
+        return f(*args, **kwargs)
+    return decorated
 
 TZ = ZoneInfo("America/Denver")
 
@@ -348,31 +361,35 @@ LIMIT 3""")
 
         now_str = datetime.now(TZ).strftime("%A, %B %-d, %Y at %-I:%M %p")
 
-        today_asgn = [a for a in assignments if a["urgency"] == "high"][:5]
-        asgn_text = "\n".join(["- %s (%s) due %s, est. %d min" % (
+        upcoming_asgn = sorted(assignments, key=lambda a: a.get("due_iso", ""))[:8]
+        asgn_text = "\n".join(["- %s (%s) due %s, est. %d min, urgency: %s" % (
             a["title"], a["class_name"], a["due_display"],
-            estimate_assignment(a["title"], a["class_name"])
-        ) for a in today_asgn]) or "No urgent assignments."
+            estimate_assignment(a["title"], a["class_name"]),
+            a.get("urgency", "medium")
+        ) for a in upcoming_asgn]) or "No upcoming assignments."
 
         events_text = "\n".join(["- %s at %s" % (e["title"], e["start_display"]) for e in events]) or "No events today."
         tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "No pending tasks."
-        stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or ""
+        stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or "None."
 
         prompt = (
-            "You are a sharp, efficient personal assistant for a high school student named %s who is also a "
-            "student leader managing projects and working toward a future in politics. "
-            "Write a concise, action-oriented daily briefing (4-6 sentences). "
-            "Cover: most urgent assignments with estimated time, today's schedule, any urgent tasks, "
-            "and if there are stale projects mention them briefly. "
-            "Be warm but direct. No bullet points. Sound like a capable chief of staff briefing a busy person. "
-            "Current time: %s\n\nUrgent Assignments:\n%s\n\nToday's schedule:\n%s\n\nPending Tasks:\n%s\n\nProjects needing check-in:\n%s"
+            "You are a sharp personal assistant for %s, a high school student and student leader in Park City, Utah.\n"
+            "Current time: %s\n\n"
+            "Upcoming Assignments:\n%s\n\n"
+            "Today's Schedule:\n%s\n\n"
+            "Pending Tasks:\n%s\n\n"
+            "Projects needing check-in:\n%s\n\n"
+            "Write a daily briefing using ONLY bullet points (start each with •). "
+            "For EVERY assignment listed, include a bullet that names it, when it's due, and ends with either '— CONCERN' (if due soon, high urgency, or large estimate) or '— OK' (if plenty of time). "
+            "Then add bullets for any urgent tasks and today's schedule if present. "
+            "Keep each bullet to one line. Be direct. No intro sentence, no paragraph text."
         ) % (name, now_str, asgn_text, events_text, tasks_text, stale_text)
 
         try:
             client = anthropic.Anthropic(api_key=api_key)
             message = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=400,
+                max_tokens=600,
                 messages=[{"role": "user", "content": prompt}]
             )
             content = message.content[0].text if message.content else "Have a great day!"
@@ -453,7 +470,28 @@ def timer_response(row):
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        if session.get("authenticated"):
+            return redirect("/")
+        return render_template("login.html")
+    data = request.get_json(force=True) or {}
+    if data.get("password") == APP_PASSWORD:
+        session.permanent = True
+        session["authenticated"] = True
+        return jsonify({"status": "ok"})
+    return jsonify({"error": "Wrong password"}), 401
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
 @app.route("/")
+@login_required
 def index():
     return render_template("index.html")
 
@@ -999,6 +1037,13 @@ def api_chat():
 
 
 init_db()
+
+# Seed API key from env var into DB so it persists across deploys
+_env_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+if _env_api_key and not get_config().get("anthropic_api_key", ""):
+    set_config({"anthropic_api_key": _env_api_key})
+    log.info("Seeded ANTHROPIC_API_KEY from environment into DB config")
+
 schedule_briefing()
 scheduler.start()
 threading.Thread(target=generate_briefing, daemon=True).start()
