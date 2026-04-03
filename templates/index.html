@@ -206,6 +206,12 @@ padding: 3px 7px; border-radius: 20px; flex-shrink: 0; margin-top: 2px;
 
 .asgn-meta { font-size: 12px; color: var(--text3); margin-bottom: 10px; }
 .asgn-actions { display: flex; gap: 8px; }
+.asgn-card-layout { display: flex; gap: 10px; align-items: flex-start; }
+.asgn-card-body { flex: 1; min-width: 0; }
+.asgn-card-btns { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; width: 66px; }
+.asgn-card-btns .btn { flex: none; width: 100%; padding: 7px 8px; font-size: 11px; font-weight: 700; }
+.overdue-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 6px; border-radius: 20px; background: rgba(240,92,92,0.18); color: var(--red); margin-left: 6px; vertical-align: middle; }
+.notif-row { touch-action: pan-y; user-select: none; transition: transform 0.2s; }
 
 /* ── BUTTONS ── */
 .btn {
@@ -526,11 +532,26 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
     </div>
   </div>
 
-  <div class="section-label">Due Today & Tomorrow</div>
-  <div id="home-assignments-container"></div>
+  <div id="stats-row" style="display:none;display:flex;gap:8px;margin-bottom:12px">
+    <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;text-align:center">
+      <div id="stat-streak" style="font-size:20px;font-weight:700;color:var(--accent)">—</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px">🔥 Streak</div>
+    </div>
+    <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;text-align:center">
+      <div id="stat-hours" style="font-size:20px;font-weight:700;color:var(--blue)">—</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px">⏱ Hrs/week</div>
+    </div>
+    <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;text-align:center">
+      <div id="stat-accuracy" style="font-size:20px;font-weight:700;color:var(--green)">—</div>
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px">🎯 Accuracy</div>
+    </div>
+  </div>
 
   <div class="section-label" id="schedule-label" style="display:none">Today's Schedule</div>
   <div id="home-schedule-list"></div>
+
+  <div class="section-label">Due Today & Tomorrow</div>
+  <div id="home-assignments-container"></div>
 
   <div id="completed-section" style="display:none;margin-top:4px">
     <div onclick="toggleCompletedToday()" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;margin-bottom:0">
@@ -628,9 +649,15 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
 <!-- ══ TAB 4: ASSISTANT ══ -->
 <div class="tab-panel" id="tab-assistant">
   <div class="card" style="margin-bottom:12px">
-    <div class="card-title">Ask anything</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="card-title" style="margin-bottom:0">Ask anything</div>
+      <button onclick="clearChat()" style="font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text3);cursor:pointer">Clear</button>
+    </div>
     <textarea class="field-input" id="ai-input" rows="3" placeholder="What do you need help with?..." style="margin-bottom:10px"></textarea>
-    <button class="btn btn-primary" style="width:100%" onclick="sendAiMessage()">Send</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="sendAiMessage()">Send</button>
+      <button class="btn btn-outline" onclick="sendWeeklyRecap()" style="white-space:nowrap">Friday Recap</button>
+    </div>
   </div>
   <div id="ai-thread"></div>
 </div>
@@ -663,6 +690,16 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
 <div class="bottom-sheet" id="project-detail-sheet">
   <div class="sheet-handle"></div>
   <div id="project-detail-content"></div>
+</div>
+
+<!-- CALENDAR EVENT DETAIL SHEET -->
+
+<div class="bottom-sheet" id="cal-event-sheet">
+  <div class="sheet-handle"></div>
+  <div id="cal-event-content"></div>
+  <div class="sheet-actions" style="padding-top:12px">
+    <button class="btn btn-outline" style="width:100%" onclick="closeAllSheets()">Close</button>
+  </div>
 </div>
 
 <!-- SETTINGS SHEET -->
@@ -729,6 +766,7 @@ document.addEventListener('DOMContentLoaded', function() {
   loadHomeAssignments();
   loadCompletedToday();
   loadHomeSchedule();
+  loadStats();
   startTimerPoller();
 });
 
@@ -964,30 +1002,37 @@ function buildAsgnCard(a, isActive) {
       '</div></div>';
   }
 
-  var actionButtons = isActive ? '' :
-    '<div class="asgn-actions">' +
+  var classLine = a.class_name
+    ? '<div style="font-size:10px;font-weight:700;color:var(--accent2);letter-spacing:0.04em;margin:2px 0 3px;text-transform:uppercase">' + esc(a.class_name) + '</div>'
+    : '';
+
+  var estimateRow =
+    '<div style="display:flex;align-items:center;gap:5px;margin:4px 0 0" onclick="event.stopPropagation()">' +
+    '<input id="est-' + uid + '" type="number" value="' + estVal + '" min="1" max="600" onclick="event.stopPropagation()" ' +
+    'style="width:46px;padding:2px 4px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:12px;font-weight:600;text-align:center">' +
+    '<span style="font-size:11px;color:var(--text3)">min</span>' +
+    '<button onclick="saveEstimateFromCard(event,\'' + uid + '\')" ' +
+    'style="padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--surface3);color:var(--accent2);font-size:11px;font-weight:600;cursor:pointer">Save</button>' +
+    '</div>';
+
+  var sideButtons = isActive ? '' :
+    '<div class="asgn-card-btns" onclick="event.stopPropagation()">' +
     '<button class="btn btn-primary" onclick="startTimer(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Start</button>' +
     '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Done</button>' +
     '</div>';
 
-  var classLine = a.class_name
-    ? '<div style="font-size:11px;font-weight:600;color:var(--accent2);letter-spacing:0.03em;margin:2px 0 4px;text-transform:uppercase">' + esc(a.class_name) + '</div>'
-    : '';
-
-  var estimateRow =
-    '<div style="display:flex;align-items:center;gap:6px;margin:4px 0 2px" onclick="event.stopPropagation()">' +
-    '<input id="est-' + uid + '" type="number" value="' + estVal + '" min="1" max="600" onclick="event.stopPropagation()" ' +
-    'style="width:52px;padding:2px 6px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:13px;font-weight:600;text-align:center">' +
-    '<span style="font-size:12px;color:var(--text3)">min</span>' +
-    '<button onclick="saveEstimateFromCard(event,\'' + uid + '\')" ' +
-    'style="padding:2px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--surface3);color:var(--accent2);font-size:12px;font-weight:600;cursor:pointer">Save</button>' +
-    '</div>';
-
   return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + uid + '" onclick="openAsgnDetail(\'' + uid + '\')">' +
-    '<div class="asgn-header"><div class="asgn-title">' + trunc(a.title, 40) + '</div>' +
-    '<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;flex-shrink:0;white-space:nowrap;color:' + label.color + ';background:rgba(128,128,128,0.1)">' + esc(label.text) + '</span></div>' +
+    '<div class="asgn-card-layout">' +
+    '<div class="asgn-card-body">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:2px">' +
+    '<div class="asgn-title">' + trunc(a.title, 36) + '</div>' +
+    '<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:20px;flex-shrink:0;white-space:nowrap;color:' + label.color + ';background:rgba(128,128,128,0.1)">' + esc(label.text) + '</span>' +
+    '</div>' +
     classLine + estimateRow +
-    actionButtons + timerHTML + '</div>';
+    '</div>' +
+    sideButtons +
+    '</div>' +
+    timerHTML + '</div>';
 }
 
 function saveEstimateFromCard(e, uid) {
@@ -1243,26 +1288,45 @@ function loadTasks() {
     var html = '';
     if (pending.length > 0) {
       html += pending.map(buildTaskItem).join('');
+    } else {
+      html += '<div style="font-size:13px;color:var(--text3);padding:16px 0 8px;text-align:center">No pending tasks</div>';
     }
     if (done.length > 0) {
-      html += '<div class="section-label" style="padding-top:20px">Completed</div>';
-      html += done.slice(0, 5).map(buildTaskItem).join('');
+      html += '<div style="margin-top:12px">' +
+        '<div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'" ' +
+        'style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:pointer">' +
+        '<span style="font-size:13px;font-weight:600;color:var(--text2)">✓ Completed Archive</span>' +
+        '<span style="background:var(--green);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:2px 8px">' + done.length + '</span>' +
+        '</div>' +
+        '<div style="display:none;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);overflow:hidden">' +
+        done.map(buildTaskItem).join('') +
+        '</div></div>';
     }
     container.innerHTML = html;
   }).catch(function(){});
 }
 
 function buildTaskItem(t) {
+  var today = new Date(); today.setHours(0,0,0,0);
+  var isOverdue = !t.completed && t.due_date && new Date(t.due_date + 'T00:00:00') < today;
   var dueStr = t.due_date ? ' · Due ' + formatDateShort(t.due_date) : '';
   var notesStr = t.notes ? '<div style="font-size:11px;color:var(--text3);margin-top:3px">' + esc(t.notes.substring(0, 60)) + (t.notes.length > 60 ? '...' : '') + '</div>' : '';
+  var isProjectTask = t.source === 'project_task';
+  var projLink = isProjectTask && t.project_title
+    ? '<div style="font-size:10px;color:var(--accent2);margin-top:2px;cursor:pointer" onclick="switchTab(2)">→ Project: ' + esc(t.project_title) + '</div>'
+    : '';
+  var toggleFn = isProjectTask
+    ? 'toggleProjectTaskStatus(' + t.id + ',' + t.project_id + ',\'' + (t.completed ? 'pending' : 'done') + '\')'
+    : 'toggleTask(' + t.id + ',' + !t.completed + ')';
   return '<div class="task-item">' +
-    '<div class="task-check' + (t.completed ? ' checked' : '') + '" onclick="toggleTask(' + t.id + ',' + !t.completed + ')"></div>' +
+    '<div class="task-check' + (t.completed ? ' checked' : '') + '" onclick="' + toggleFn + '"></div>' +
     '<div class="task-content">' +
-    '<div class="task-title' + (t.completed ? ' done' : '') + '">' + esc(t.title) + '</div>' +
-    notesStr +
+    '<div class="task-title' + (t.completed ? ' done' : '') + '">' + esc(t.title) +
+      (isOverdue ? '<span class="overdue-badge">Overdue</span>' : '') + '</div>' +
+    notesStr + projLink +
     (dueStr ? '<div class="task-sub">' + esc(dueStr.trim()) + '</div>' : '') +
     '</div>' +
-    '<div class="task-urgency ' + esc(t.urgency) + '"></div>' +
+    '<div class="task-urgency ' + esc(t.urgency || 'medium') + '"></div>' +
     '</div>';
 }
 
@@ -1308,28 +1372,51 @@ function loadProjects() {
       return;
     }
 
-    // Also push stale nudges to home
+    // Push stale nudges to home
     var stale = allProjects.filter(function(p) { return p.needs_checkin && p.status === 'active'; });
-    if (stale.length > 0) {
-      var notif = document.getElementById('notif-container');
+    var notif = document.getElementById('notif-container');
+    if (notif) {
+      notif.querySelectorAll('.notif-row.stale-proj').forEach(function(el) { el.remove(); });
       stale.forEach(function(p) {
         var lastStr = p.last_checkin ? 'Last check-in: ' + formatDateShort(p.last_checkin.substring(0,10)) : 'No check-in yet';
         var pill = document.createElement('div');
-        pill.className = 'notif-row';
+        pill.className = 'notif-row stale-proj';
         pill.innerHTML = '<span class="notif-icon">⏰</span><div class="notif-text"><span class="notif-title">Check in on: ' + esc(p.title) + '</span><br>' + esc(lastStr) + '</div>';
         notif.appendChild(pill);
       });
     }
 
-    container.innerHTML = allProjects.map(buildProjectCard).join('');
+    // Fetch tasks for all projects then render cards
+    var fetches = allProjects.map(function(p) {
+      return fetch('/api/projects/' + p.id + '/tasks')
+        .then(function(r) { return r.json(); })
+        .then(function(td) { p.tasks = td.tasks || []; })
+        .catch(function() { p.tasks = []; });
+    });
+    Promise.all(fetches).then(function() {
+      container.innerHTML = allProjects.map(buildProjectCard).join('');
+    });
   }).catch(function(){});
 }
 
 function buildProjectCard(p) {
-  var pct = p.completion_pct || 0;
-  var fillClass = pct < 33 ? 'p-low' : pct < 66 ? 'p-mid' : 'p-high';
   var lastCheckin = p.last_checkin ? 'Last check-in ' + formatRelative(p.last_checkin) : 'No check-in yet';
   var membersStr = [p.lead ? '👑 ' + p.lead : '', p.members].filter(Boolean).join(' · ');
+  var underwayTasks = (p.tasks || []).filter(function(t) { return t.status === 'underway'; });
+  var underwayHtml = '';
+  if (underwayTasks.length > 0) {
+    underwayHtml = '<div class="project-underway" id="proj-underway-' + p.id + '" style="display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:8px">' +
+      underwayTasks.map(function(t) {
+        return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px">' +
+          '<div style="width:6px;height:6px;border-radius:50%;background:var(--amber);flex-shrink:0"></div>' +
+          '<span style="flex:1">' + esc(t.title) + '</span>' +
+          (t.assignee ? '<span style="font-size:10px;color:var(--text3)">' + esc(t.assignee) + '</span>' : '') +
+          '</div>';
+      }).join('') + '</div>';
+  }
+  var underwayToggle = underwayTasks.length > 0
+    ? '<div onclick="event.stopPropagation();toggleUnderwayTasks(' + p.id + ')" style="font-size:11px;color:var(--accent2);cursor:pointer;margin-top:6px">▸ ' + underwayTasks.length + ' underway</div>'
+    : '';
 
   return '<div class="project-card' + (p.needs_checkin && p.status === 'active' ? ' stale' : '') + '" onclick="openProjectDetail(' + p.id + ')">' +
     '<div class="project-header">' +
@@ -1337,12 +1424,15 @@ function buildProjectCard(p) {
     '<span class="project-status ' + esc(p.status) + '">' + esc(p.status) + '</span>' +
     '</div>' +
     '<div class="project-meta">' + esc(lastCheckin) + (membersStr ? '<br>' + esc(membersStr) : '') + '</div>' +
-    '<div class="project-progress-track"><div class="project-progress-fill ' + fillClass + '" style="width:' + pct + '%"></div></div>' +
-    '<div class="project-footer">' +
-    '<div class="project-pct">' + pct + '% complete</div>' +
-    (p.needs_checkin && p.status === 'active' ? '<span class="stale-pill">Check-in due</span>' : '') +
-    '</div>' +
+    (p.needs_checkin && p.status === 'active' ? '<span class="stale-pill" style="display:inline-block;margin-top:4px">Check-in due</span>' : '') +
+    underwayToggle + underwayHtml +
     '</div>';
+}
+
+function toggleUnderwayTasks(id) {
+  var el = document.getElementById('proj-underway-' + id);
+  if (!el) return;
+  el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
 function openProjectDetail(id) {
@@ -1350,7 +1440,6 @@ function openProjectDetail(id) {
   var p = allProjects.find(function(x) { return x.id === id; });
   if (!p) return;
 
-  var pct = p.completion_pct || 0;
   var membersStr = [p.lead ? '👑 ' + p.lead : '', p.members].filter(Boolean).join(', ');
 
   var content = '<div class="sheet-title">' + esc(p.title) + '</div>' +
@@ -1363,34 +1452,104 @@ function openProjectDetail(id) {
     '<div class="sheet-section"><div class="sheet-section-label">Team</div>' +
     '<div class="sheet-body">' + esc(membersStr || 'Not set') + '</div></div>' +
 
-    '<div class="sheet-section"><div class="sheet-section-label">Progress</div>' +
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
-    '<div class="project-progress-track" style="flex:1"><div class="project-progress-fill" style="width:' + pct + '%;background:var(--accent)"></div></div>' +
-    '<span style="font-size:14px;font-weight:700;color:var(--accent2)">' + pct + '%</span></div>' +
-    '<input type="range" min="0" max="100" value="' + pct + '" style="width:100%;accent-color:var(--accent)" oninput="updateProjectPct(this.value)" onchange="saveProjectPct(this.value)">' +
+    '<div class="sheet-section">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+    '<div class="sheet-section-label" style="margin-bottom:0">Tasks</div>' +
+    '<button onclick="showAddProjectTask(' + id + ')" style="font-size:11px;padding:3px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--accent2);cursor:pointer">+ Add Task</button>' +
+    '</div>' +
+    '<div id="proj-tasks-list-' + id + '"><div class="shimmer"></div></div>' +
+    '<div id="proj-task-form-' + id + '" style="display:none;margin-top:8px;background:var(--surface2);border-radius:10px;padding:10px">' +
+    '<input class="field-input" id="ptf-title-' + id + '" type="text" placeholder="Task title" style="margin-bottom:6px">' +
+    '<input class="field-input" id="ptf-assignee-' + id + '" type="text" placeholder="Assignee (Me, John...)" style="margin-bottom:6px">' +
+    '<div style="display:flex;gap:6px">' +
+    '<button class="btn btn-outline" onclick="document.getElementById(\'proj-task-form-' + id + '\').style.display=\'none\'" style="font-size:12px;padding:6px 10px">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="submitProjectTask(' + id + ')" style="font-size:12px;padding:6px 10px">Add</button>' +
+    '</div></div></div>' +
+
+    '<div class="sheet-section">' +
+    '<div class="sheet-section-label" style="margin-bottom:8px">Notes / Updates</div>' +
+    '<textarea class="field-input" id="new-note-input" rows="2" placeholder="Add a note or update..."></textarea>' +
+    '<button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="addProjectNote()">Add Note</button>' +
     '</div>' +
 
     '<div class="sheet-section">' +
-    '<div class="sheet-section-label" style="margin-bottom:8px">Notes</div>' +
-    '<textarea class="field-input" id="new-note-input" rows="2" placeholder="Add a note or update..."></textarea>' +
+    '<div class="sheet-section-label">History</div>' +
+    '<div id="project-notes-list"><div class="shimmer"></div><div class="shimmer" style="width:70%"></div></div>' +
+    '</div>' +
 
-'<button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="addProjectNote()">Add Note</button>' +
-'</div>' +
+    '<div style="display:flex;gap:8px;margin-top:4px">' +
+    '<button class="btn btn-outline" onclick="closeAllSheets()" style="flex:1">Close</button>' +
+    '<button class="btn btn-gold" onclick="checkinProject(' + id + ')">Log Check-in</button>' +
+    '</div>';
 
-'<div class="sheet-section">' +
-'<div class="sheet-section-label">History</div>' +
-'<div id="project-notes-list"><div class="shimmer"></div><div class="shimmer" style="width:70%"></div></div>' +
-'</div>' +
+  document.getElementById('project-detail-content').innerHTML = content;
+  document.getElementById('sheet-backdrop').classList.add('open');
+  document.getElementById('project-detail-sheet').classList.add('open');
+  loadProjectNotes(id);
+  loadProjectTasks(id);
+}
 
-'<div style="display:flex;gap:8px;margin-top:4px">' +
-'<button class="btn btn-outline" onclick="closeAllSheets()" style="flex:1">Close</button>' +
-'<button class="btn btn-gold" onclick="checkinProject(' + id + ')">Log Check-in</button>' +
-'</div>';
+function loadProjectTasks(projectId) {
+  fetch('/api/projects/' + projectId + '/tasks')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var tasks = d.tasks || [];
+      var el = document.getElementById('proj-tasks-list-' + projectId);
+      if (!el) return;
+      if (tasks.length === 0) {
+        el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:4px 0">No tasks yet. Add one above.</div>';
+        return;
+      }
+      var statusColors = { pending: 'var(--text3)', underway: 'var(--amber)', done: 'var(--green)' };
+      el.innerHTML = tasks.map(function(t) {
+        var col = statusColors[t.status] || 'var(--text3)';
+        return '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' +
+          '<div style="width:8px;height:8px;border-radius:50%;background:' + col + ';flex-shrink:0;margin-top:5px"></div>' +
+          '<div style="flex:1">' +
+          '<div style="font-size:13px;font-weight:500' + (t.status === 'done' ? ';text-decoration:line-through;color:var(--text3)' : '') + '">' + esc(t.title) + '</div>' +
+          (t.assignee ? '<div style="font-size:11px;color:var(--text3)">' + esc(t.assignee) + '</div>' : '') +
+          (t.notes ? '<div style="font-size:11px;color:var(--text3)">' + esc(t.notes.substring(0, 60)) + '</div>' : '') +
+          '</div>' +
+          '<select onchange="updateProjectTaskStatus(' + projectId + ',' + t.id + ',this.value)" style="font-size:11px;background:var(--surface3);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:2px 4px">' +
+          ['pending','underway','done'].map(function(s) { return '<option value="' + s + '"' + (t.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
+          '</select>' +
+          '</div>';
+      }).join('');
+    }).catch(function(){});
+}
 
-document.getElementById('project-detail-content').innerHTML = content;
-document.getElementById('sheet-backdrop').classList.add('open');
-document.getElementById('project-detail-sheet').classList.add('open');
-loadProjectNotes(id);
+function showAddProjectTask(projectId) {
+  var form = document.getElementById('proj-task-form-' + projectId);
+  if (form) form.style.display = '';
+}
+
+function submitProjectTask(projectId) {
+  var titleEl = document.getElementById('ptf-title-' + projectId);
+  var assigneeEl = document.getElementById('ptf-assignee-' + projectId);
+  var title = titleEl ? titleEl.value.trim() : '';
+  if (!title) return;
+  var assignee = assigneeEl ? assigneeEl.value.trim() : '';
+  fetch('/api/projects/' + projectId + '/tasks', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: title, assignee: assignee, status: 'pending' })
+  }).then(function() {
+    if (titleEl) titleEl.value = '';
+    if (assigneeEl) assigneeEl.value = '';
+    var form = document.getElementById('proj-task-form-' + projectId);
+    if (form) form.style.display = 'none';
+    loadProjectTasks(projectId);
+    loadProjects();
+  }).catch(function(){});
+}
+
+function updateProjectTaskStatus(projectId, taskId, status) {
+  fetch('/api/projects/' + projectId + '/tasks/' + taskId, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: status })
+  }).then(function() {
+    loadProjectTasks(projectId);
+    loadProjects();
+  }).catch(function(){});
 }
 
 function loadProjectNotes(id) {
@@ -1474,6 +1633,19 @@ function loadHomeSchedule() {
   }).catch(function(){});
 }
 
+function loadStats() {
+  fetch('/api/stats').then(function(r) { return r.json(); }).then(function(d) {
+    var row = document.getElementById('stats-row');
+    if (row) row.style.display = 'flex';
+    var streak = d.streak_days || 0;
+    var hrs = d.weekly_minutes ? (d.weekly_minutes / 60).toFixed(1) : '0';
+    var acc = d.estimate_accuracy_pct ? Math.round(d.estimate_accuracy_pct) + '%' : 'N/A';
+    document.getElementById('stat-streak').textContent = streak + (streak === 1 ? ' day' : ' days');
+    document.getElementById('stat-hours').textContent = hrs + 'h';
+    document.getElementById('stat-accuracy').textContent = acc;
+  }).catch(function(){});
+}
+
 function loadCalendar() {
   fetch('/api/calendar?days=7').then(function(r) { return r.json(); }).then(function(d) {
     var events = d.events || [];
@@ -1527,7 +1699,13 @@ function loadCalendar() {
           var sub = '';
           if ((e.source === 'personal' || e.source === 'sports') && e.start_display) sub = e.start_display + (e.end_display ? ' – ' + e.end_display : '');
           else if (e.source === 'canvas' && e.class_name) sub = e.class_name + ' · due ' + e.start_display;
-          html += '<div class="week-event">' +
+          var isClickable = e.source === 'personal' || e.source === 'sports';
+          var evtData = isClickable ? encodeURIComponent(JSON.stringify({
+            title: e.title, source: e.source, all_day: e.all_day,
+            start_display: e.start_display, end_display: e.end_display,
+            location: e.location || '', notes: e.notes || ''
+          })) : '';
+          html += '<div class="week-event' + (isClickable ? '" onclick="openCalEventDetail(\'' + evtData + '\')" style="cursor:pointer' : '') + '">' +
             '<div class="week-event-dot ' + dotClass + '"></div>' +
             '<div>' +
             '<div class="week-event-title">' + trunc(e.title, 40) + '</div>' +
@@ -1564,7 +1742,7 @@ thread.scrollTop = thread.scrollHeight;
 aiHistory.push({ role: 'user', content: msg });
 
 // Build context summary
-var context = 'You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. ';
+var context = 'You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. Use **bold** for key terms, section headings, and important items. Use bullet points for lists. Vary sentence length for clarity. ';
 if (assignments.length > 0) {
 context += 'Upcoming assignments: ' + assignments.map(function(a) { return a.title + ' (' + a.class_name + ', due ' + a.due_display + ')'; }).join('; ') + '. ';
 }
@@ -1580,7 +1758,7 @@ aiHistory.push({ role: 'assistant', content: reply });
 var loadEl = document.getElementById(loadId);
 if (loadEl) {
 loadEl.style.color = 'var(--text2)';
-loadEl.textContent = reply;
+loadEl.innerHTML = renderMarkdown(reply);
 }
 thread.scrollTop = thread.scrollHeight;
 }).catch(function() {
@@ -1597,9 +1775,134 @@ sendAiMessage();
 }
 });
 
+function clearChat() {
+  aiHistory = [];
+  document.getElementById('ai-thread').innerHTML = '';
+}
+
+function sendWeeklyRecap() {
+  var thread = document.getElementById('ai-thread');
+  var loadId = 'ai-loading-' + Date.now();
+  thread.innerHTML += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px 14px 4px 14px;padding:12px 14px;margin-bottom:8px;font-size:14px;max-width:88%;margin-left:auto;color:var(--text)">Generate my weekly recap</div>';
+  thread.innerHTML += '<div id="' + loadId + '" style="background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;padding:12px 14px;margin-bottom:8px;font-size:14px;color:var(--text3)">Generating recap…</div>';
+  thread.scrollTop = thread.scrollHeight;
+  var context = 'You are a sharp personal assistant for Finn, a high school student in Park City, Utah. ';
+  var msgs = [{ role: 'user', content: 'Please give me a Friday weekly recap. Summarize what I accomplished this week, what assignments and tasks I completed, what I might have missed, and key things to focus on next week. Use bold headings and bullet points.' }];
+  fetch('/api/chat', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ system: context, messages: msgs })
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    var reply = d.content || d.error || 'Something went wrong.';
+    aiHistory.push({ role: 'user', content: msgs[0].content });
+    aiHistory.push({ role: 'assistant', content: reply });
+    var loadEl = document.getElementById(loadId);
+    if (loadEl) { loadEl.style.color = 'var(--text2)'; loadEl.innerHTML = esc(reply).replace(/\n/g,'<br>'); }
+    thread.scrollTop = thread.scrollHeight;
+  }).catch(function() {
+    var loadEl = document.getElementById(loadId);
+    if (loadEl) loadEl.textContent = 'Connection error.';
+  });
+}
+
+function openCalEventDetail(evtJson) {
+  var e = JSON.parse(decodeURIComponent(evtJson));
+  var timeStr = e.all_day ? 'All Day' : (e.start_display + (e.end_display ? ' – ' + e.end_display : ''));
+  var sourceLabel = e.source === 'sports' ? 'Sports' : 'Personal';
+  var dotColor = e.source === 'sports' ? 'var(--accent)' : 'var(--blue)';
+  var html =
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
+    '<div style="width:10px;height:10px;border-radius:50%;background:' + dotColor + ';flex-shrink:0"></div>' +
+    '<span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">' + sourceLabel + '</span>' +
+    '</div>' +
+    '<div class="sheet-title">' + esc(e.title) + '</div>' +
+    '<div class="sheet-sub">' + esc(timeStr) + '</div>';
+  if (e.location) {
+    html += '<div class="sheet-section"><div class="sheet-section-label">Location</div><div class="sheet-body">' + esc(e.location) + '</div></div>';
+  }
+  if (e.notes) {
+    html += '<div class="sheet-section"><div class="sheet-section-label">Notes</div><div class="sheet-body" style="white-space:pre-line;font-size:13px">' + esc(e.notes.substring(0,300)) + '</div></div>';
+  }
+  html += '<div class="sheet-section" style="margin-top:12px">' +
+    '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+    '<input type="checkbox" id="notif-toggle" style="width:18px;height:18px;accent-color:var(--accent)">' +
+    '<span style="font-size:14px">Set Reminder (via browser)</span></label></div>';
+  document.getElementById('cal-event-content').innerHTML = html;
+  document.getElementById('sheet-backdrop').classList.add('open');
+  document.getElementById('cal-event-sheet').classList.add('open');
+  var notifToggle = document.getElementById('notif-toggle');
+  if (notifToggle) {
+    notifToggle.addEventListener('change', function() {
+      if (this.checked) {
+        if ('Notification' in window) {
+          Notification.requestPermission().then(function(perm) {
+            if (perm === 'granted') {
+              new Notification('Reminder: ' + e.title, { body: timeStr });
+            }
+          });
+        }
+      }
+    });
+  }
+}
+
+function toggleProjectTaskStatus(taskId, projectId, newStatus) {
+  fetch('/api/projects/' + projectId + '/tasks/' + taskId, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: newStatus })
+  }).then(function() { loadTasks(); }).catch(function(){});
+}
+
+// ── Swipe-to-dismiss/snooze for notification pills ──
+(function() {
+  var startX = 0, startY = 0, el = null, snoozeTimers = {};
+  document.addEventListener('touchstart', function(e) {
+    var t = e.target.closest('.notif-row');
+    if (!t) return;
+    el = t; startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener('touchmove', function(e) {
+    if (!el) return;
+    var dx = e.touches[0].clientX - startX;
+    var dy = Math.abs(e.touches[0].clientY - startY);
+    if (dy > 20) { el = null; return; }
+    el.style.transform = 'translateX(' + dx + 'px)';
+    el.style.opacity = 1 - Math.abs(dx) / 200;
+  }, { passive: true });
+  document.addEventListener('touchend', function(e) {
+    if (!el) return;
+    var dx = e.changedTouches[0].clientX - startX;
+    var row = el; el = null;
+    if (dx < -60) {
+      // Swipe left → dismiss
+      row.style.transition = 'transform 0.25s,opacity 0.25s';
+      row.style.transform = 'translateX(-110%)'; row.style.opacity = '0';
+      setTimeout(function() { if (row.parentNode) row.parentNode.removeChild(row); }, 260);
+    } else if (dx > 60) {
+      // Swipe right → snooze 10 min
+      row.style.transition = 'transform 0.25s,opacity 0.25s';
+      row.style.transform = 'translateX(0)'; row.style.opacity = '1';
+      var clone = row.cloneNode(true);
+      row.parentNode.removeChild(row);
+      setTimeout(function() {
+        var notif = document.getElementById('notif-container');
+        if (notif) notif.appendChild(clone);
+      }, 10 * 60 * 1000);
+    } else {
+      row.style.transition = 'transform 0.2s,opacity 0.2s';
+      row.style.transform = 'translateX(0)'; row.style.opacity = '1';
+    }
+  });
+})();
+
 // ══════════════════════════════════════════
 // HELPERS
 // ══════════════════════════════════════════
+function renderMarkdown(s) {
+  return esc(s)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+}
+
 function esc(s) {
 return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
