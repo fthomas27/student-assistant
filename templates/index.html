@@ -961,7 +961,8 @@ function openAsgnDetail(uid) {
   currentAsgnDetail = a;
   var content = document.getElementById('asgn-detail-content');
   var actions = document.getElementById('asgn-detail-actions');
-  var estText = a.estimate_minutes ? Math.round(a.estimate_minutes) + ' min estimated' : '';
+  var estVal = a.estimate_minutes ? Math.round(a.estimate_minutes) : 30;
+  var estLabel = a.estimate_custom ? 'your estimate' : 'AI estimate';
   content.innerHTML =
     '<div class="sheet-title">' + esc(a.title) + '</div>' +
     '<div class="sheet-sub">' + esc(a.class_name || '') + (a.class_name && a.teacher ? ' · ' : '') + esc(a.teacher || '') + '</div>' +
@@ -969,7 +970,14 @@ function openAsgnDetail(uid) {
     '<div class="sheet-section-label">Due</div>' +
     '<div class="sheet-body">' + esc(a.due_display || '') + '</div>' +
     '</div>' +
-    (estText ? '<div class="sheet-section"><div class="sheet-section-label">Time Estimate</div><div class="sheet-body">' + estText + '</div></div>' : '') +
+    '<div class="sheet-section">' +
+    '<div class="sheet-section-label">Time Estimate</div>' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-top:4px">' +
+    '<input type="number" id="estimate-input" value="' + estVal + '" min="1" max="600" style="width:72px;padding:6px 8px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:15px;font-weight:600;text-align:center">' +
+    '<span style="color:var(--text2);font-size:14px">min</span>' +
+    '<span id="estimate-tag" style="font-size:12px;color:var(--text3);margin-left:2px">(' + estLabel + ')</span>' +
+    '</div>' +
+    '</div>' +
     (a.description ? '<div class="sheet-section"><div class="sheet-section-label">Details</div><div class="sheet-body">' + esc(a.description) + '</div></div>' : '');
 
   actions.innerHTML =
@@ -978,20 +986,39 @@ function openAsgnDetail(uid) {
 
   document.getElementById('sheet-backdrop').classList.add('open');
   document.getElementById('asgn-detail-sheet').classList.add('open');
+
+  // Save estimate when user changes the input
+  document.getElementById('estimate-input').addEventListener('change', function() {
+    var mins = parseFloat(this.value);
+    if (isNaN(mins) || mins < 1) return;
+    fetch('/api/assignments/' + encodeURIComponent(a.uid) + '/estimate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ minutes: mins })
+    }).then(function() {
+      a.estimate_minutes = mins;
+      a.estimate_custom = true;
+      document.getElementById('estimate-tag').textContent = '(your estimate)';
+    });
+  });
 }
 
 function startTimerFromDetail() {
   if (!currentAsgnDetail) return;
   var a = currentAsgnDetail;
+  var inp = document.getElementById('estimate-input');
+  var mins = inp ? (parseFloat(inp.value) || a.estimate_minutes || 30) : (a.estimate_minutes || 30);
   closeAllSheets();
-  startTimer(null, a.uid, a.title, a.class_name, a.estimate_minutes || 30);
+  startTimer(null, a.uid, a.title, a.class_name, mins);
 }
 
 function markDoneFromDetail() {
   if (!currentAsgnDetail) return;
   var a = currentAsgnDetail;
+  var inp = document.getElementById('estimate-input');
+  var mins = inp ? (parseFloat(inp.value) || a.estimate_minutes || 30) : (a.estimate_minutes || 30);
   closeAllSheets();
-  markDone(null, a.uid, a.title, a.class_name, a.estimate_minutes || 30);
+  markDone(null, a.uid, a.title, a.class_name, mins);
 }
 
 // ══════════════════════════════════════════
