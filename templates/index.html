@@ -527,6 +527,9 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   <div class="section-label">Due Today & Tomorrow</div>
   <div id="home-assignments-container"></div>
 
+  <div class="section-label" id="schedule-label" style="display:none">Today's Schedule</div>
+  <div id="home-schedule-list"></div>
+
   <div id="completed-section" style="display:none;margin-top:4px">
     <div onclick="toggleCompletedToday()" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;margin-bottom:0">
       <span style="font-size:13px;font-weight:600;color:var(--text2)">✓ Completed Today</span>
@@ -1446,17 +1449,24 @@ fetch('/api/projects/' + currentProjectId, { method: 'PATCH', headers: { 'Conten
 // CALENDAR
 // ══════════════════════════════════════════
 function loadHomeSchedule() {
-fetch('/api/calendar?days=1', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
-var events = (d.events || []).filter(function(e) { return e.source === 'personal'; });
-var el = document.getElementById('home-schedule-list');
-if (!el) return;
-if (events.length === 0) { el.innerHTML = '<div style="font-size:13px;color:var(--text3);text-align:center;padding:6px 0">No events today</div>'; return; }
-el.innerHTML = events.map(function(e) {
-return '<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">' +
-'<div style="font-size:12px;color:var(--text3);min-width:65px;padding-top:1px">' + esc(e.start_display) + '</div>' +
-'<div style="font-size:14px;font-weight:500">' + esc(e.title) + '</div></div>';
-}).join('');
-}).catch(function(){});
+  fetch('/api/calendar?days=1', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
+    var events = (d.events || []).filter(function(e) { return e.source === 'personal' || e.source === 'sports'; });
+    var el = document.getElementById('home-schedule-list');
+    var label = document.getElementById('schedule-label');
+    if (!el) return;
+    if (events.length === 0) {
+      if (label) label.style.display = 'none';
+      return;
+    }
+    if (label) label.style.display = '';
+    el.innerHTML = events.map(function(e) {
+      var dot = e.source === 'sports' ? 'var(--green)' : 'var(--gold)';
+      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;margin-top:5px"></div>' +
+        '<div style="font-size:12px;color:var(--text3);min-width:65px;padding-top:1px">' + esc(e.start_display) + '</div>' +
+        '<div style="font-size:14px;font-weight:500">' + esc(e.title) + '</div></div>';
+    }).join('');
+  }).catch(function(){});
 }
 
 function loadCalendar() {

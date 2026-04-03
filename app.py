@@ -1,5 +1,4 @@
 import os
-import json
 import logging
 import threading
 from datetime import datetime, timedelta, date
@@ -7,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg2
 import psycopg2.extras
+from psycopg2 import sql as pgsql
 import requests
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, session, redirect
@@ -23,13 +23,14 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not session.get("authenticated"):
-            return redirect("/login")
-        return f(*args, **kwargs)
-    return decorated
+@app.before_request
+def require_auth():
+    if request.path in ('/login', '/logout'):
+        return None
+    if not session.get("authenticated"):
+        if request.path.startswith('/api/'):
+            return jsonify({"error": "Not authenticated"}), 401
+        return redirect("/login")
 
 TZ = ZoneInfo("America/Denver")
 
@@ -496,7 +497,6 @@ def logout():
 
 
 @app.route("/")
-@login_required
 def index():
     return render_template("index.html")
 
@@ -907,7 +907,10 @@ def api_projects_update(project_id):
               "checkin_interval_days", "completion_pct"]
     for f in fields:
         if f in data:
-            cur.execute("UPDATE projects SET %s=%%s WHERE id=%%s" % f, (data[f], project_id))
+            cur.execute(
+                pgsql.SQL("UPDATE projects SET {}=%s WHERE id=%s").format(pgsql.Identifier(f)),
+                (data[f], project_id)
+            )
     if data.get("checkin_now"):
         cur.execute("UPDATE projects SET last_checkin=NOW() WHERE id=%s", (project_id,))
     conn.commit()
