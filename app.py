@@ -360,11 +360,11 @@ LIMIT 3""")
 
         now_str = datetime.now(TZ).strftime("%A, %B %-d, %Y at %-I:%M %p")
 
-        today_asgn = [a for a in assignments if a["urgency"] == "high"][:5]
+        today_asgn = assignments[:8]
         asgn_text = "\n".join(["- %s (%s) due %s, est. %d min" % (
             a["title"], a["class_name"], a["due_display"],
             estimate_assignment(a["title"], a["class_name"])
-        ) for a in today_asgn]) or "No urgent assignments."
+        ) for a in today_asgn]) or "No assignments found."
 
         events_text = "\n".join(["- %s at %s" % (e["title"], e["start_display"]) for e in events]) or "No events today."
         tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "No pending tasks."
@@ -374,10 +374,11 @@ LIMIT 3""")
             "You are a sharp, efficient personal assistant for a high school student named %s who is also a "
             "student leader managing projects and working toward a future in politics. "
             "Write a concise, action-oriented daily briefing (4-6 sentences). "
-            "Cover: most urgent assignments with estimated time, today's schedule, any urgent tasks, "
-            "and if there are stale projects mention them briefly. "
+            "Always list the specific upcoming assignments by name with their due dates and time estimates. "
+            "Never say the student is caught up or ahead - always name the actual assignments coming up. "
+            "Also mention today's schedule and any urgent tasks. "
             "Be warm but direct. No bullet points. Sound like a capable chief of staff briefing a busy person. "
-            "Current time: %s\n\nUrgent Assignments:\n%s\n\nToday's schedule:\n%s\n\nPending Tasks:\n%s\n\nProjects needing check-in:\n%s"
+            "Current time: %s\n\nUpcoming assignments (next 3 days, always mention these specifically):\n%s\n\nToday's schedule:\n%s\n\nPending Tasks:\n%s\n\nProjects needing check-in:\n%s"
         ) % (name, now_str, asgn_text, events_text, tasks_text, stale_text)
 
         try:
