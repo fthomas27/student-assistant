@@ -42,6 +42,71 @@ PERSONAL_ICAL_URL = "https://p107-caldav.icloud.com/published/2/OTg1NzQ4NTY5ODU3
 CANVAS_ICAL_URL = "https://pcsd.instructure.com/feeds/calendars/user_wC7Sn9BAtT2VtytLikpkf7f2hC8Pz90mqGLPXR9F.ics"
 SPORTS_ICAL_URL = "https://api.olliesports.com/ical/team-NgstTqqq97a7sBEoUbq1Ig89P0mFplM1.ics?accountId=rxwb8YV8yIfpjwKHxxndqXcQ3ss2"
 
+# ── Park City School District 2025-2026 Bell Schedule ────────────────────────
+# Red Day = shorter (A-block), White Day = longer (B-block), alternating each school day
+# First day of school: 2025-08-18 (Red day)
+SCHOOL_YEAR_START = date(2025, 8, 18)
+SCHOOL_YEAR_END = date(2026, 6, 5)
+
+# All dates with no school (students)
+_ns_ranges = [
+    (date(2025, 8, 7), date(2025, 8, 15)),   # Teacher work days before school
+    (date(2025, 9, 1), date(2025, 9, 1)),    # Labor Day
+    (date(2025, 9, 23), date(2025, 9, 23)),  # Rosh Hashanah
+    (date(2025, 10, 2), date(2025, 10, 3)),  # Yom Kippur + Fall Break
+    (date(2025, 11, 7), date(2025, 11, 7)),  # Prof Development
+    (date(2025, 11, 26), date(2025, 11, 28)),# Thanksgiving
+    (date(2025, 12, 22), date(2026, 1, 2)),  # Winter Break
+    (date(2026, 1, 19), date(2026, 1, 19)),  # MLK Day
+    (date(2026, 2, 16), date(2026, 2, 20)),  # Presidents Day + February Break
+    (date(2026, 3, 20), date(2026, 3, 20)),  # Prof Development
+    (date(2026, 4, 13), date(2026, 4, 17)),  # Teacher Comp + Spring Break
+    (date(2026, 5, 22), date(2026, 5, 22)),  # Make Up Snow Day
+    (date(2026, 5, 25), date(2026, 5, 25)),  # Memorial Day
+]
+NO_SCHOOL_DATES = set()
+for _s, _e in _ns_ranges:
+    _cur = _s
+    while _cur <= _e:
+        NO_SCHOOL_DATES.add(_cur)
+        _cur += timedelta(days=1)
+
+
+def is_school_day(d):
+    """Return True if d is a regular school day (weekday, not holiday, within school year)."""
+    if d < SCHOOL_YEAR_START or d > SCHOOL_YEAR_END:
+        return False
+    if d.weekday() >= 5:  # Saturday/Sunday
+        return False
+    return d not in NO_SCHOOL_DATES
+
+
+def get_day_type(d):
+    """Return 'red', 'white', or None for non-school days."""
+    if not is_school_day(d):
+        return None
+    # Count school days from SCHOOL_YEAR_START (inclusive) up to but not including d
+    count = 0
+    cur = SCHOOL_YEAR_START
+    while cur < d:
+        if is_school_day(cur):
+            count += 1
+        cur += timedelta(days=1)
+    # Even count → Red (SCHOOL_YEAR_START itself is Red, count=0 → Red)
+    return "red" if count % 2 == 0 else "white"
+
+
+def get_school_hours(d):
+    """Return (start_hour, start_min, end_hour, end_min) for school on day d, or None."""
+    dtype = get_day_type(d)
+    if dtype is None:
+        return None
+    dow = d.weekday()  # 0=Mon, 4=Fri
+    if dow == 4:  # Friday
+        return (7, 30, 10, 25) if dtype == "red" else (7, 30, 11, 30)
+    else:  # Mon-Thu
+        return (7, 30, 11, 53) if dtype == "red" else (7, 30, 14, 25)
+
 
 def get_db():
     url = os.environ.get("DATABASE_URL", "")
@@ -290,6 +355,7 @@ def parse_calendar_events(cal, days_ahead=30):
             "start_display": "All Day" if all_day else start_local.strftime("%-I:%M %p"),
             "end_display": end_local.strftime("%-I:%M %p") if end_local and not all_day else "",
             "start_iso": start_local.isoformat(),
+            "end_iso": end_local.isoformat() if end_local else "",
             "date": start_local.strftime("%Y-%m-%d"),
             "all_day": all_day
         })
@@ -822,6 +888,99 @@ FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_
     return jsonify({"completions": rows})
 
 
+@app.route("/api/availability")
+def api_availability():
+    """Return today's school schedule and free time windows."""
+    today = datetime.now(TZ).date()
+    now_local = datetime.now(TZ)
+    dtype = get_day_type(today)
+    school_hours = get_school_hours(today)
+
+    # Build busy blocks for today (school + personal events)
+    busy = []
+    if school_hours:
+        sh, sm, eh, em = school_hours
+        busy.append({
+            "start": now_local.replace(hour=sh, minute=sm, second=0, microsecond=0),
+            "end": now_local.replace(hour=eh, minute=em, second=0, microsecond=0),
+            "label": "School (%s day)" % dtype.title()
+        })
+
+    # Personal calendar events today
+    try:
+        cal = fetch_ical(PERSONAL_ICAL_URL)
+        if cal:
+            for e in parse_calendar_events(cal, days_ahead=1):
+                if e["date"] == today.isoformat() and not e.get("all_day"):
+                    try:
+                        es = datetime.fromisoformat(e["start_iso"])
+                        ee_str = e.get("end_iso") or e["start_iso"]
+                        ee = datetime.fromisoformat(ee_str)
+                        if es.tzinfo is None:
+                            es = es.replace(tzinfo=TZ)
+                        if ee.tzinfo is None:
+                            ee = ee.replace(tzinfo=TZ)
+                        busy.append({"start": es, "end": ee, "label": e["title"]})
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # Sort and merge busy blocks
+    busy.sort(key=lambda x: x["start"])
+    merged = []
+    for b in busy:
+        if merged and b["start"] <= merged[-1]["end"]:
+            merged[-1]["end"] = max(merged[-1]["end"], b["end"])
+            merged[-1]["label"] += " + " + b["label"]
+        else:
+            merged.append(dict(b))
+
+    # Find free windows from now until 10 PM
+    day_end = now_local.replace(hour=22, minute=0, second=0, microsecond=0)
+    free = []
+    cursor = now_local.replace(second=0, microsecond=0)
+    for b in merged:
+        if b["end"] <= cursor:
+            continue
+        if b["start"] > cursor:
+            mins = int((b["start"] - cursor).total_seconds() / 60)
+            if mins >= 15:
+                free.append({
+                    "start": cursor.strftime("%-I:%M %p"),
+                    "end": b["start"].strftime("%-I:%M %p"),
+                    "minutes": mins
+                })
+        cursor = max(cursor, b["end"])
+    if cursor < day_end:
+        mins = int((day_end - cursor).total_seconds() / 60)
+        if mins >= 15:
+            free.append({
+                "start": cursor.strftime("%-I:%M %p"),
+                "end": "10:00 PM",
+                "minutes": mins
+            })
+
+    # School hours display
+    school_display = None
+    if school_hours:
+        sh, sm, eh, em = school_hours
+        school_display = "%d:%02d AM – %d:%02d %s" % (
+            sh % 12 or 12, sm,
+            eh % 12 or 12, em,
+            "AM" if eh < 12 else "PM"
+        )
+
+    return jsonify({
+        "date": today.isoformat(),
+        "day_type": dtype,
+        "school_hours": school_display,
+        "is_school_day": dtype is not None,
+        "free_windows": free,
+        "total_free_minutes": sum(w["minutes"] for w in free)
+    })
+
+
 @app.route("/api/stats")
 def api_stats():
     conn = get_db()
@@ -1187,6 +1346,29 @@ def api_chat():
     if not api_key:
         return jsonify({"error": "ANTHROPIC_API_KEY not configured. Add it in Settings."}), 500
     try:
+        # Inject school schedule context
+        try:
+            today = datetime.now(TZ).date()
+            dtype = get_day_type(today)
+            school_hours = get_school_hours(today)
+            if school_hours:
+                sh, sm, eh, em = school_hours
+                system_prompt += (
+                    " Today is a %s day at Park City High School. "
+                    "School runs 7:%02d AM – %d:%02d %s. "
+                    "Finn is NOT available during school hours. "
+                    "Mon-Thu Red: 7:30–11:53 AM, Mon-Thu White: 7:30–2:25 PM, "
+                    "Fri Red: 7:30–10:25 AM, Fri White: 7:30–11:30 AM."
+                ) % (dtype.title(), sm, eh % 12 or 12, em, "AM" if eh < 12 else "PM")
+            else:
+                dow = today.weekday()
+                if dow >= 5:
+                    system_prompt += " Today is a weekend — no school."
+                else:
+                    system_prompt += " Today is a no-school day (holiday or break)."
+        except Exception:
+            pass
+
         # Inject live assignments into the system prompt
         try:
             cal = fetch_ical(CANVAS_ICAL_URL)
