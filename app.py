@@ -917,6 +917,39 @@ def api_chat():
     if not api_key:
         return jsonify({"error": "ANTHROPIC_API_KEY not configured."}), 500
     try:
+        # Inject live assignments into the system prompt
+        try:
+            cal = fetch_ical(CANVAS_ICAL_URL)
+            if cal:
+                asgn_list = parse_canvas_assignments(cal)
+                if asgn_list:
+                    asgn_text = "; ".join(
+                        "%s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"])
+                        for a in asgn_list
+                    )
+                    system_prompt += " Upcoming assignments: " + asgn_text + "."
+        except Exception:
+            log.warning("/api/chat could not fetch assignments for context")
+
+        # Inject pending tasks into the system prompt
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT title, urgency FROM tasks WHERE completed = FALSE "
+                "ORDER BY urgency DESC, created_at ASC LIMIT 10"
+            )
+            tasks = [dict(r) for r in cur.fetchall()]
+            cur.close()
+            conn.close()
+            if tasks:
+                tasks_text = "; ".join(
+                    "[%s] %s" % (t["urgency"], t["title"]) for t in tasks
+                )
+                system_prompt += " Pending tasks: " + tasks_text + "."
+        except Exception:
+            log.warning("/api/chat could not fetch tasks for context")
+
         client = anthropic.Anthropic(api_key=api_key)
         kwargs = {"model": "claude-sonnet-4-6", "max_tokens": 1024, "messages": messages}
         if system_prompt:
