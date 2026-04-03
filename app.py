@@ -132,6 +132,18 @@ CREATE TABLE IF NOT EXISTS project_notes (
     content TEXT NOT NULL
 )""")
 
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS project_tasks (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    title TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    assignee TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    due_date DATE
+)""")
+
     defaults = {
         "name": "Finn",
         "morning_briefing_time": "07:00",
@@ -250,6 +262,8 @@ def parse_calendar_events(cal, days_ahead=30):
         if component.name != "VEVENT":
             continue
         summary = str(component.get("SUMMARY", "Untitled"))
+        location = str(component.get("LOCATION", ""))
+        description = str(component.get("DESCRIPTION", ""))[:500]
         start_dt = component.get("DTSTART")
         end_dt = component.get("DTEND")
         if start_dt is None:
@@ -271,6 +285,8 @@ def parse_calendar_events(cal, days_ahead=30):
             end_local = end_val.astimezone(TZ)
         events.append({
             "title": summary,
+            "location": location,
+            "notes": description,
             "start_display": "All Day" if all_day else start_local.strftime("%-I:%M %p"),
             "end_display": end_local.strftime("%-I:%M %p") if end_local and not all_day else "",
             "start_iso": start_local.isoformat(),
@@ -347,7 +363,12 @@ def generate_briefing(force=False):
         events = []
         cal2 = fetch_ical(PERSONAL_ICAL_URL)
         if cal2:
-            events = [e for e in parse_calendar_events(cal2, days_ahead=1)]
+            events = list(parse_calendar_events(cal2, days_ahead=1))
+        cal_sports = fetch_ical(SPORTS_ICAL_URL)
+        if cal_sports:
+            for e in parse_calendar_events(cal_sports, days_ahead=1):
+                e["source"] = "sports"
+                events.append(e)
 
         # Get completed assignment titles (ever) so we don't flag them
         conn = get_db()
@@ -379,7 +400,10 @@ LIMIT 3""")
             a.get("urgency", "medium")
         ) for a in upcoming_asgn]) or "No upcoming assignments."
 
-        events_text = "\n".join(["- %s at %s" % (e["title"], e["start_display"]) for e in events]) or "No events today."
+        events_text = "\n".join([
+            "- %s%s at %s" % (e["title"], " [SPORTS]" if e.get("source") == "sports" else "", e["start_display"])
+            for e in events
+        ]) or "No events today."
         tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "No pending tasks."
         stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or "None."
 
@@ -421,6 +445,64 @@ ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content"
 scheduler = BackgroundScheduler(timezone=TZ)
 
 
+def generate_evening_debrief():
+    """Generate a 7 PM evening debrief summarizing the day."""
+    with _briefing_lock:
+        cfg = get_config()
+        api_key = cfg.get("anthropic_api_key", "")
+        if not api_key:
+            return
+        name = cfg.get("name", "Finn")
+        conn = get_db()
+        cur = conn.cursor()
+        today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        cur.execute("""
+SELECT assignment_title, class_name, duration_minutes, timed
+FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_start,))
+        done_today = [dict(r) for r in cur.fetchall()]
+        cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC LIMIT 10")
+        pending_tasks = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        cal = fetch_ical(CANVAS_ICAL_URL)
+        remaining_asgn = []
+        if cal:
+            all_asgn = parse_canvas_assignments(cal)
+            done_titles = {d["assignment_title"] for d in done_today}
+            remaining_asgn = [a for a in all_asgn if a["title"] not in done_titles]
+        done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
+        remaining_text = "\n".join(["- %s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"]) for a in remaining_asgn[:6]]) or "None."
+        tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in pending_tasks]) or "None."
+        now_str = datetime.now(TZ).strftime("%A, %B %-d at %-I:%M %p")
+        prompt = (
+            "You are a sharp personal assistant for %s, a high school student in Park City, Utah.\n"
+            "Current time: %s (evening debrief)\n\n"
+            "Completed Today:\n%s\n\n"
+            "Still Due (not completed):\n%s\n\n"
+            "Pending Tasks:\n%s\n\n"
+            "Write a concise evening debrief using ONLY bullet points (start each with •). "
+            "Include: what was accomplished today, what was missed/still needs doing, and a 'Tomorrow's Outlook' section. "
+            "Be direct and encouraging. No intro sentence."
+        ) % (name, now_str, done_text, remaining_text, tasks_text)
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(model="claude-sonnet-4-6", max_tokens=600,
+                                             messages=[{"role": "user", "content": prompt}])
+            content = message.content[0].text if message.content else "Good evening!"
+        except Exception as e:
+            log.error("Evening debrief API error: %s", e)
+            return
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+INSERT INTO briefing_cache (id, generated_at, content) VALUES (1, NOW(), %s)
+ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content""", (content,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        log.info("Evening debrief generated.")
+
+
 def schedule_briefing():
     cfg = get_config()
     t = cfg.get("morning_briefing_time", "07:00")
@@ -431,7 +513,11 @@ def schedule_briefing():
     scheduler.remove_all_jobs()
     scheduler.add_job(generate_briefing, "cron", hour=hour, minute=minute,
                       id="morning_briefing", replace_existing=True)
+    # Evening debrief at 7:00 PM
+    scheduler.add_job(generate_evening_debrief, "cron", hour=19, minute=0,
+                      id="evening_debrief", replace_existing=True)
     log.info("Briefing scheduled for %02d:%02d Mountain", hour, minute)
+    log.info("Evening debrief scheduled for 19:00 Mountain")
 
 
 def get_timer_state_row():
@@ -784,11 +870,22 @@ def api_tasks_get():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-SELECT id, title, notes, urgency, completed, completed_at, due_date, created_at
-FROM tasks ORDER BY completed ASC, 
+SELECT id, title, notes, urgency, completed, completed_at, due_date, created_at,
+       NULL as project_id, NULL as project_title
+FROM tasks ORDER BY completed ASC,
     CASE urgency WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END ASC,
     created_at ASC""")
     rows = [dict(r) for r in cur.fetchall()]
+    # Also include project tasks assigned to "Me"
+    cur.execute("""
+SELECT pt.id, pt.title, pt.notes, 'medium' as urgency,
+       (pt.status = 'done') as completed, NULL as completed_at, pt.due_date,
+       pt.created_at, pt.project_id, p.title as project_title
+FROM project_tasks pt
+JOIN projects p ON p.id = pt.project_id
+WHERE LOWER(pt.assignee) IN ('me', 'finn')
+ORDER BY pt.created_at ASC""")
+    proj_rows = [dict(r) for r in cur.fetchall()]
     cur.close()
     conn.close()
     for r in rows:
@@ -797,7 +894,13 @@ FROM tasks ORDER BY completed ASC,
         if r["due_date"]:
             r["due_date"] = str(r["due_date"])
         r["created_at"] = r["created_at"].isoformat()
-    return jsonify({"tasks": rows})
+        r["source"] = "task"
+    for r in proj_rows:
+        if r["due_date"]:
+            r["due_date"] = str(r["due_date"])
+        r["created_at"] = r["created_at"].isoformat()
+        r["source"] = "project_task"
+    return jsonify({"tasks": rows + proj_rows})
 
 
 @app.route("/api/tasks", methods=["POST"])
@@ -978,6 +1081,80 @@ def api_project_notes_delete(project_id, note_id):
     return jsonify({"status": "ok"})
 
 
+# ── Project Tasks ─────────────────────────────────────────────────────────────
+
+@app.route("/api/projects/<int:project_id>/tasks", methods=["GET"])
+def api_project_tasks_get(project_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+SELECT id, title, notes, assignee, status, due_date, created_at
+FROM project_tasks WHERE project_id=%s ORDER BY created_at ASC""", (project_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    for r in rows:
+        if r["due_date"]:
+            r["due_date"] = str(r["due_date"])
+        r["created_at"] = r["created_at"].isoformat()
+    return jsonify({"tasks": rows})
+
+
+@app.route("/api/projects/<int:project_id>/tasks", methods=["POST"])
+def api_project_tasks_create(project_id):
+    data = request.get_json(force=True) or {}
+    title = str(data.get("title", "")).strip()[:300]
+    if not title:
+        return jsonify({"error": "title required"}), 400
+    notes = str(data.get("notes", ""))[:2000]
+    assignee = str(data.get("assignee", ""))[:100]
+    status = str(data.get("status", "pending"))
+    due_date = data.get("due_date") or None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+INSERT INTO project_tasks (project_id, title, notes, assignee, status, due_date)
+VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                (project_id, title, notes, assignee, status, due_date))
+    new_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"id": new_id, "status": "ok"})
+
+
+@app.route("/api/projects/<int:project_id>/tasks/<int:task_id>", methods=["PATCH"])
+def api_project_tasks_update(project_id, task_id):
+    data = request.get_json(force=True) or {}
+    conn = get_db()
+    cur = conn.cursor()
+    allowed = {"title": str, "notes": str, "assignee": str, "status": str, "due_date": None}
+    for field, cast in allowed.items():
+        if field in data:
+            val = str(data[field])[:300] if cast else (data[field] or None)
+            cur.execute(
+                pgsql.SQL("UPDATE project_tasks SET {} = %s WHERE id = %s AND project_id = %s").format(
+                    pgsql.Identifier(field)
+                ),
+                (val, task_id, project_id)
+            )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/projects/<int:project_id>/tasks/<int:task_id>", methods=["DELETE"])
+def api_project_tasks_delete(project_id, task_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM project_tasks WHERE id=%s AND project_id=%s", (task_id, project_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
 @app.route("/api/config", methods=["GET"])
 def api_config_get():
     cfg = get_config()
@@ -1037,22 +1214,42 @@ def api_chat():
         except Exception:
             log.warning("/api/chat could not fetch assignments for context")
 
-        # Inject pending tasks into the system prompt
+        # Inject pending tasks (with notes) and project context into the system prompt
         try:
             conn = get_db()
             cur = conn.cursor()
             cur.execute(
-                "SELECT title, urgency FROM tasks WHERE completed = FALSE "
+                "SELECT title, urgency, notes FROM tasks WHERE completed = FALSE "
                 "ORDER BY urgency DESC, created_at ASC LIMIT 10"
             )
             tasks = [dict(r) for r in cur.fetchall()]
+            cur.execute("""
+SELECT p.title as project, pt.title as task, pt.assignee, pt.status, pt.notes
+FROM project_tasks pt JOIN projects p ON p.id = pt.project_id
+WHERE pt.status != 'done' ORDER BY pt.created_at ASC LIMIT 10""")
+            proj_tasks = [dict(r) for r in cur.fetchall()]
+            cur.execute("""
+SELECT p.title as project, pn.content as note
+FROM project_notes pn JOIN projects p ON p.id = pn.project_id
+ORDER BY pn.created_at DESC LIMIT 6""")
+            proj_notes = [dict(r) for r in cur.fetchall()]
             cur.close()
             conn.close()
             if tasks:
                 tasks_text = "; ".join(
-                    "[%s] %s" % (t["urgency"], t["title"]) for t in tasks
+                    "[%s] %s%s" % (t["urgency"], t["title"], (" — " + t["notes"][:80]) if t["notes"] else "")
+                    for t in tasks
                 )
                 system_prompt += " Pending tasks: " + tasks_text + "."
+            if proj_tasks:
+                pt_text = "; ".join(
+                    "%s (project: %s, assigned: %s, status: %s)" % (t["task"], t["project"], t["assignee"] or "unassigned", t["status"])
+                    for t in proj_tasks
+                )
+                system_prompt += " Project tasks: " + pt_text + "."
+            if proj_notes:
+                pn_text = "; ".join("%s: %s" % (n["project"], n["note"][:100]) for n in proj_notes)
+                system_prompt += " Recent project notes: " + pn_text + "."
         except Exception:
             log.warning("/api/chat could not fetch tasks for context")
 
