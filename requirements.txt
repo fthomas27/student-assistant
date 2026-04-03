@@ -1,5 +1,6 @@
 flask
 icalendar
+recurring-ical-events
 anthropic
 apscheduler
 requests

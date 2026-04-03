@@ -321,6 +321,7 @@ border-bottom: 1px solid var(--border);
 .week-event:last-child { border-bottom: none; }
 .week-event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
 .week-event-dot.personal { background: var(--gold); }
+.week-event-dot.sports { background: var(--green); }
 .week-event-dot.canvas { background: var(--accent2); }
 .week-event-dot.canvas.high { background: var(--red); }
 .week-event-dot.canvas.medium { background: var(--amber); }
@@ -1487,11 +1488,10 @@ function loadCalendar() {
       var isToday = i === 0;
       var dayEvts = byDate[dateKey] || [];
 
-      // Sort: personal events (timed) first, then canvas assignments
+      // Sort: personal first, then sports, then canvas
+      var sourceOrder = { personal: 0, sports: 1, canvas: 2 };
       dayEvts.sort(function(a, b) {
-        if (a.source === 'personal' && b.source !== 'personal') return -1;
-        if (b.source === 'personal' && a.source !== 'personal') return 1;
-        return 0;
+        return (sourceOrder[a.source] || 2) - (sourceOrder[b.source] || 2);
       });
 
       html += '<div class="week-day' + (isToday ? ' is-today' : '') + '">';
@@ -1508,9 +1508,9 @@ function loadCalendar() {
         dayEvts.forEach(function(e) {
           var dotClass = e.source === 'canvas'
             ? 'canvas' + (e.urgency === 'high' ? ' high' : e.urgency === 'medium' ? ' medium' : '')
-            : 'personal';
+            : e.source === 'sports' ? 'sports' : 'personal';
           var sub = '';
-          if (e.source === 'personal' && e.start_display) sub = e.start_display + (e.end_display ? ' – ' + e.end_display : '');
+          if ((e.source === 'personal' || e.source === 'sports') && e.start_display) sub = e.start_display + (e.end_display ? ' – ' + e.end_display : '');
           else if (e.source === 'canvas' && e.class_name) sub = e.class_name + ' · due ' + e.start_display;
           html += '<div class="week-event">' +
             '<div class="week-event-dot ' + dotClass + '"></div>' +
