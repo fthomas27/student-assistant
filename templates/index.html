@@ -1733,35 +1733,54 @@ function loadCalendar() {
 // ══════════════════════════════════════════
 // AVAILABILITY
 // ══════════════════════════════════════════
+function fmtMins(m) {
+  if (m >= 60) {
+    var h = Math.floor(m / 60), rem = m % 60;
+    return h + 'h' + (rem ? ' ' + rem + 'm' : '');
+  }
+  return m + 'm';
+}
+
 function loadAvailability() {
   var el = document.getElementById('avail-content');
   if (!el) return;
   fetch('/api/availability').then(function(r) { return r.json(); }).then(function(d) {
     var dayTypeColors = { red: 'var(--red)', white: 'var(--blue)' };
     var html = '';
+
+    // Header row: day type badge + school hours
     if (d.is_school_day) {
       var col = dayTypeColors[d.day_type] || 'var(--text2)';
-      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
         '<span style="font-size:12px;font-weight:700;padding:2px 9px;border-radius:20px;background:rgba(128,128,128,0.1);color:' + col + '">' +
-        esc(d.day_type.toUpperCase()) + ' DAY</span>' +
-        '<span style="font-size:12px;color:var(--text3)">School: ' + esc(d.school_hours) + '</span>' +
+        esc((d.day_type || '').toUpperCase()) + ' DAY</span>' +
+        '<span style="font-size:12px;color:var(--text3)">School: ' + esc(d.school_hours || '') + '</span>' +
         '</div>';
     } else {
-      html += '<div style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:8px">No School Today</div>';
+      html += '<div style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:10px">No School Today</div>';
     }
+
+    // Recommended homework time — prominent callout
+    if (d.recommended_homework_time) {
+      var rw = d.recommended_homework_time;
+      html += '<div style="background:rgba(76,175,130,0.12);border:1px solid rgba(76,175,130,0.3);border-radius:10px;padding:10px 12px;margin-bottom:10px">' +
+        '<div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px">Recommended Homework Time</div>' +
+        '<div style="font-size:16px;font-weight:700;color:var(--text)">' + esc(rw.start) + ' – ' + esc(rw.end) + '</div>' +
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + fmtMins(rw.minutes) + ' available</div>' +
+        '</div>';
+    }
+
+    // All free windows
     if (d.free_windows && d.free_windows.length > 0) {
-      html += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px">Free Windows Remaining</div>';
+      html += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px">All Free Windows</div>';
       d.free_windows.forEach(function(w) {
-        var hrs = w.minutes >= 60 ? Math.floor(w.minutes/60) + 'h ' + (w.minutes%60 ? w.minutes%60 + 'm' : '') : w.minutes + 'm';
-        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">' +
-          '<span style="font-size:13px;font-weight:500">' + esc(w.start) + ' – ' + esc(w.end) + '</span>' +
-          '<span style="font-size:11px;color:var(--green);font-weight:600">' + hrs + ' free</span>' +
+        var isRec = d.recommended_homework_time && w.start === d.recommended_homework_time.start;
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)' + (isRec ? ';opacity:0.5' : '') + '">' +
+          '<span style="font-size:13px;font-weight:' + (isRec ? '400' : '500') + '">' + esc(w.start) + ' – ' + esc(w.end) + '</span>' +
+          '<span style="font-size:11px;color:var(--green);font-weight:600">' + fmtMins(w.minutes) + '</span>' +
           '</div>';
       });
-      var totalHrs = d.total_free_minutes >= 60
-        ? Math.floor(d.total_free_minutes/60) + 'h ' + (d.total_free_minutes%60 ? d.total_free_minutes%60+'m' : '')
-        : d.total_free_minutes + 'm';
-      html += '<div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:right">' + totalHrs + ' free today</div>';
+      html += '<div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:right">' + fmtMins(d.total_free_minutes) + ' free today</div>';
     } else {
       html += '<div style="font-size:13px;color:var(--text3)">No more free time today</div>';
     }

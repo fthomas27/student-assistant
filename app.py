@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import threading
 from datetime import datetime, timedelta, date
@@ -81,19 +82,25 @@ def is_school_day(d):
     return d not in NO_SCHOOL_DATES
 
 
-def get_day_type(d):
-    """Return 'red', 'white', or None for non-school days."""
-    if not is_school_day(d):
-        return None
-    # Count school days from SCHOOL_YEAR_START (inclusive) up to but not including d
-    count = 0
+def _build_day_type_cache():
+    cache = {}
     cur = SCHOOL_YEAR_START
-    while cur < d:
+    count = 0
+    while cur <= SCHOOL_YEAR_END:
         if is_school_day(cur):
+            cache[cur] = "red" if count % 2 == 0 else "white"
             count += 1
+        else:
+            cache[cur] = None
         cur += timedelta(days=1)
-    # Even count → Red (SCHOOL_YEAR_START itself is Red, count=0 → Red)
-    return "red" if count % 2 == 0 else "white"
+    return cache
+
+_DAY_TYPE_CACHE = _build_day_type_cache()
+
+
+def get_day_type(d):
+    """Return 'red', 'white', or None for non-school days. O(1) lookup."""
+    return _DAY_TYPE_CACHE.get(d)
 
 
 def get_school_hours(d):
@@ -228,17 +235,32 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     log.info("Database initialized.")
 
 
+_config_cache = None
+_config_cache_ts = 0.0
+_config_cache_lock = threading.Lock()
+CONFIG_CACHE_TTL = 30  # seconds
+
+
 def get_config():
+    global _config_cache, _config_cache_ts
+    with _config_cache_lock:
+        if _config_cache is not None and (time.monotonic() - _config_cache_ts) < CONFIG_CACHE_TTL:
+            return _config_cache
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT key, value FROM config")
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return {r["key"]: r["value"] for r in rows}
+    result = {r["key"]: r["value"] for r in rows}
+    with _config_cache_lock:
+        _config_cache = result
+        _config_cache_ts = time.monotonic()
+    return result
 
 
 def set_config(updates):
+    global _config_cache
     conn = get_db()
     cur = conn.cursor()
     for k, v in updates.items():
@@ -248,20 +270,39 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", (k, str(v)))
     conn.commit()
     cur.close()
     conn.close()
+    with _config_cache_lock:
+        _config_cache = None  # invalidate
+
+
+_ical_cache = {}  # url -> (monotonic_time, Calendar)
+_ical_cache_lock = threading.Lock()
+ICAL_CACHE_TTL = 300  # 5 minutes
 
 
 def fetch_ical(url):
     if not url:
         return None
-    # Convert webcal to https
     if url.startswith("webcal://"):
         url = "https://" + url[9:]
+    now = time.monotonic()
+    with _ical_cache_lock:
+        if url in _ical_cache:
+            cached_at, cached_cal = _ical_cache[url]
+            if now - cached_at < ICAL_CACHE_TTL:
+                return cached_cal
     try:
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
-        return Calendar.from_ical(resp.content)
+        cal = Calendar.from_ical(resp.content)
+        with _ical_cache_lock:
+            _ical_cache[url] = (time.monotonic(), cal)
+        return cal
     except Exception as e:
         log.warning("iCal fetch failed for %s: %s", url, e)
+        # Return stale cache on failure rather than None
+        with _ical_cache_lock:
+            if url in _ical_cache:
+                return _ical_cache[url][1]
         return None
 
 
@@ -473,18 +514,34 @@ LIMIT 3""")
         tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "No pending tasks."
         stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or "None."
 
+        # Get school schedule for today to recommend homework time
+        today = datetime.now(TZ).date()
+        school_hrs = get_school_hours(today)
+        dtype = get_day_type(today)
+        if school_hrs:
+            _, _, eh, em = school_hrs
+            end_ampm = "AM" if eh < 12 else "PM"
+            school_end_str = "%d:%02d %s" % (eh % 12 or 12, em, end_ampm)
+            schedule_note = "Today is a %s day. School ends at %s." % (dtype.title(), school_end_str)
+        elif datetime.now(TZ).weekday() >= 5:
+            schedule_note = "Today is a weekend — no school."
+        else:
+            schedule_note = "No school today."
+
         prompt = (
             "You are a sharp personal assistant for %s, a high school student and student leader in Park City, Utah.\n"
-            "Current time: %s\n\n"
+            "Current time: %s\n"
+            "School schedule note: %s\n\n"
             "Upcoming Assignments:\n%s\n\n"
             "Today's Schedule:\n%s\n\n"
             "Pending Tasks:\n%s\n\n"
             "Projects needing check-in:\n%s\n\n"
             "Write a daily briefing using ONLY bullet points (start each with •). "
             "For EVERY assignment listed, include a bullet that names it, when it's due, and ends with either '— CONCERN' (if due soon, high urgency, or large estimate) or '— OK' (if plenty of time). "
-            "Then add bullets for any urgent tasks and today's schedule if present. "
+            "Add bullets for any urgent tasks and today's schedule if present. "
+            "End with ONE bullet recommending the best time today to do homework (based on when school ends and the schedule above). "
             "Keep each bullet to one line. Be direct. No intro sentence, no paragraph text."
-        ) % (name, now_str, asgn_text, events_text, tasks_text, stale_text)
+        ) % (name, now_str, schedule_note, asgn_text, events_text, tasks_text, stale_text)
 
         try:
             client = anthropic.Anthropic(api_key=api_key)
@@ -971,13 +1028,44 @@ def api_availability():
             "AM" if eh < 12 else "PM"
         )
 
+    # Pick recommended homework window: first free window ≥ 45 min after school/3pm
+    min_start_hour = 14  # don't recommend before 2 PM
+    if school_hours:
+        _, _, eh, em = school_hours
+        min_start_hour = max(eh, 14)
+    recommended = None
+    for w in free:
+        # parse start time to compare hour
+        try:
+            win_start = merged[0]["end"] if merged else now_local
+            # Use the cursor logic: compare to min_start_hour
+            # Re-derive the window start as a datetime for comparison
+            parts = w["start"].replace(" AM", "").replace(" PM", "").split(":")
+            h, m = int(parts[0]), int(parts[1])
+            if "PM" in w["start"] and h != 12:
+                h += 12
+            elif "AM" in w["start"] and h == 12:
+                h = 0
+            if h >= min_start_hour and w["minutes"] >= 45:
+                recommended = w
+                break
+        except Exception:
+            pass
+    if recommended is None:
+        # Fall back to any window ≥ 30 min
+        for w in free:
+            if w["minutes"] >= 30:
+                recommended = w
+                break
+
     return jsonify({
         "date": today.isoformat(),
         "day_type": dtype,
         "school_hours": school_display,
         "is_school_day": dtype is not None,
         "free_windows": free,
-        "total_free_minutes": sum(w["minutes"] for w in free)
+        "total_free_minutes": sum(w["minutes"] for w in free),
+        "recommended_homework_time": recommended
     })
 
 
