@@ -296,29 +296,38 @@ font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
 padding: 3px 8px; border-radius: 20px; border: 1px solid rgba(201,168,76,0.25);
 }
 
-/* ── CALENDAR ── */
-.cal-day-header {
-font-size: 10px; font-weight: 600; color: var(--text3);
-text-transform: uppercase; letter-spacing: 0.1em;
-padding: 14px 4px 6px;
-}
-.cal-event {
+/* ── CALENDAR WEEK VIEW ── */
+.week-day {
 background: var(--surface);
 border: 1px solid var(--border);
-border-radius: var(--r-sm);
-padding: 11px 14px;
-margin-bottom: 7px;
-display: flex; align-items: flex-start; gap: 10px;
+border-radius: var(--r);
+margin-bottom: 10px;
+overflow: hidden;
 }
-.cal-dot {
-width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-top: 4px;
+.week-day.is-today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.week-day-hdr {
+display: flex; align-items: center; gap: 10px;
+padding: 10px 14px;
+background: var(--surface2);
+border-bottom: 1px solid var(--border);
 }
-.cal-dot.personal { background: var(--accent2); }
-.cal-dot.canvas { background: var(--amber); }
-.cal-dot.canvas.high { background: var(--red); }
-.cal-info { flex: 1; }
-.cal-title { font-size: 14px; font-weight: 500; line-height: 1.3; }
-.cal-time { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.week-day.is-today .week-day-hdr { background: rgba(124,106,247,0.08); }
+.week-day-name { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; min-width: 30px; }
+.week-day.is-today .week-day-name { color: var(--accent2); }
+.week-day-num { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
+.week-day.is-today .week-day-num { color: var(--accent); }
+.week-today-pill { margin-left: auto; font-size: 10px; font-weight: 700; color: var(--accent); background: rgba(124,106,247,0.15); border-radius: 20px; padding: 2px 8px; letter-spacing: 0.05em; }
+.week-event { display: flex; align-items: flex-start; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--border); }
+.week-event:last-child { border-bottom: none; }
+.week-event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+.week-event-dot.personal { background: var(--gold); }
+.week-event-dot.sports { background: var(--green); }
+.week-event-dot.canvas { background: var(--accent2); }
+.week-event-dot.canvas.high { background: var(--red); }
+.week-event-dot.canvas.medium { background: var(--amber); }
+.week-event-title { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.35; }
+.week-event-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.week-empty { padding: 10px 14px; font-size: 13px; color: var(--text3); font-style: italic; }
 
 /* ── DETAIL SHEET ── */
 .sheet-backdrop {
@@ -1451,36 +1460,72 @@ return '<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;b
 }
 
 function loadCalendar() {
-fetch('/api/calendar?days=21').then(function(r) { return r.json(); }).then(function(d) {
-var events = d.events || [];
-var container = document.getElementById('calendar-container');
-if (events.length === 0) {
-container.innerHTML = '<div class="empty-state"><div class="empty-emoji">📅</div><div class="empty-title">No upcoming events</div><div class="empty-sub">Your calendar is clear for the next 3 weeks.</div></div>';
-return;
-}
-var groups = {}, order = [];
-events.forEach(function(e) {
-if (!groups[e.date]) { groups[e.date] = []; order.push(e.date); }
-groups[e.date].push(e);
-});
-var html = '';
-order.forEach(function(day) {
-html += '<div class="cal-day-header">' + esc(formatDayFull(day)) + '</div>';
-groups[day].forEach(function(e) {
-var dotClass = e.source === 'canvas' ? 'canvas' + (e.urgency === 'high' ? ' high' : '') : 'personal';
-var timeStr = e.start_display + (e.end_display ? ' -- ' + e.end_display : '');
-html += '<div class="cal-event">' +
-'<div class="cal-dot ' + dotClass + '"></div>' +
-'<div class="cal-info">' +
-'<div class="cal-title">' + esc(e.title) + '</div>' +
-'<div class="cal-time">' + esc(timeStr) + (e.class_name ? ' · ' + esc(e.class_name) : '') + '</div>' +
-'</div></div>';
-});
-});
-container.innerHTML = html;
-}).catch(function() {
-document.getElementById('calendar-container').innerHTML = '<div class="empty-state"><div class="empty-emoji">⚠</div><div class="empty-title">Could not load</div></div>';
-});
+  fetch('/api/calendar?days=7').then(function(r) { return r.json(); }).then(function(d) {
+    var events = d.events || [];
+    var container = document.getElementById('calendar-container');
+
+    // Build a map of date string → events
+    var byDate = {};
+    events.forEach(function(e) {
+      if (!byDate[e.date]) byDate[e.date] = [];
+      byDate[e.date].push(e);
+    });
+
+    // Generate the next 7 days
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var html = '';
+
+    for (var i = 0; i < 7; i++) {
+      var d2 = new Date(today);
+      d2.setDate(today.getDate() + i);
+      var yyyy = d2.getFullYear();
+      var mm = String(d2.getMonth() + 1).padStart(2, '0');
+      var dd = String(d2.getDate()).padStart(2, '0');
+      var dateKey = yyyy + '-' + mm + '-' + dd;
+      var isToday = i === 0;
+      var dayEvts = byDate[dateKey] || [];
+
+      // Sort: personal first, then sports, then canvas
+      var sourceOrder = { personal: 0, sports: 1, canvas: 2 };
+      dayEvts.sort(function(a, b) {
+        return (sourceOrder[a.source] || 2) - (sourceOrder[b.source] || 2);
+      });
+
+      html += '<div class="week-day' + (isToday ? ' is-today' : '') + '">';
+      html += '<div class="week-day-hdr">';
+      html += '<span class="week-day-name">' + days[d2.getDay()] + '</span>';
+      html += '<span class="week-day-num">' + d2.getDate() + '</span>';
+      html += '<span style="font-size:12px;color:var(--text3);margin-left:2px">' + months[d2.getMonth()] + '</span>';
+      if (isToday) html += '<span class="week-today-pill">TODAY</span>';
+      html += '</div>';
+
+      if (dayEvts.length === 0) {
+        html += '<div class="week-empty">No events or assignments</div>';
+      } else {
+        dayEvts.forEach(function(e) {
+          var dotClass = e.source === 'canvas'
+            ? 'canvas' + (e.urgency === 'high' ? ' high' : e.urgency === 'medium' ? ' medium' : '')
+            : e.source === 'sports' ? 'sports' : 'personal';
+          var sub = '';
+          if ((e.source === 'personal' || e.source === 'sports') && e.start_display) sub = e.start_display + (e.end_display ? ' – ' + e.end_display : '');
+          else if (e.source === 'canvas' && e.class_name) sub = e.class_name + ' · due ' + e.start_display;
+          html += '<div class="week-event">' +
+            '<div class="week-event-dot ' + dotClass + '"></div>' +
+            '<div>' +
+            '<div class="week-event-title">' + esc(e.title) + '</div>' +
+            (sub ? '<div class="week-event-sub">' + esc(sub) + '</div>' : '') +
+            '</div></div>';
+        });
+      }
+      html += '</div>';
+    }
+    container.innerHTML = html;
+  }).catch(function() {
+    document.getElementById('calendar-container').innerHTML = '<div class="empty-state"><div class="empty-emoji">⚠</div><div class="empty-title">Could not load calendar</div></div>';
+  });
 }
 
 // ══════════════════════════════════════════

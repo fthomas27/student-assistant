@@ -11,6 +11,7 @@ import requests
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, session, redirect
 from icalendar import Calendar
+import recurring_ical_events
 from apscheduler.schedulers.background import BackgroundScheduler
 import anthropic
 
@@ -38,6 +39,7 @@ _timer_lock = threading.Lock()
 # ── Hardcoded calendar URLs ──────────────────────────────────────────────────
 PERSONAL_ICAL_URL = "https://p107-caldav.icloud.com/published/2/OTg1NzQ4NTY5ODU3NDg1NhsR_oH4Uc5HZPs6egZwYCgNaNoVdbGZnhTJRBFIsovYYGFTxg1u1ClSf4dPKWfDbUirJMtTPpJPtm_Zct60PgM"
 CANVAS_ICAL_URL = "https://pcsd.instructure.com/feeds/calendars/user_wC7Sn9BAtT2VtytLikpkf7f2hC8Pz90mqGLPXR9F.ics"
+SPORTS_ICAL_URL = "https://api.olliesports.com/ical/team-NgstTqqq97a7sBEoUbq1Ig89P0mFplM1.ics?accountId=rxwb8YV8yIfpjwKHxxndqXcQ3ss2"
 
 
 def get_db():
@@ -238,7 +240,12 @@ def parse_calendar_events(cal, days_ahead=30):
     now_local = datetime.now(TZ)
     today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
     range_end = today_start + timedelta(days=days_ahead)
-    for component in cal.walk():
+    try:
+        components = recurring_ical_events.of(cal).between(today_start, range_end)
+    except Exception as e:
+        log.warning("recurring_ical_events failed, falling back: %s", e)
+        components = [c for c in cal.walk() if c.name == "VEVENT"]
+    for component in components:
         if component.name != "VEVENT":
             continue
         summary = str(component.get("SUMMARY", "Untitled"))
@@ -253,8 +260,6 @@ def parse_calendar_events(cal, days_ahead=30):
         if start_val.tzinfo is None:
             start_val = start_val.replace(tzinfo=TZ)
         start_local = start_val.astimezone(TZ)
-        if not (today_start <= start_local < range_end):
-            continue
         end_local = None
         if end_dt:
             end_val = end_dt.dt
@@ -576,6 +581,12 @@ def api_calendar():
                 "urgency": a["urgency"],
                 "class_name": a["class_name"]
             })
+    # Sports calendar
+    cal3 = fetch_ical(SPORTS_ICAL_URL)
+    if cal3:
+        for e in parse_calendar_events(cal3, days_ahead=days):
+            e["source"] = "sports"
+            events.append(e)
     events.sort(key=lambda x: x["start_iso"])
     return jsonify({"events": events})
 
