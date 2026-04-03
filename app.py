@@ -205,7 +205,8 @@ def parse_canvas_assignments(cal):
             due_val = datetime(due_val.year, due_val.month, due_val.day, 23, 59, 0, tzinfo=ZoneInfo("UTC"))
         if due_val.tzinfo is None:
             due_val = due_val.replace(tzinfo=ZoneInfo("UTC"))
-        if due_val < now_utc or due_val > cutoff:
+        today_start_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        if due_val < today_start_utc or due_val > cutoff:
             continue
         class_name = ""
         title = summary
