@@ -571,7 +571,7 @@ def api_calendar():
     if cal2:
         for a in parse_canvas_assignments(cal2):
             events.append({
-                "title": a["title"] + " (due)",
+                "title": a["title"],
                 "start_display": a["due_display"],
                 "end_display": "",
                 "start_iso": a["due_iso"],
