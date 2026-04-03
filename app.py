@@ -1,5 +1,4 @@
 import os
-import json
 import logging
 import threading
 from datetime import datetime, timedelta, date
@@ -7,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg2
 import psycopg2.extras
+from psycopg2 import sql as pgsql
 import requests
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, session, redirect
@@ -23,13 +23,14 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
-def login_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not session.get("authenticated"):
-            return redirect("/login")
-        return f(*args, **kwargs)
-    return decorated
+@app.before_request
+def require_auth():
+    if request.path in ('/login', '/logout'):
+        return None
+    if not session.get("authenticated"):
+        if request.path.startswith('/api/'):
+            return jsonify({"error": "Not authenticated"}), 401
+        return redirect("/login")
 
 TZ = ZoneInfo("America/Denver")
 
@@ -348,9 +349,14 @@ def generate_briefing(force=False):
         if cal2:
             events = [e for e in parse_calendar_events(cal2, days_ahead=1)]
 
-        # Get tasks
+        # Get completed assignment titles (ever) so we don't flag them
         conn = get_db()
         cur = conn.cursor()
+        cur.execute("SELECT DISTINCT assignment_title FROM completions")
+        completed_titles = set(r["assignment_title"] for r in cur.fetchall())
+        assignments = [a for a in assignments if a["title"] not in completed_titles]
+
+        # Get tasks
         cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC, created_at ASC LIMIT 5")
         tasks = [dict(r) for r in cur.fetchall()]
 
@@ -496,7 +502,6 @@ def logout():
 
 
 @app.route("/")
-@login_required
 def index():
     return render_template("index.html")
 
@@ -571,7 +576,7 @@ def api_calendar():
     if cal2:
         for a in parse_canvas_assignments(cal2):
             events.append({
-                "title": a["title"] + " (due)",
+                "title": a["title"],
                 "start_display": a["due_display"],
                 "end_display": "",
                 "start_iso": a["due_iso"],
@@ -907,7 +912,10 @@ def api_projects_update(project_id):
               "checkin_interval_days", "completion_pct"]
     for f in fields:
         if f in data:
-            cur.execute("UPDATE projects SET %s=%%s WHERE id=%%s" % f, (data[f], project_id))
+            cur.execute(
+                pgsql.SQL("UPDATE projects SET {}=%s WHERE id=%s").format(pgsql.Identifier(f)),
+                (data[f], project_id)
+            )
     if data.get("checkin_now"):
         cur.execute("UPDATE projects SET last_checkin=NOW() WHERE id=%s", (project_id,))
     conn.commit()
@@ -1007,12 +1015,25 @@ def api_chat():
             cal = fetch_ical(CANVAS_ICAL_URL)
             if cal:
                 asgn_list = parse_canvas_assignments(cal)
+                # Filter out already-completed assignments
+                try:
+                    _conn = get_db()
+                    _cur = _conn.cursor()
+                    _cur.execute("SELECT DISTINCT assignment_title FROM completions")
+                    _done = set(r["assignment_title"] for r in _cur.fetchall())
+                    _cur.close()
+                    _conn.close()
+                    asgn_list = [a for a in asgn_list if a["title"] not in _done]
+                except Exception:
+                    pass
                 if asgn_list:
                     asgn_text = "; ".join(
                         "%s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"])
                         for a in asgn_list
                     )
-                    system_prompt += " Upcoming assignments: " + asgn_text + "."
+                    system_prompt += " Upcoming assignments (not yet completed): " + asgn_text + "."
+                else:
+                    system_prompt += " All assignments are completed."
         except Exception:
             log.warning("/api/chat could not fetch assignments for context")
 

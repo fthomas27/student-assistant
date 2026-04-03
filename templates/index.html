@@ -23,8 +23,10 @@
 --text3: #555568;
 --accent: #7c6af7;
 --accent2: #a89cf8;
+--blue: #4a9eff;
 --gold: #c9a84c;
 --gold2: #e8c97a;
+--yellow: #f0c040;
 --red: #f05c5c;
 --amber: #e8963a;
 --green: #4caf82;
@@ -320,11 +322,11 @@ border-bottom: 1px solid var(--border);
 .week-event { display: flex; align-items: flex-start; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--border); }
 .week-event:last-child { border-bottom: none; }
 .week-event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
-.week-event-dot.personal { background: var(--gold); }
-.week-event-dot.sports { background: var(--green); }
-.week-event-dot.canvas { background: var(--accent2); }
+.week-event-dot.personal { background: var(--blue); }
+.week-event-dot.sports { background: var(--accent); }
+.week-event-dot.canvas { background: var(--green); }
 .week-event-dot.canvas.high { background: var(--red); }
-.week-event-dot.canvas.medium { background: var(--amber); }
+.week-event-dot.canvas.medium { background: var(--yellow); }
 .week-event-title { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.35; }
 .week-event-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
 .week-empty { padding: 10px 14px; font-size: 13px; color: var(--text3); font-style: italic; }
@@ -526,6 +528,9 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
 
   <div class="section-label">Due Today & Tomorrow</div>
   <div id="home-assignments-container"></div>
+
+  <div class="section-label" id="schedule-label" style="display:none">Today's Schedule</div>
+  <div id="home-schedule-list"></div>
 
   <div id="completed-section" style="display:none;margin-top:4px">
     <div onclick="toggleCompletedToday()" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;margin-bottom:0">
@@ -965,9 +970,12 @@ function buildAsgnCard(a, isActive) {
     '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Done</button>' +
     '</div>';
 
+  var classLine = a.class_name
+    ? '<div style="font-size:11px;font-weight:600;color:var(--accent2);letter-spacing:0.03em;margin:2px 0 4px;text-transform:uppercase">' + esc(a.class_name) + '</div>'
+    : '';
+
   var estimateRow =
-    '<div style="display:flex;align-items:center;gap:6px;margin:6px 0 2px" onclick="event.stopPropagation()">' +
-    '<span style="font-size:12px;color:var(--text3)">' + esc(a.class_name || '') + (a.class_name ? ' · ' : '') + '</span>' +
+    '<div style="display:flex;align-items:center;gap:6px;margin:4px 0 2px" onclick="event.stopPropagation()">' +
     '<input id="est-' + uid + '" type="number" value="' + estVal + '" min="1" max="600" onclick="event.stopPropagation()" ' +
     'style="width:52px;padding:2px 6px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:13px;font-weight:600;text-align:center">' +
     '<span style="font-size:12px;color:var(--text3)">min</span>' +
@@ -976,9 +984,9 @@ function buildAsgnCard(a, isActive) {
     '</div>';
 
   return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + uid + '" onclick="openAsgnDetail(\'' + uid + '\')">' +
-    '<div class="asgn-header"><div class="asgn-title">' + esc(a.title) + '</div>' +
+    '<div class="asgn-header"><div class="asgn-title">' + trunc(a.title, 40) + '</div>' +
     '<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;flex-shrink:0;white-space:nowrap;color:' + label.color + ';background:rgba(128,128,128,0.1)">' + esc(label.text) + '</span></div>' +
-    estimateRow +
+    classLine + estimateRow +
     actionButtons + timerHTML + '</div>';
 }
 
@@ -1446,17 +1454,24 @@ fetch('/api/projects/' + currentProjectId, { method: 'PATCH', headers: { 'Conten
 // CALENDAR
 // ══════════════════════════════════════════
 function loadHomeSchedule() {
-fetch('/api/calendar?days=1', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
-var events = (d.events || []).filter(function(e) { return e.source === 'personal'; });
-var el = document.getElementById('home-schedule-list');
-if (!el) return;
-if (events.length === 0) { el.innerHTML = '<div style="font-size:13px;color:var(--text3);text-align:center;padding:6px 0">No events today</div>'; return; }
-el.innerHTML = events.map(function(e) {
-return '<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">' +
-'<div style="font-size:12px;color:var(--text3);min-width:65px;padding-top:1px">' + esc(e.start_display) + '</div>' +
-'<div style="font-size:14px;font-weight:500">' + esc(e.title) + '</div></div>';
-}).join('');
-}).catch(function(){});
+  fetch('/api/calendar?days=1', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
+    var events = (d.events || []).filter(function(e) { return e.source === 'personal' || e.source === 'sports'; });
+    var el = document.getElementById('home-schedule-list');
+    var label = document.getElementById('schedule-label');
+    if (!el) return;
+    if (events.length === 0) {
+      if (label) label.style.display = 'none';
+      return;
+    }
+    if (label) label.style.display = '';
+    el.innerHTML = events.map(function(e) {
+      var dot = e.source === 'sports' ? 'var(--accent)' : 'var(--blue)';
+      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">' +
+        '<div style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;margin-top:5px"></div>' +
+        '<div style="font-size:12px;color:var(--text3);min-width:65px;padding-top:1px">' + esc(e.start_display) + '</div>' +
+        '<div style="font-size:14px;font-weight:500">' + esc(e.title) + '</div></div>';
+    }).join('');
+  }).catch(function(){});
 }
 
 function loadCalendar() {
@@ -1515,7 +1530,7 @@ function loadCalendar() {
           html += '<div class="week-event">' +
             '<div class="week-event-dot ' + dotClass + '"></div>' +
             '<div>' +
-            '<div class="week-event-title">' + esc(e.title) + '</div>' +
+            '<div class="week-event-title">' + trunc(e.title, 40) + '</div>' +
             (sub ? '<div class="week-event-sub">' + esc(sub) + '</div>' : '') +
             '</div></div>';
         });
@@ -1587,6 +1602,13 @@ sendAiMessage();
 // ══════════════════════════════════════════
 function esc(s) {
 return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function trunc(s, n) {
+  n = n || 38;
+  if (!s || s.length <= n) return s;
+  var t = s.slice(0, n);
+  var last = t.lastIndexOf(' ');
+  return esc(last > n * 0.6 ? t.slice(0, last) : t) + '&hellip;';
 }
 function escq(s) {
 return String(s || '').replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/'/g,"\\'");
