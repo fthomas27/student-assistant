@@ -349,9 +349,14 @@ def generate_briefing(force=False):
         if cal2:
             events = [e for e in parse_calendar_events(cal2, days_ahead=1)]
 
-        # Get tasks
+        # Get completed assignment titles (ever) so we don't flag them
         conn = get_db()
         cur = conn.cursor()
+        cur.execute("SELECT DISTINCT assignment_title FROM completions")
+        completed_titles = set(r["assignment_title"] for r in cur.fetchall())
+        assignments = [a for a in assignments if a["title"] not in completed_titles]
+
+        # Get tasks
         cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC, created_at ASC LIMIT 5")
         tasks = [dict(r) for r in cur.fetchall()]
 
@@ -1010,12 +1015,25 @@ def api_chat():
             cal = fetch_ical(CANVAS_ICAL_URL)
             if cal:
                 asgn_list = parse_canvas_assignments(cal)
+                # Filter out already-completed assignments
+                try:
+                    _conn = get_db()
+                    _cur = _conn.cursor()
+                    _cur.execute("SELECT DISTINCT assignment_title FROM completions")
+                    _done = set(r["assignment_title"] for r in _cur.fetchall())
+                    _cur.close()
+                    _conn.close()
+                    asgn_list = [a for a in asgn_list if a["title"] not in _done]
+                except Exception:
+                    pass
                 if asgn_list:
                     asgn_text = "; ".join(
                         "%s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"])
                         for a in asgn_list
                     )
-                    system_prompt += " Upcoming assignments: " + asgn_text + "."
+                    system_prompt += " Upcoming assignments (not yet completed): " + asgn_text + "."
+                else:
+                    system_prompt += " All assignments are completed."
         except Exception:
             log.warning("/api/chat could not fetch assignments for context")
 
