@@ -854,7 +854,7 @@ function getPriorityLabel(a) {
   if (hoursUntilDue < 12) return { text: 'Due in ' + Math.round(hoursUntilDue) + 'h', color: 'var(--amber)' };
   if (hoursUntilDue < 24) return { text: 'Due today', color: 'var(--amber)' };
   if (hoursUntilDue < 48) return { text: 'Due tomorrow', color: 'var(--text2)' };
-  if (notStarted && estimate >= 40) return { text: 'Not started · ' + estimate + ' min', color: 'var(--accent2)' };
+  if (notStarted && estimate >= 40) return { text: 'Due ' + due.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}) + ' · ' + estimate + ' min', color: 'var(--accent2)' };
   if (logged > 0) return { text: Math.round(logged) + ' min logged', color: 'var(--green)' };
   return { text: 'Due ' + new Date(a.due_iso).toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}), color: 'var(--text3)' };
 }
