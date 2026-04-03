@@ -814,7 +814,7 @@ function refreshBriefing() {
 // HOME ASSIGNMENTS (today + tomorrow only)
 // ══════════════════════════════════════════
 function loadHomeAssignments() {
-  fetch('/api/assignments').then(function(r) { return r.json(); }).then(function(d) {
+  fetch('/api/assignments', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
     assignments = d.assignments || [];
     var now = new Date();
     var todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
@@ -825,9 +825,9 @@ function loadHomeAssignments() {
     });
     renderHomeAssignments(filtered);
     renderNotifications(filtered);
-  }).catch(function() {
+  }).catch(function(err) {
     document.getElementById('home-assignments-container').innerHTML =
-      '<div class="card"><div style="color:var(--text3);text-align:center;font-size:14px">Could not load assignments</div></div>';
+      '<div class="card"><div style="color:var(--text3);text-align:center;font-size:14px">Could not load assignments: ' + err + '</div></div>';
   });
 }
 
