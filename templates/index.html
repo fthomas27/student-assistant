@@ -854,7 +854,7 @@ function getPriorityLabel(a) {
   if (hoursUntilDue < 12) return { text: 'Due in ' + Math.round(hoursUntilDue) + 'h', color: 'var(--amber)' };
   if (hoursUntilDue < 24) return { text: 'Due today', color: 'var(--amber)' };
   if (hoursUntilDue < 48) return { text: 'Due tomorrow', color: 'var(--text2)' };
-  if (notStarted && estimate >= 40) return { text: 'Not started · ' + estimate + ' min', color: 'var(--accent2)' };
+  if (notStarted && estimate >= 40) return { text: 'Due ' + due.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}) + ' · ' + estimate + ' min', color: 'var(--accent2)' };
   if (logged > 0) return { text: Math.round(logged) + ' min logged', color: 'var(--green)' };
   return { text: 'Due ' + new Date(a.due_iso).toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}), color: 'var(--text3)' };
 }
@@ -920,8 +920,8 @@ function renderHomeAssignments(list) {
 function buildAsgnCard(a, isActive) {
   var activeClass = isActive ? ' active-timer' : '';
   var label = getPriorityLabel(a);
-  var estText = a.estimate_minutes ? Math.round(a.estimate_minutes) + ' min est.' : '';
-  var metaText = (a.class_name || '') + (estText ? (a.class_name ? ' · ' : '') + estText : '');
+  var estVal = a.estimate_minutes ? Math.round(a.estimate_minutes) : 30;
+  var uid = esc(a.uid);
 
   var timerHTML = '';
   if (isActive && activeTimer) {
@@ -930,26 +930,56 @@ function buildAsgnCard(a, isActive) {
     var over = activeTimer.over_estimate;
     timerHTML = '<div class="timer-section">' +
       '<div class="timer-display' + (over ? ' over' : '') + '">' + elapsed + ' min</div>' +
-      '<div class="progress-track"><div class="progress-fill' + (over ? ' over' : '') + '" id="prog-' + esc(a.uid) + '" style="width:' + pct + '%"></div></div>' +
+      '<div class="progress-track"><div class="progress-fill' + (over ? ' over' : '') + '" id="prog-' + uid + '" style="width:' + pct + '%"></div></div>' +
       '<div class="asgn-actions">' +
       (activeTimer.paused
         ? '<button class="btn btn-primary" onclick="resumeTimer(event)">Resume</button>'
         : '<button class="btn btn-pause" onclick="pauseTimer(event)">Pause</button>') +
-      '<button class="btn btn-done" onclick="stopTimer(event,true,\'' + esc(a.uid) + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\')">Done</button>' +
+      '<button class="btn btn-done" onclick="stopTimer(event,true,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\')">Done</button>' +
       '</div></div>';
   }
 
   var actionButtons = isActive ? '' :
     '<div class="asgn-actions">' +
-    '<button class="btn btn-primary" onclick="startTimer(event,\'' + esc(a.uid) + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',' + (a.estimate_minutes || 30) + ')">Start</button>' +
-    '<button class="btn btn-done" onclick="markDone(event,\'' + esc(a.uid) + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',' + (a.estimate_minutes || 30) + ')">Done</button>' +
+    '<button class="btn btn-primary" onclick="startTimer(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Start</button>' +
+    '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Done</button>' +
     '</div>';
 
-  return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + esc(a.uid) + '" onclick="openAsgnDetail(\'' + esc(a.uid) + '\')">' +
+  var estimateRow =
+    '<div style="display:flex;align-items:center;gap:6px;margin:6px 0 2px" onclick="event.stopPropagation()">' +
+    '<span style="font-size:12px;color:var(--text3)">' + esc(a.class_name || '') + (a.class_name ? ' · ' : '') + '</span>' +
+    '<input id="est-' + uid + '" type="number" value="' + estVal + '" min="1" max="600" onclick="event.stopPropagation()" ' +
+    'style="width:52px;padding:2px 6px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:13px;font-weight:600;text-align:center">' +
+    '<span style="font-size:12px;color:var(--text3)">min</span>' +
+    '<button onclick="saveEstimateFromCard(event,\'' + uid + '\')" ' +
+    'style="padding:2px 10px;border-radius:6px;border:1px solid var(--border2);background:var(--surface3);color:var(--accent2);font-size:12px;font-weight:600;cursor:pointer">Save</button>' +
+    '</div>';
+
+  return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + uid + '" onclick="openAsgnDetail(\'' + uid + '\')">' +
     '<div class="asgn-header"><div class="asgn-title">' + esc(a.title) + '</div>' +
     '<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;flex-shrink:0;white-space:nowrap;color:' + label.color + ';background:rgba(128,128,128,0.1)">' + esc(label.text) + '</span></div>' +
-    '<div class="asgn-meta">' + esc(metaText) + '</div>' +
+    estimateRow +
     actionButtons + timerHTML + '</div>';
+}
+
+function saveEstimateFromCard(e, uid) {
+  e.stopPropagation();
+  var input = document.getElementById('est-' + uid);
+  if (!input) return;
+  var mins = parseFloat(input.value);
+  if (isNaN(mins) || mins < 1) return;
+  var btn = e.target;
+  btn.textContent = '...';
+  fetch('/api/assignments/' + encodeURIComponent(uid) + '/estimate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ minutes: mins })
+  }).then(function(r) { return r.json(); }).then(function() {
+    var a = assignments.find(function(x) { return x.uid === uid; });
+    if (a) { a.estimate_minutes = mins; a.estimate_custom = true; }
+    btn.textContent = 'Saved!';
+    setTimeout(function() { btn.textContent = 'Save'; }, 1500);
+  }).catch(function() { btn.textContent = 'Save'; });
 }
 
 // ══════════════════════════════════════════
