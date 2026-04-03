@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS completions (
 )""")
 
     cur.execute("""
+CREATE TABLE IF NOT EXISTS assignment_estimates (
+    uid TEXT PRIMARY KEY,
+    minutes REAL NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+
+    cur.execute("""
 CREATE TABLE IF NOT EXISTS timer_state (
     id INT PRIMARY KEY DEFAULT 1,
     assignment_uid TEXT NOT NULL DEFAULT '',
@@ -462,6 +469,8 @@ def api_assignments():
         today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
         cur.execute("SELECT assignment_title FROM completions WHERE completed_at >= %s", (today_start,))
         completed_titles = set(r["assignment_title"] for r in cur.fetchall())
+        cur.execute("SELECT uid, minutes FROM assignment_estimates")
+        custom_estimates = {r["uid"]: r["minutes"] for r in cur.fetchall()}
         cur.close()
         conn.close()
         assignments = parse_canvas_assignments(cal)
@@ -469,12 +478,39 @@ def api_assignments():
         for a in assignments:
             if a["title"] in completed_titles:
                 continue
-            a["estimate_minutes"] = estimate_assignment(a["title"], a["class_name"])
+            uid = a.get("uid", "")
+            if uid in custom_estimates:
+                a["estimate_minutes"] = custom_estimates[uid]
+                a["estimate_custom"] = True
+            else:
+                a["estimate_minutes"] = estimate_assignment(a["title"], a["class_name"])
+                a["estimate_custom"] = False
             result.append(a)
         return jsonify({"assignments": result})
     except Exception:
         log.exception("/api/assignments failed")
         return jsonify({"assignments": [], "error": "Internal server error fetching assignments."}), 500
+
+
+@app.route("/api/assignments/<uid>/estimate", methods=["POST"])
+def api_set_estimate(uid):
+    data = request.get_json(force=True) or {}
+    try:
+        minutes = float(data.get("minutes", 30))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid minutes value"}), 400
+    minutes = max(1.0, min(minutes, 600.0))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+INSERT INTO assignment_estimates (uid, minutes, updated_at)
+VALUES (%s, %s, NOW())
+ON CONFLICT (uid) DO UPDATE SET minutes = EXCLUDED.minutes, updated_at = NOW()
+""", (uid, minutes))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok", "minutes": minutes})
 
 
 @app.route("/api/calendar")
