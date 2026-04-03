@@ -451,24 +451,28 @@ def index():
 
 @app.route("/api/assignments")
 def api_assignments():
-    cal = fetch_ical(CANVAS_ICAL_URL)
-    if cal is None:
-        return jsonify({"assignments": [], "error": "Failed to fetch Canvas calendar."})
-    conn = get_db()
-    cur = conn.cursor()
-    today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-    cur.execute("SELECT assignment_title FROM completions WHERE completed_at >= %s", (today_start,))
-    completed_titles = set(r["assignment_title"] for r in cur.fetchall())
-    cur.close()
-    conn.close()
-    assignments = parse_canvas_assignments(cal)
-    result = []
-    for a in assignments:
-        if a["title"] in completed_titles:
-            continue
-        a["estimate_minutes"] = estimate_assignment(a["title"], a["class_name"])
-        result.append(a)
-    return jsonify({"assignments": result})
+    try:
+        cal = fetch_ical(CANVAS_ICAL_URL)
+        if cal is None:
+            return jsonify({"assignments": [], "error": "Failed to fetch Canvas calendar."})
+        conn = get_db()
+        cur = conn.cursor()
+        today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        cur.execute("SELECT assignment_title FROM completions WHERE completed_at >= %s", (today_start,))
+        completed_titles = set(r["assignment_title"] for r in cur.fetchall())
+        cur.close()
+        conn.close()
+        assignments = parse_canvas_assignments(cal)
+        result = []
+        for a in assignments:
+            if a["title"] in completed_titles:
+                continue
+            a["estimate_minutes"] = estimate_assignment(a["title"], a["class_name"])
+            result.append(a)
+        return jsonify({"assignments": result})
+    except Exception:
+        log.exception("/api/assignments failed")
+        return jsonify({"assignments": [], "error": "Internal server error fetching assignments."}), 500
 
 
 @app.route("/api/calendar")
@@ -900,6 +904,27 @@ def api_config_post():
         if "morning_briefing_time" in updates:
             schedule_briefing()
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    data = request.get_json(force=True) or {}
+    system_prompt = data.get("system", "")
+    messages = data.get("messages", [])
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured."}), 500
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        kwargs = {"model": "claude-sonnet-4-6", "max_tokens": 1024, "messages": messages}
+        if system_prompt:
+            kwargs["system"] = system_prompt
+        message = client.messages.create(**kwargs)
+        content = message.content[0].text if message.content else ""
+        return jsonify({"content": content})
+    except Exception:
+        log.exception("/api/chat failed")
+        return jsonify({"error": "Failed to reach AI. Check server logs."}), 500
 
 
 init_db()
