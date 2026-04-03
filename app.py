@@ -913,9 +913,9 @@ def api_chat():
     data = request.get_json(force=True) or {}
     system_prompt = data.get("system", "")
     messages = data.get("messages", [])
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
     if not api_key:
-        return jsonify({"error": "ANTHROPIC_API_KEY not configured."}), 500
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured. Add it in Settings."}), 500
     try:
         # Inject live assignments into the system prompt
         try:
