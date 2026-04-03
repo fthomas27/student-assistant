@@ -787,9 +787,13 @@ function saveSettings() {
 // ══════════════════════════════════════════
 // BRIEFING
 // ══════════════════════════════════════════
+function renderBriefing(content) {
+  return esc(content || 'Generating...').replace(/\n/g, '<br>');
+}
+
 function loadBriefing() {
   fetch('/api/briefing').then(function(r) { return r.json(); }).then(function(d) {
-    document.getElementById('briefing-text').innerHTML = esc(d.briefing || 'Generating...');
+    document.getElementById('briefing-text').innerHTML = renderBriefing(d.briefing);
   }).catch(function(){});
 }
 
@@ -798,15 +802,22 @@ function refreshBriefing() {
   var text = document.getElementById('briefing-text');
   icon.classList.add('spinning');
   text.classList.add('fading');
-  fetch('/api/briefing/refresh', { method: 'POST' })
-    .then(function() { return new Promise(function(res) { setTimeout(res, 3000); }); })
-    .then(function() { return fetch('/api/briefing'); })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      text.innerHTML = esc(d.briefing || '...');
-      text.classList.remove('fading');
-      icon.classList.remove('spinning');
-    }).catch(function() { icon.classList.remove('spinning'); text.classList.remove('fading'); });
+  var startedAt = Date.now();
+  fetch('/api/briefing/refresh', { method: 'POST' }).then(function() {
+    function poll() {
+      fetch('/api/briefing').then(function(r) { return r.json(); }).then(function(d) {
+        var genAt = d.generated_at ? new Date(d.generated_at).getTime() : 0;
+        if (genAt > startedAt || Date.now() - startedAt > 30000) {
+          text.innerHTML = renderBriefing(d.briefing);
+          text.classList.remove('fading');
+          icon.classList.remove('spinning');
+        } else {
+          setTimeout(poll, 2000);
+        }
+      }).catch(function() { icon.classList.remove('spinning'); text.classList.remove('fading'); });
+    }
+    setTimeout(poll, 2000);
+  }).catch(function() { icon.classList.remove('spinning'); text.classList.remove('fading'); });
 }
 
 // ══════════════════════════════════════════
