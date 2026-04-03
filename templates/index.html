@@ -1067,16 +1067,19 @@ function sendAiMessage() {
   aiHistory.push({ role: 'user', content: msg });
   var context = 'You are a smart personal assistant for Finn, a high school student and student leader. ';
   if (assignments.length > 0) { context += 'Current assignments: ' + assignments.slice(0,5).map(function(a) { return a.title + ' (' + a.due_display + ')'; }).join(', ') + '. '; }
-  fetch('https://api.anthropic.com/v1/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, system: context, messages: aiHistory }) })
+  fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ system: context, messages: aiHistory })
+  })
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      var reply = (d.content && d.content[0] && d.content[0].text) ? d.content[0].text : 'Sorry, something went wrong.';
+      var reply = d.content || d.error || 'Something went wrong.';
       aiHistory.push({ role: 'assistant', content: reply });
       var loadEl = document.getElementById(loadId);
       if (loadEl) { loadEl.style.color = 'var(--text2)'; loadEl.textContent = reply; }
       thread.scrollTop = thread.scrollHeight;
-    }).catch(function() { var loadEl = document.getElementById(loadId); if (loadEl) loadEl.textContent = 'Error. Check your API key in Settings.'; });
-}
+    }).catch(function() { var loadEl = document.getElementById(loadId); if (loadEl) loadEl.textContent = 'Connection error.'; });
 
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && e.target.id === 'ai-input' && !e.shiftKey) { e.preventDefault(); sendAiMessage(); }
