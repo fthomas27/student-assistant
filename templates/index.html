@@ -814,18 +814,67 @@ function refreshBriefing() {
 // ══════════════════════════════════════════
 // HOME ASSIGNMENTS (today + tomorrow only)
 // ══════════════════════════════════════════
+function scorePriority(a) {
+  var now = new Date();
+  var due = new Date(a.due_iso);
+  var hoursUntilDue = (due - now) / 3600000;
+  var estimate = a.estimate_minutes || 30;
+  var logged = a.minutes_logged || 0;
+  var notStarted = logged < 5;
+
+  // Base score: lower hours = higher score
+  var score = 0;
+
+  // Overdue or due very soon: massive boost
+  if (hoursUntilDue < 0) score += 1000;
+  else if (hoursUntilDue < 12) score += 500;
+  else if (hoursUntilDue < 24) score += 200;
+  else if (hoursUntilDue < 48) score += 100;
+  else if (hoursUntilDue < 72) score += 50;
+  else score += Math.max(0, 20 - hoursUntilDue / 24);
+
+  // Big assignment not started: significant boost
+  if (notStarted && estimate >= 40) score += 80;
+  else if (notStarted && estimate >= 25) score += 40;
+
+  // Partially done: small reduction (you've started it)
+  if (logged > 0) score -= 10;
+
+  return score;
+}
+
+function getPriorityLabel(a) {
+  var now = new Date();
+  var due = new Date(a.due_iso);
+  var hoursUntilDue = (due - now) / 3600000;
+  var logged = a.minutes_logged || 0;
+  var estimate = a.estimate_minutes || 30;
+  var notStarted = logged < 5;
+
+  if (hoursUntilDue < 0) return { text: 'Overdue', color: 'var(--red)' };
+  if (hoursUntilDue < 3) return { text: 'Due in ' + Math.round(hoursUntilDue) + 'h', color: 'var(--red)' };
+  if (hoursUntilDue < 12) return { text: 'Due in ' + Math.round(hoursUntilDue) + 'h', color: 'var(--amber)' };
+  if (hoursUntilDue < 24) return { text: 'Due today', color: 'var(--amber)' };
+  if (hoursUntilDue < 48) return { text: 'Due tomorrow', color: 'var(--text2)' };
+  if (notStarted && estimate >= 40) return { text: 'Not started · ' + estimate + ' min', color: 'var(--accent2)' };
+  if (logged > 0) return { text: Math.round(logged) + ' min logged', color: 'var(--green)' };
+  return { text: 'Due ' + new Date(a.due_iso).toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}), color: 'var(--text3)' };
+}
+
 function loadHomeAssignments() {
   fetch('/api/assignments', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
     assignments = d.assignments || [];
-    var now = new Date();
-    var todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-    var tomorrowEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2, 0, 0, 0);
-    var filtered = assignments.filter(function(a) {
-      var due = new Date(a.due_iso);
-      return due >= todayStart && due < tomorrowEnd;
+
+    // Score and sort all assignments by priority
+    var scored = assignments.slice().sort(function(a, b) {
+      return scorePriority(b) - scorePriority(a);
     });
-    renderHomeAssignments(filtered);
-    renderNotifications(filtered);
+
+    // Show top 6 most urgent
+    var toShow = scored.slice(0, 6);
+
+    renderHomeAssignments(toShow);
+    renderNotifications(assignments);
   }).catch(function(err) {
     document.getElementById('home-assignments-container').innerHTML =
       '<div class="card"><div style="color:var(--text3);text-align:center;font-size:14px">Could not load assignments: ' + err + '</div></div>';
@@ -835,12 +884,25 @@ function loadHomeAssignments() {
 function renderNotifications(allAsgn) {
   var container = document.getElementById('notif-container');
   var html = '';
-  // Stale project nudges come from projects load — skip here, handled separately
-  // High urgency assignments
-  var urgent = allAsgn.filter(function(a) { return a.urgency === 'high'; });
-  if (urgent.length > 0) {
-    html += '<div class="notif-row"><span class="notif-icon">⚠</span><div class="notif-text"><span class="notif-title">' + urgent.length + ' assignment' + (urgent.length > 1 ? 's' : '') + ' due soon</span><br>' +
-      urgent.slice(0, 2).map(function(a) { return esc(a.title); }).join(', ') + (urgent.length > 2 ? '...' : '') + '</div></div>';
+  var now = new Date();
+  var overdue = allAsgn.filter(function(a) { return new Date(a.due_iso) < now; });
+  var dueToday = allAsgn.filter(function(a) {
+    var due = new Date(a.due_iso);
+    var hrs = (due - now) / 3600000;
+    return hrs >= 0 && hrs < 24;
+  });
+  var bigNotStarted = allAsgn.filter(function(a) {
+    var hrs = (new Date(a.due_iso) - now) / 3600000;
+    return (a.minutes_logged || 0) < 5 && (a.estimate_minutes || 0) >= 40 && hrs < 72 && hrs >= 0;
+  });
+  if (overdue.length > 0) {
+    html += '<div class="notif-row"><span class="notif-icon">&#128680;</span><div class="notif-text"><span class="notif-title">' + overdue.length + ' overdue</span><br>' + overdue.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + '</div></div>';
+  }
+  if (dueToday.length > 0) {
+    html += '<div class="notif-row"><span class="notif-icon">&#9888;</span><div class="notif-text"><span class="notif-title">' + dueToday.length + ' due today</span><br>' + dueToday.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + (dueToday.length > 2 ? '...' : '') + '</div></div>';
+  }
+  if (bigNotStarted.length > 0) {
+    html += '<div class="notif-row"><span class="notif-icon">&#128161;</span><div class="notif-text"><span class="notif-title">Not started yet</span><br>' + bigNotStarted.slice(0,2).map(function(a){ return esc(a.title) + ' (' + Math.round(a.estimate_minutes) + ' min)'; }).join(', ') + '</div></div>';
   }
   container.innerHTML = html;
 }
@@ -848,7 +910,7 @@ function renderNotifications(allAsgn) {
 function renderHomeAssignments(list) {
   var container = document.getElementById('home-assignments-container');
   if (list.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-emoji">🎉</div><div class="empty-title">All clear!</div><div class="empty-sub">Nothing due today or tomorrow.</div></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-emoji">&#127881;</div><div class="empty-title">All clear!</div><div class="empty-sub">No urgent assignments right now.</div></div>';
     return;
   }
   container.innerHTML = list.map(function(a) {
@@ -859,9 +921,9 @@ function renderHomeAssignments(list) {
 
 function buildAsgnCard(a, isActive) {
   var activeClass = isActive ? ' active-timer' : '';
-  var estText = a.estimate_minutes ? Math.round(a.estimate_minutes) + ' min' : '';
-  var metaText = (a.class_name || '') + (a.class_name && a.due_display ? ' · ' : '') + (a.due_display || '');
-  if (estText) metaText += (metaText ? ' · ' : '') + estText;
+  var label = getPriorityLabel(a);
+  var estText = a.estimate_minutes ? Math.round(a.estimate_minutes) + ' min est.' : '';
+  var metaText = (a.class_name || '') + (estText ? (a.class_name ? ' · ' : '') + estText : '');
 
   var timerHTML = '';
   if (isActive && activeTimer) {
@@ -887,7 +949,7 @@ function buildAsgnCard(a, isActive) {
 
   return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + esc(a.uid) + '" onclick="openAsgnDetail(\'' + esc(a.uid) + '\')">' +
     '<div class="asgn-header"><div class="asgn-title">' + esc(a.title) + '</div>' +
-    '<span class="urgency-badge ' + esc(a.urgency) + '">' + esc(a.urgency) + '</span></div>' +
+    '<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;flex-shrink:0;white-space:nowrap;color:' + label.color + ';background:rgba(128,128,128,0.1)">' + esc(label.text) + '</span></div>' +
     '<div class="asgn-meta">' + esc(metaText) + '</div>' +
     actionButtons + timerHTML + '</div>';
 }
