@@ -270,9 +270,11 @@ def get_class_average(class_name):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-SELECT AVG(duration_minutes) as avg FROM completions
-WHERE class_name = %s AND timed = TRUE AND duration_minutes > 0
-ORDER BY completed_at DESC LIMIT 20""", (class_name,))
+SELECT AVG(duration_minutes) as avg FROM (
+    SELECT duration_minutes FROM completions
+    WHERE class_name = %s AND timed = TRUE AND duration_minutes > 0
+    ORDER BY completed_at DESC LIMIT 20
+) sub""", (class_name,))
     row = cur.fetchone()
     cur.close()
     conn.close()
