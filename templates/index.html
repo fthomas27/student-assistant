@@ -497,7 +497,6 @@ cursor: pointer; font-family: ‘DM Sans’, sans-serif;
 <div class="view-port">
   <div class="tabs-wrapper" id="tabs-wrapper">
 
-```
 <!-- ══ TAB 0: HOME ══ -->
 <div class="tab-panel" id="tab-home">
   <div id="notif-container"></div>
@@ -621,7 +620,6 @@ cursor: pointer; font-family: ‘DM Sans’, sans-serif;
   </div>
   <div id="ai-thread"></div>
 </div>
-```
 
   </div>
 </div>
@@ -1291,7 +1289,6 @@ function openProjectDetail(id) {
     '<div class="sheet-section-label" style="margin-bottom:8px">Notes</div>' +
     '<textarea class="field-input" id="new-note-input" rows="2" placeholder="Add a note or update..."></textarea>' +
 
-```
 '<button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="addProjectNote()">Add Note</button>' +
 '</div>' +
 
@@ -1304,7 +1301,6 @@ function openProjectDetail(id) {
 '<button class="btn btn-outline" onclick="closeAllSheets()" style="flex:1">Close</button>' +
 '<button class="btn btn-gold" onclick="checkinProject(' + id + ')">Log Check-in</button>' +
 '</div>';
-```
 
 document.getElementById(‘project-detail-content’).innerHTML = content;
 document.getElementById(‘sheet-backdrop’).classList.add(‘open’);
