@@ -32,28 +32,7 @@ def get_db():
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     return psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
-@app.route("/api/chat", methods=["POST"])
-@require_auth
-def api_chat():
-    data = request.get_json(force=True) or {}
-    messages = data.get("messages", [])
-    system = data.get("system", "")
-    cfg = get_config()
-    api_key = cfg.get("anthropic_api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        return jsonify({"error": "no api key"}), 400
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1000,
-            system=system,
-            messages=messages
-        )
-        return jsonify({"content": message.content[0].text})
-    except Exception as e:
-        log.error("Chat error: %s", e)
-        return jsonify({"error": str(e)}), 500
+
 
 def init_db():
     conn = get_db()
@@ -205,8 +184,7 @@ def parse_canvas_assignments(cal):
             due_val = datetime(due_val.year, due_val.month, due_val.day, 23, 59, 0, tzinfo=ZoneInfo("UTC"))
         if due_val.tzinfo is None:
             due_val = due_val.replace(tzinfo=ZoneInfo("UTC"))
-        today_start_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
-        if due_val < today_start_utc or due_val > cutoff:
+        if due_val < now_utc or due_val > cutoff:
             continue
         class_name = ""
         title = summary
@@ -361,11 +339,11 @@ LIMIT 3""")
 
         now_str = datetime.now(TZ).strftime("%A, %B %-d, %Y at %-I:%M %p")
 
-        today_asgn = assignments[:8]
+        today_asgn = [a for a in assignments if a["urgency"] == "high"][:5]
         asgn_text = "\n".join(["- %s (%s) due %s, est. %d min" % (
             a["title"], a["class_name"], a["due_display"],
             estimate_assignment(a["title"], a["class_name"])
-        ) for a in today_asgn]) or "No assignments found."
+        ) for a in today_asgn]) or "No urgent assignments."
 
         events_text = "\n".join(["- %s at %s" % (e["title"], e["start_display"]) for e in events]) or "No events today."
         tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "No pending tasks."
@@ -375,11 +353,10 @@ LIMIT 3""")
             "You are a sharp, efficient personal assistant for a high school student named %s who is also a "
             "student leader managing projects and working toward a future in politics. "
             "Write a concise, action-oriented daily briefing (4-6 sentences). "
-            "Always list the specific upcoming assignments by name with their due dates and time estimates. "
-            "Never say the student is caught up or ahead - always name the actual assignments coming up. "
-            "Also mention today's schedule and any urgent tasks. "
+            "Cover: most urgent assignments with estimated time, today's schedule, any urgent tasks, "
+            "and if there are stale projects mention them briefly. "
             "Be warm but direct. No bullet points. Sound like a capable chief of staff briefing a busy person. "
-            "Current time: %s\n\nUpcoming assignments (next 3 days, always mention these specifically):\n%s\n\nToday's schedule:\n%s\n\nPending Tasks:\n%s\n\nProjects needing check-in:\n%s"
+            "Current time: %s\n\nUrgent Assignments:\n%s\n\nToday's schedule:\n%s\n\nPending Tasks:\n%s\n\nProjects needing check-in:\n%s"
         ) % (name, now_str, asgn_text, events_text, tasks_text, stale_text)
 
         try:
