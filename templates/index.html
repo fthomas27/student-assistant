@@ -1019,12 +1019,26 @@ document.addEventListener('DOMContentLoaded', function() {
   loadStats();
   startTimerPoller();
   restoreCalReminders();
-  setInterval(function() {
-    fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
-  }, 120000);
+
+  // Smart briefing polling: only fetch when app is visible
+  var lastBriefingFetch = Date.now();
+  briefingPollerInterval = setInterval(function() {
+    if (document.visibilityState === 'visible') {
+      // Only fetch if it's been more than 2 minutes since last fetch
+      if (Date.now() - lastBriefingFetch > 120000) {
+        fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
+        lastBriefingFetch = Date.now();
+      }
+    }
+  }, 30000); // Check every 30s, but only fetch if 2+ minutes have passed
+
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {
-      fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
+      // When app becomes visible, fetch immediately if cache is stale
+      if (Date.now() - lastBriefingFetch > 60000) {
+        fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
+        lastBriefingFetch = Date.now();
+      }
     }
   });
 });
@@ -1734,9 +1748,24 @@ function markDone(e, uid, title, className, estimate) {
     });
 }
 
+var timerPollerInterval = null;
+var briefingPollerInterval = null;
+
 function startTimerPoller() {
-  setInterval(pollTimer, 60000);
   pollTimer();
+  // Smart polling: fast when timer active, slow otherwise
+  timerPollerInterval = setInterval(pollTimer, 60000);
+
+  // When visibility changes, adjust polling
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && activeTimer && activeTimer.active) {
+      // App just became visible and timer is running - poll immediately
+      pollTimer();
+      // Switch to fast polling (10s) while timer is active
+      clearInterval(timerPollerInterval);
+      timerPollerInterval = setInterval(pollTimer, 10000);
+    }
+  });
 }
 
 function pollTimer() {
