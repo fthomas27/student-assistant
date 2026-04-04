@@ -1648,8 +1648,10 @@ function openAsgnDetail(uid) {
   document.getElementById('asgn-detail-sheet').classList.add('open');
 
   // Save estimate when user changes the input
-  document.getElementById('estimate-input').addEventListener('change', function() {
-    var mins = parseFloat(this.value);
+  // Create a named handler to avoid listener accumulation when sheet is opened multiple times
+  var estimateInput = document.getElementById('estimate-input');
+  window._estimateChangeHandler = function() {
+    var mins = parseFloat(estimateInput.value);
     if (isNaN(mins) || mins < 1) return;
     fetch('/api/assignments/' + encodeURIComponent(a.uid) + '/estimate', {
       method: 'POST',
@@ -1660,7 +1662,10 @@ function openAsgnDetail(uid) {
       a.estimate_custom = true;
       document.getElementById('estimate-tag').textContent = '(your estimate)';
     });
-  });
+  };
+  // Remove existing listener to prevent accumulation
+  estimateInput.removeEventListener('change', window._estimateChangeHandler);
+  estimateInput.addEventListener('change', window._estimateChangeHandler);
 }
 
 function startTimerFromDetail() {
@@ -3019,12 +3024,13 @@ function openCalEventDetail(evtJson) {
     hintEl.textContent = 'All-day events: use your calendar app for alerts.';
   }
   if (notifToggle) {
-    notifToggle.addEventListener('change', function() {
+    // Create a named handler to avoid listener accumulation when modal is opened multiple times
+    window._calEventNotifHandler = function() {
       var hint = document.getElementById('notif-toggle-hint');
-      if (this.checked) {
+      if (notifToggle.checked) {
         if (!('Notification' in window)) {
           if (hint) hint.textContent = 'Notifications are not supported in this browser.';
-          this.checked = false;
+          notifToggle.checked = false;
           return;
         }
         Notification.requestPermission().then(function(perm) {
@@ -3045,7 +3051,10 @@ function openCalEventDetail(evtJson) {
         removeCalEventReminder(e);
         if (hint) hint.textContent = '';
       }
-    });
+    };
+    // Remove existing listener to prevent accumulation
+    notifToggle.removeEventListener('change', window._calEventNotifHandler);
+    notifToggle.addEventListener('change', window._calEventNotifHandler);
   }
 }
 
