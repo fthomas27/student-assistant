@@ -1967,9 +1967,20 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
 // HELPERS
 // ══════════════════════════════════════════
 function renderMarkdown(s) {
-  return esc(s)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>');
+  return s.split('\n').map(function(line) {
+    // ## Section headers
+    if (/^##\s+/.test(line)) {
+      var heading = esc(line.replace(/^##\s+/, ''));
+      return '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 5px">' + heading + '</div>';
+    }
+    // Escape HTML then apply inline bold
+    var out = esc(line)
+      .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);font-weight:700">$1</strong>');
+    // Color — CONCERN and — OK
+    out = out.replace(/—\s*CONCERN/g, '<span style="color:var(--red);font-weight:700">— CONCERN</span>');
+    out = out.replace(/—\s*OK/g, '<span style="color:var(--green);font-weight:700">— OK</span>');
+    return out;
+  }).join('<br>');
 }
 
 function esc(s) {
