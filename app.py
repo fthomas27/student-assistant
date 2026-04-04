@@ -281,6 +281,15 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     cur.execute("INSERT INTO briefing_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
     cur.execute("INSERT INTO debrief_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
     cur.execute("INSERT INTO workout_state (id, last_focus_index) VALUES (1, -1) ON CONFLICT (id) DO NOTHING")
+
+    # Create indexes for frequently queried columns
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_assignment_title ON completions(assignment_title)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed, created_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_project_tasks_assignee_status ON project_tasks(assignee, status)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_completed_at ON completions(completed_at DESC)")
+
     conn.commit()
     cur.close()
     conn.close()
@@ -328,6 +337,7 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", (k, str(v)))
 
 _ical_cache = {}  # url -> (monotonic_time, Calendar)
 _ical_cache_lock = threading.Lock()
+_ical_inflight = {}  # url -> threading.Event for request coalescing
 ICAL_CACHE_TTL = 300  # 5 minutes
 
 
@@ -342,20 +352,43 @@ def fetch_ical(url):
             cached_at, cached_cal = _ical_cache[url]
             if now - cached_at < ICAL_CACHE_TTL:
                 return cached_cal
+
+        # Check if another thread is already fetching this URL
+        if url in _ical_inflight:
+            event = _ical_inflight[url]
+
+    # If another thread is fetching, wait for it
+    if url in _ical_inflight:
+        _ical_inflight[url].wait(timeout=20)
+        with _ical_cache_lock:
+            if url in _ical_cache:
+                return _ical_cache[url][1]
+        return None
+
+    # Mark this URL as being fetched
+    event = threading.Event()
+    with _ical_cache_lock:
+        _ical_inflight[url] = event
+
     try:
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
         cal = Calendar.from_ical(resp.content)
         with _ical_cache_lock:
             _ical_cache[url] = (time.monotonic(), cal)
+        event.set()  # Signal other waiting threads
         return cal
     except Exception as e:
         log.warning("iCal fetch failed for %s: %s", url, e)
+        event.set()  # Signal other waiting threads even on failure
         # Return stale cache on failure rather than None
         with _ical_cache_lock:
             if url in _ical_cache:
                 return _ical_cache[url][1]
         return None
+    finally:
+        with _ical_cache_lock:
+            _ical_inflight.pop(url, None)  # Clean up the inflight marker
 
 
 def parse_canvas_assignments(cal):
@@ -484,10 +517,38 @@ SELECT AVG(duration_minutes) as avg FROM (
     return None
 
 
-def estimate_assignment(title, class_name):
-    avg = get_class_average(class_name)
-    if avg:
-        return avg
+def get_class_averages_batch(class_names):
+    """Batch query for multiple class averages - avoids N+1 queries."""
+    if not class_names:
+        return {}
+    conn = get_db()
+    cur = conn.cursor()
+    # Get all class averages in a single query
+    cur.execute("""
+SELECT class_name, AVG(duration_minutes) as avg FROM (
+    SELECT class_name, duration_minutes, ROW_NUMBER() OVER (PARTITION BY class_name ORDER BY completed_at DESC) as rn
+    FROM completions
+    WHERE class_name = ANY(%s) AND timed = TRUE AND duration_minutes > 0
+) sub WHERE rn <= 20
+GROUP BY class_name""", (list(class_names),))
+    result = {}
+    for row in cur.fetchall():
+        if row["avg"] is not None:
+            result[row["class_name"]] = round(float(row["avg"]), 1)
+    cur.close()
+    conn.close()
+    return result
+
+
+def estimate_assignment(title, class_name, class_avg_cache=None):
+    if class_avg_cache and class_name in class_avg_cache:
+        avg = class_avg_cache[class_name]
+        if avg:
+            return avg
+    elif not class_avg_cache:
+        avg = get_class_average(class_name)
+        if avg:
+            return avg
     title_lower = title.lower()
     for kw, mins in KEYWORD_ESTIMATES.items():
         if kw in title_lower:
@@ -579,8 +640,12 @@ LIMIT 3""")
 
         asgn_sorted = sorted(assignments, key=lambda a: a.get("due_iso", ""))
 
+        # Batch load all class averages to avoid N+1 queries
+        class_names = set(a.get("class_name") for a in asgn_sorted if a.get("class_name"))
+        class_avg_cache = get_class_averages_batch(class_names)
+
         def _fmt_asgn(a):
-            est = int(estimate_assignment(a["title"], a["class_name"]))
+            est = int(estimate_assignment(a["title"], a["class_name"], class_avg_cache=class_avg_cache))
             return "%s (%s) due %s, ~%d min, urgency %s" % (
                 a["title"], a["class_name"], a["due_display"], est, a.get("urgency", "medium"))
 
