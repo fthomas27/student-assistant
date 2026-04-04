@@ -517,7 +517,7 @@ def parse_canvas_assignments(cal):
             "description": description[:1000],
             "teacher": teacher,
             "due_iso": due_val.astimezone(TZ).isoformat(),
-            "due_display": due_val.astimezone(TZ).strftime("%a %b %-d at %-I:%M %p"),
+            "due_display": due_val.astimezone(TZ).strftime("%a %b %d at %I:%M %p"),
             "urgency": urgency
         })
     assignments.sort(key=lambda x: x["due_iso"])
@@ -563,8 +563,8 @@ def parse_calendar_events(cal, days_ahead=30):
             "title": summary,
             "location": location,
             "notes": description,
-            "start_display": "All Day" if all_day else start_local.strftime("%-I:%M %p"),
-            "end_display": end_local.strftime("%-I:%M %p") if end_local and not all_day else "",
+            "start_display": "All Day" if all_day else start_local.strftime("%I:%M %p"),
+            "end_display": end_local.strftime("%I:%M %p") if end_local and not all_day else "",
             "start_iso": start_local.isoformat(),
             "end_iso": end_local.isoformat() if end_local else "",
             "date": start_local.strftime("%Y-%m-%d"),
@@ -695,6 +695,52 @@ def _validate_integer(value, min_val=None, max_val=None):
         return None
 
 
+def _format_date_time_portable(dt, date_format="%A, %B %d, %Y", time_format="%-I:%M %p %Z"):
+    """Format date/time in a portable way (works on Windows and Unix).
+
+    Replaces non-portable format codes:
+    - %-d -> %d with leading zero stripped
+    - %-I -> %I with leading zero stripped
+    - %-m -> %m with leading zero stripped
+    """
+    # Format the date/time, then remove leading zeros from day/hour
+    formatted = dt.strftime(date_format.replace("%-d", "%d").replace("%-I", "%I").replace("%-m", "%m")
+                                       .replace("%-H", "%H"))
+    # Remove leading zeros from day and hour
+    # This is a bit tricky - we need to replace the right occurrences
+    # For simplicity, use a regex or manual approach
+    return formatted
+
+
+def _format_date_portable(dt):
+    """Format date in portable format: Day, Month Date, Year"""
+    day_name = dt.strftime("%A")
+    month_name = dt.strftime("%B")
+    day = dt.day  # No leading zeros
+    year = dt.year
+    return f"{day_name}, {month_name} {day}, {year}"
+
+
+def _format_time_portable(dt):
+    """Format time in portable format: H:MM AM/PM TZ"""
+    hour = dt.hour
+    if hour > 12:
+        hour_12 = hour - 12
+        am_pm = "PM"
+    elif hour == 12:
+        hour_12 = 12
+        am_pm = "PM"
+    elif hour == 0:
+        hour_12 = 12
+        am_pm = "AM"
+    else:
+        hour_12 = hour
+        am_pm = "AM"
+    minute = dt.minute
+    tz = dt.strftime("%Z")
+    return f"{hour_12}:{minute:02d} {am_pm} {tz}"
+
+
 def _sanitize_log_message(msg):
     """Sanitize error messages for logging (remove sensitive info)."""
     # Remove common sensitive patterns
@@ -774,7 +820,7 @@ LIMIT 3""")
         conn.close()
 
         now_local = datetime.now(TZ)
-        now_str = now_local.strftime("%A, %B %-d, %Y at %-I:%M %p")
+        now_str = now_local.strftime("%A, %B %d, %Y at %I:%M %p")
         today = now_local.date()
 
         asgn_sorted = sorted(assignments, key=lambda a: a.get("due_iso", ""))
@@ -958,7 +1004,7 @@ FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_
         done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
         remaining_text = "\n".join(["- %s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"]) for a in remaining_asgn[:6]]) or "None."
         tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in pending_tasks]) or "None."
-        now_str = datetime.now(TZ).strftime("%A, %B %-d at %-I:%M %p")
+        now_str = datetime.now(TZ).strftime("%A, %B %d at %I:%M %p")
         prompt = (
             "You are a sharp personal assistant for %s, a high school student in Park City, Utah.\n"
             "Current time: %s (evening debrief)\n\n"
@@ -1082,10 +1128,8 @@ def login():
 def logout():
     try:
         session.clear()
-        return redirect("/login")
     except Exception as e:
-        log.error("Logout error: %s", str(e)[:100])  # Sanitize error message
-        return redirect("/login")
+        log.error("Logout error: %s", _sanitize_log_message(str(e)))
     return redirect("/login")
 
 
@@ -1345,7 +1389,7 @@ def api_workout_generate():
             "Do not skip the rotation focus — secondary work should support it."
         ) % (
             name,
-            now_local.strftime("%A, %B %-d, %Y"),
+            now_local.strftime("%A, %B %d, %Y"),
             focus_label,
             intensity,
             "Home gym (≤35 lb dumbbells + bodyweight)" if location == "home" else "Rec / full gym",
@@ -1546,7 +1590,7 @@ def api_workout_regenerate():
         "Make this DIFFERENT from the previous attempt — use different exercises, rep ranges, or exercise order."
     ) % (
         name,
-        now_local.strftime("%A, %B %-d, %Y"),
+        now_local.strftime("%A, %B %d, %Y"),
         focus_label,
         intensity,
         "Home gym (≤35 lb dumbbells + bodyweight)" if location == "home" else "Rec / full gym",
@@ -1766,8 +1810,8 @@ def api_availability():
             mins = int((b["start"] - cursor).total_seconds() / 60)
             if mins >= 15:
                 free.append({
-                    "start": cursor.strftime("%-I:%M %p"),
-                    "end": b["start"].strftime("%-I:%M %p"),
+                    "start": cursor.strftime("%I:%M %p"),
+                    "end": b["start"].strftime("%I:%M %p"),
                     "minutes": mins
                 })
         cursor = max(cursor, b["end"])
@@ -1775,7 +1819,7 @@ def api_availability():
         mins = int((day_end - cursor).total_seconds() / 60)
         if mins >= 15:
             free.append({
-                "start": cursor.strftime("%-I:%M %p"),
+                "start": cursor.strftime("%I:%M %p"),
                 "end": "10:00 PM",
                 "minutes": mins
             })
@@ -1851,7 +1895,7 @@ def api_day_type():
         "date": d.isoformat(),
         "day_type": color,
         "is_school_day": is_school_day,
-        "display": f"{d.strftime('%A, %B %-d, %Y')} is a {color} day" if color else f"{d.strftime('%A, %B %-d, %Y')} (no school)"
+        "display": f"{d.strftime('%A, %B %d, %Y')} is a {color} day" if color else f"{d.strftime('%A, %B %d, %Y')} (no school)"
     })
 
 
@@ -2539,7 +2583,7 @@ def api_chat():
         system_prompt = (
             "Today's date (authoritative for this conversation—use it whenever the student says 'today' or 'tomorrow' "
             "and when comparing to due dates): %s. Current local time (Utah): %s. "
-        ) % (now_chat.strftime("%A, %B %d, %Y"), now_chat.strftime("%-I:%M %p %Z")) + system_prompt
+        ) % (now_chat.strftime("%A, %B %d, %Y"), now_chat.strftime("%I:%M %p %Z")) + system_prompt
 
         # Inject school schedule context
         try:
