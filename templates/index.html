@@ -2378,7 +2378,9 @@ function openProjectDetail(id) {
   var p = allProjects.find(function(x) { return x.id === id; });
   if (!p) return;
 
-  var membersStr = [p.lead ? '👑 ' + p.lead : '', p.members].filter(Boolean).join(', ');
+  var leadLine = p.lead ? '<div style="font-size:13px;color:var(--text2);margin-bottom:6px"><strong>Lead:</strong> ' + esc(p.lead) + '</div>' : '';
+  var othersLine = p.members ? '<div style="font-size:13px;color:var(--text2)"><strong>Others assigned:</strong> ' + esc(p.members) + '</div>' : '';
+  var teamSection = leadLine || othersLine ? '<div style="margin-bottom:16px">' + leadLine + othersLine + '</div>' : '';
 
   var content = '<div class="sheet-title">' + esc(p.title) + '</div>' +
     '<div class="sheet-sub">' + esc(p.description || '') + '</div>' +
@@ -2388,8 +2390,7 @@ function openProjectDetail(id) {
     (p.status === 'done' ? '<span style="font-size:12px;color:var(--text3)">Marked complete — still here until you delete it.</span>' : '') +
     '</div>' +
 
-    '<div class="sheet-section"><div class="sheet-section-label">Team</div>' +
-    '<div class="sheet-body">' + esc(membersStr || 'Not set') + '</div></div>' +
+    teamSection +
 
     '<div class="sheet-section">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
