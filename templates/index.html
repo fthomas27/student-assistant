@@ -995,10 +995,6 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
     <input class="field-input" id="setting-cutoff" type="number" min="1" max="5" step="0.5" placeholder="2.0">
   </div>
   <div class="field-group">
-    <div class="field-label">Anthropic API Key</div>
-    <input class="field-input" id="setting-apikey" type="password" placeholder="sk-ant-...">
-  </div>
-  <div class="field-group">
     <div class="field-label">Friday email — addressee</div>
     <input class="field-input" id="setting-weekly-advisor" type="text" placeholder="Mr. Goldberg">
   </div>
@@ -1173,8 +1169,6 @@ function saveSettings() {
     timer_cutoff_multiplier: document.getElementById('setting-cutoff').value,
     timezone: document.getElementById('setting-timezone').value
   };
-  var apikey = document.getElementById('setting-apikey').value.trim();
-  if (apikey) payload.anthropic_api_key = apikey;
   var wadv = document.getElementById('setting-weekly-advisor');
   var fname = document.getElementById('setting-formal-name');
   if (wadv) payload.weekly_recap_advisor = wadv.value.trim().slice(0, 200);

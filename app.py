@@ -17,9 +17,20 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import anthropic
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "finn-dashboard-secret-change-me")
+
+# Require SECRET_KEY from environment - do not provide default
+_secret_key = os.environ.get("SECRET_KEY")
+if not _secret_key:
+    raise ValueError("CRITICAL: SECRET_KEY environment variable must be set. Generate with: python -c 'import secrets; print(secrets.token_hex(32))'")
+app.secret_key = _secret_key
+
+# Require APP_PASSWORD from environment - do not provide default
+_app_password = os.environ.get("APP_PASSWORD")
+if not _app_password:
+    raise ValueError("CRITICAL: APP_PASSWORD environment variable must be set. Use a strong password.")
+APP_PASSWORD = _app_password
+
 app.permanent_session_lifetime = timedelta(days=30)
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "finn2025")
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
@@ -62,9 +73,13 @@ WORKOUT_FOCUS_CYCLE = [
 ]
 
 # ── Hardcoded calendar URLs ──────────────────────────────────────────────────
-PERSONAL_ICAL_URL = "https://p107-caldav.icloud.com/published/2/OTg1NzQ4NTY5ODU3NDg1NhsR_oH4Uc5HZPs6egZwYCgNaNoVdbGZnhTJRBFIsovYYGFTxg1u1ClSf4dPKWfDbUirJMtTPpJPtm_Zct60PgM"
-CANVAS_ICAL_URL = "https://pcsd.instructure.com/feeds/calendars/user_wC7Sn9BAtT2VtytLikpkf7f2hC8Pz90mqGLPXR9F.ics"
-SPORTS_ICAL_URL = "https://api.olliesports.com/ical/team-NgstTqqq97a7sBEoUbq1Ig89P0mFplM1.ics?accountId=rxwb8YV8yIfpjwKHxxndqXcQ3ss2"
+# iCal URLs - MUST be provided via environment variables for security
+PERSONAL_ICAL_URL = os.environ.get("PERSONAL_ICAL_URL", "")
+CANVAS_ICAL_URL = os.environ.get("CANVAS_ICAL_URL", "")
+SPORTS_ICAL_URL = os.environ.get("SPORTS_ICAL_URL", "")
+
+if not CANVAS_ICAL_URL:
+    log.warning("CANVAS_ICAL_URL not set - Canvas assignments will not be available")
 
 # ── Park City School District 2025-2026 Bell Schedule ────────────────────────
 # Red Day = shorter (A-block), White Day = longer (B-block), alternating each school day
@@ -281,7 +296,6 @@ CREATE TABLE IF NOT EXISTS workout_logs (
         "name": "Finn",
         "morning_briefing_time": "07:00",
         "timer_cutoff_multiplier": "2.0",
-        "anthropic_api_key": "",
         "weekly_recap_advisor": "Mr. Goldberg",
         "formal_signoff_name": "Finley Thomas",
     }
@@ -1159,7 +1173,7 @@ def api_workout_generate():
     if location not in ("home", "rec"):
         location = "home"
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return jsonify({"error": "Add your Anthropic API key in Settings to generate workouts."}), 500
 
@@ -1291,7 +1305,7 @@ def api_workout_log_custom():
     if not user_description:
         return jsonify({"error": "Workout description required"}), 400
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return jsonify({"error": "Add your Anthropic API key in Settings to log workouts."}), 500
 
@@ -1359,7 +1373,7 @@ def api_workout_regenerate():
     if log_id <= 0:
         return jsonify({"error": "log_id required"}), 400
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return jsonify({"error": "Add your Anthropic API key in Settings to regenerate workouts."}), 500
 
@@ -2326,7 +2340,6 @@ def api_config_get():
         "name": cfg.get("name", "Finn"),
         "morning_briefing_time": cfg.get("morning_briefing_time", "07:00"),
         "timer_cutoff_multiplier": cfg.get("timer_cutoff_multiplier", "2.0"),
-        "has_api_key": bool(cfg.get("anthropic_api_key", "")),
         "weekly_recap_advisor": cfg.get("weekly_recap_advisor", "Mr. Goldberg"),
         "formal_signoff_name": cfg.get("formal_signoff_name", "Finley Thomas"),
         "timezone": cfg.get("timezone", "America/Denver"),
@@ -2337,7 +2350,7 @@ def api_config_get():
 def api_config_post():
     data = request.get_json(force=True) or {}
     allowed = {
-        "name", "morning_briefing_time", "timer_cutoff_multiplier", "anthropic_api_key",
+        "name", "morning_briefing_time", "timer_cutoff_multiplier",
         "weekly_recap_advisor", "formal_signoff_name", "timezone",
     }
     updates = {k: str(v)[:2000] for k, v in data.items() if k in allowed}
@@ -2359,7 +2372,7 @@ def api_chat():
     data = request.get_json(force=True) or {}
     system_prompt = data.get("system", "")
     messages = data.get("messages", [])
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return jsonify({"error": "ANTHROPIC_API_KEY not configured. Add it in Settings."}), 500
     try:
