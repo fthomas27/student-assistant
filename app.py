@@ -664,6 +664,49 @@ def _validate_date_format(date_str):
         return False
 
 
+def _validate_string(value, max_length=300, allow_empty=False):
+    """Validate and sanitize string input."""
+    if not value:
+        return "" if allow_empty else None
+    value = str(value).strip()
+    if len(value) > max_length:
+        return None
+    if len(value) == 0 and not allow_empty:
+        return None
+    return value
+
+
+def _validate_urgency(value):
+    """Validate urgency value."""
+    valid_urgencies = {"high", "medium", "low"}
+    return value if value in valid_urgencies else "medium"
+
+
+def _validate_integer(value, min_val=None, max_val=None):
+    """Validate integer within range."""
+    try:
+        val = int(value)
+        if min_val is not None and val < min_val:
+            return None
+        if max_val is not None and val > max_val:
+            return None
+        return val
+    except (ValueError, TypeError):
+        return None
+
+
+def _sanitize_log_message(msg):
+    """Sanitize error messages for logging (remove sensitive info)."""
+    # Remove common sensitive patterns
+    msg = str(msg)[:500]  # Truncate to prevent log spam
+    # Don't log API keys, passwords, tokens
+    sensitive_patterns = ["sk-", "api_", "password", "token", "secret"]
+    for pattern in sensitive_patterns:
+        if pattern.lower() in msg.lower():
+            return "[SANITIZED - contains sensitive data]"
+    return msg
+
+
 def _is_big_work_assignment(a):
     est = estimate_assignment(a.get("title", ""), a.get("class_name", ""))
     if est >= 45:
@@ -1080,8 +1123,8 @@ def api_assignments():
             result.append(a)
         cfg = get_config()
         return jsonify({"assignments": result, "timezone": cfg.get("timezone", "America/Denver")})
-    except Exception:
-        log.exception("/api/assignments failed")
+    except Exception as e:
+        log.error("/api/assignments failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"assignments": [], "error": "Internal server error fetching assignments."}), 500
 
 
@@ -2604,8 +2647,8 @@ ORDER BY pn.created_at DESC LIMIT 6""")
         message = client.messages.create(**kwargs)
         content = message.content[0].text if message.content else ""
         return jsonify({"content": content})
-    except Exception:
-        log.exception("/api/chat failed")
+    except Exception as e:
+        log.error("/api/chat failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to reach AI. Check server logs."}), 500
 
 
