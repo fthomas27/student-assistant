@@ -766,214 +766,211 @@ def _is_big_work_assignment(a):
 
 def generate_briefing(force=False):
     with _briefing_lock:
-        try:
-            cfg = get_config()
-            api_key = cfg.get("anthropic_api_key", "")
-            if not api_key:
-                return
-            name = cfg.get("name", "Finn")
-            if not force:
-                conn = get_db()
-                cur = conn.cursor()
-                cur.execute("SELECT generated_at FROM briefing_cache WHERE id = 1")
-                row = cur.fetchone()
-                cur.close()
-                conn.close()
-                if row and row["generated_at"]:
-                    age = datetime.now(TZ) - row["generated_at"].astimezone(TZ)
-                    if age.total_seconds() < 3600:
-                        return
-
-            assignments = []
-            cal = fetch_ical(CANVAS_ICAL_URL)
-            if cal:
-                assignments = parse_canvas_assignments(cal)
-
-            events = []
-            cal2 = fetch_ical(PERSONAL_ICAL_URL)
-            if cal2:
-                events = list(parse_calendar_events(cal2, days_ahead=1))
-            cal_sports = fetch_ical(SPORTS_ICAL_URL)
-            if cal_sports:
-                for e in parse_calendar_events(cal_sports, days_ahead=1):
-                    e["source"] = "sports"
-                    events.append(e)
-
-            # Get completed assignment titles (ever) so we don't flag them
+        cfg = get_config()
+        api_key = cfg.get("anthropic_api_key", "")
+        if not api_key:
+            return
+        name = cfg.get("name", "Finn")
+        if not force:
             conn = get_db()
             cur = conn.cursor()
-            cur.execute("SELECT DISTINCT assignment_title FROM completions")
-            completed_titles = set(r["assignment_title"] for r in cur.fetchall())
-            assignments = [a for a in assignments if a["title"] not in completed_titles]
+            cur.execute("SELECT generated_at FROM briefing_cache WHERE id = 1")
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row and row["generated_at"]:
+                age = datetime.now(TZ) - row["generated_at"].astimezone(TZ)
+                if age.total_seconds() < 3600:
+                    return
 
-            # Get tasks
-            cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC, created_at ASC LIMIT 5")
-            tasks = [dict(r) for r in cur.fetchall()]
+        assignments = []
+        cal = fetch_ical(CANVAS_ICAL_URL)
+        if cal:
+            assignments = parse_canvas_assignments(cal)
 
-            # Get stale projects
-            cur.execute("""
+        events = []
+        cal2 = fetch_ical(PERSONAL_ICAL_URL)
+        if cal2:
+            events = list(parse_calendar_events(cal2, days_ahead=1))
+        cal_sports = fetch_ical(SPORTS_ICAL_URL)
+        if cal_sports:
+            for e in parse_calendar_events(cal_sports, days_ahead=1):
+                e["source"] = "sports"
+                events.append(e)
+
+        # Get completed assignment titles (ever) so we don't flag them
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT assignment_title FROM completions")
+        completed_titles = set(r["assignment_title"] for r in cur.fetchall())
+        assignments = [a for a in assignments if a["title"] not in completed_titles]
+
+        # Get tasks
+        cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC, created_at ASC LIMIT 5")
+        tasks = [dict(r) for r in cur.fetchall()]
+
+        # Get stale projects
+        cur.execute("""
 SELECT title, last_checkin, checkin_interval_days FROM projects
 WHERE status = 'active' AND (last_checkin IS NULL OR
     NOW() - last_checkin > make_interval(days => checkin_interval_days))
 LIMIT 3""")
-            stale_projects = [dict(r) for r in cur.fetchall()]
-            cur.close()
-            conn.close()
+        stale_projects = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
 
-            now_local = datetime.now(TZ)
-            now_str = now_local.strftime("%A, %B %d, %Y at %I:%M %p")
-            today = now_local.date()
+        now_local = datetime.now(TZ)
+        now_str = now_local.strftime("%A, %B %d, %Y at %I:%M %p")
+        today = now_local.date()
 
-            asgn_sorted = sorted(assignments, key=lambda a: a.get("due_iso", ""))
+        asgn_sorted = sorted(assignments, key=lambda a: a.get("due_iso", ""))
 
-            # Batch load all class averages to avoid N+1 queries
-            class_names = set(a.get("class_name") for a in asgn_sorted if a.get("class_name"))
-            class_avg_cache = get_class_averages_batch(class_names)
+        # Batch load all class averages to avoid N+1 queries
+        class_names = set(a.get("class_name") for a in asgn_sorted if a.get("class_name"))
+        class_avg_cache = get_class_averages_batch(class_names)
 
-            def _fmt_asgn(a):
-                est = int(estimate_assignment(a["title"], a["class_name"], class_avg_cache=class_avg_cache))
-                return "%s (%s) due %s, ~%d min, urgency %s" % (
-                    a["title"], a["class_name"], a["due_display"], est, a.get("urgency", "medium"))
+        def _fmt_asgn(a):
+            est = int(estimate_assignment(a["title"], a["class_name"], class_avg_cache=class_avg_cache))
+            return "%s (%s) due %s, ~%d min, urgency %s" % (
+                a["title"], a["class_name"], a["due_display"], est, a.get("urgency", "medium"))
 
-            overdue = [a for a in asgn_sorted if _assignment_due_date_local(a) < today]
-            due_today = [a for a in asgn_sorted if _assignment_due_date_local(a) == today]
-            due_tmr = [a for a in asgn_sorted if _assignment_due_date_local(a) == today + timedelta(days=1)]
-            due_2d = [a for a in asgn_sorted if _assignment_due_date_local(a) == today + timedelta(days=2)]
+        overdue = [a for a in asgn_sorted if _assignment_due_date_local(a) < today]
+        due_today = [a for a in asgn_sorted if _assignment_due_date_local(a) == today]
+        due_tmr = [a for a in asgn_sorted if _assignment_due_date_local(a) == today + timedelta(days=1)]
+        due_2d = [a for a in asgn_sorted if _assignment_due_date_local(a) == today + timedelta(days=2)]
 
-            overdue_work = [_fmt_asgn(a) for a in overdue if not _is_quiz_or_test_title(a["title"])]
-            today_work = [_fmt_asgn(a) for a in due_today if not _is_quiz_or_test_title(a["title"])]
-            today_qt = [a for a in due_today if _is_quiz_or_test_title(a["title"])]
-            overdue_qt = [a for a in overdue if _is_quiz_or_test_title(a["title"])]
+        overdue_work = [_fmt_asgn(a) for a in overdue if not _is_quiz_or_test_title(a["title"])]
+        today_work = [_fmt_asgn(a) for a in due_today if not _is_quiz_or_test_title(a["title"])]
+        today_qt = [a for a in due_today if _is_quiz_or_test_title(a["title"])]
+        overdue_qt = [a for a in overdue if _is_quiz_or_test_title(a["title"])]
 
-            good_time_lines = [_fmt_asgn(a) for a in due_tmr]
-            for a in due_2d:
-                if a.get("urgency") == "high":
-                    good_time_lines.append(_fmt_asgn(a))
+        good_time_lines = [_fmt_asgn(a) for a in due_tmr]
+        for a in due_2d:
+            if a.get("urgency") == "high":
+                good_time_lines.append(_fmt_asgn(a))
 
-            listed_titles = set()
-            for group in (overdue, due_today, due_tmr):
-                for a in group:
-                    listed_titles.add(a["title"])
-            big_longterm = [
-                _fmt_asgn(a) for a in asgn_sorted
-                if _is_big_work_assignment(a) and _assignment_due_date_local(a) > today
-                and a["title"] not in listed_titles
-            ][:6]
+        listed_titles = set()
+        for group in (overdue, due_today, due_tmr):
+            for a in group:
+                listed_titles.add(a["title"])
+        big_longterm = [
+            _fmt_asgn(a) for a in asgn_sorted
+            if _is_big_work_assignment(a) and _assignment_due_date_local(a) > today
+            and a["title"] not in listed_titles
+        ][:6]
 
-            lines_overdue_work = "\n".join("- " + x for x in overdue_work) or "- None."
-            lines_today_work = "\n".join("- " + x for x in today_work) or "- None."
-            lines_good_time = "\n".join("- " + x for x in good_time_lines) or "- None."
-            lines_big = "\n".join("- " + x for x in big_longterm) or "- None."
+        lines_overdue_work = "\n".join("- " + x for x in overdue_work) or "- None."
+        lines_today_work = "\n".join("- " + x for x in today_work) or "- None."
+        lines_good_time = "\n".join("- " + x for x in good_time_lines) or "- None."
+        lines_big = "\n".join("- " + x for x in big_longterm) or "- None."
 
-            qt_for_schedule = []
-            for a in today_qt:
-                c = (a.get("class_name") or "").strip() or "class"
-                qt_for_schedule.append("⚠️ Quiz/test today in %s: %s" % (c, a["title"]))
-            for a in overdue_qt:
-                c = (a.get("class_name") or "").strip() or "class"
-                qt_for_schedule.append("⚠️ Quiz/test overdue in %s: %s" % (c, a["title"]))
-            quiz_test_block = "\n".join("- " + x for x in qt_for_schedule) or "- None (no quizzes/tests due today in the list)."
+        qt_for_schedule = []
+        for a in today_qt:
+            c = (a.get("class_name") or "").strip() or "class"
+            qt_for_schedule.append("⚠️ Quiz/test today in %s: %s" % (c, a["title"]))
+        for a in overdue_qt:
+            c = (a.get("class_name") or "").strip() or "class"
+            qt_for_schedule.append("⚠️ Quiz/test overdue in %s: %s" % (c, a["title"]))
+        quiz_test_block = "\n".join("- " + x for x in qt_for_schedule) or "- None (no quizzes/tests due today in the list)."
 
-            week_end = today + timedelta(days=7)
-            upcoming_qt_study = [
-                a for a in asgn_sorted
-                if _is_quiz_or_test_title(a["title"]) and today <= _assignment_due_date_local(a) <= week_end
-            ]
-            upcoming_qt_study.sort(key=lambda x: x.get("due_iso", ""))
-            lines_qt_study = "\n".join(
-                "- %s (%s) — due %s" % (a["title"], (a.get("class_name") or "").strip() or "class", a["due_display"])
-                for a in upcoming_qt_study
-            ) or "- None."
+        week_end = today + timedelta(days=7)
+        upcoming_qt_study = [
+            a for a in asgn_sorted
+            if _is_quiz_or_test_title(a["title"]) and today <= _assignment_due_date_local(a) <= week_end
+        ]
+        upcoming_qt_study.sort(key=lambda x: x.get("due_iso", ""))
+        lines_qt_study = "\n".join(
+            "- %s (%s) — due %s" % (a["title"], (a.get("class_name") or "").strip() or "class", a["due_display"])
+            for a in upcoming_qt_study
+        ) or "- None."
 
-            events_text = "\n".join([
-                "- %s%s at %s" % (e["title"], " [SPORTS]" if e.get("source") == "sports" else "", e["start_display"])
-                for e in events
-            ]) or "- No calendar events today."
-            tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "- No pending tasks."
-            stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or "- None."
+        events_text = "\n".join([
+            "- %s%s at %s" % (e["title"], " [SPORTS]" if e.get("source") == "sports" else "", e["start_display"])
+            for e in events
+        ]) or "- No calendar events today."
+        tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "- No pending tasks."
+        stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or "- None."
 
-            # Get school schedule for today to recommend homework time
-            school_hrs = get_school_hours(today)
-            dtype = get_day_type(today)
-            if school_hrs:
-                _, _, eh, em = school_hrs
-                end_ampm = "AM" if eh < 12 else "PM"
-                school_end_str = "%d:%02d %s" % (eh % 12 or 12, em, end_ampm)
-                schedule_note = "Today is a %s day. School ends at %s." % (dtype.title(), school_end_str)
-            elif datetime.now(TZ).weekday() >= 5:
-                schedule_note = "Today is a weekend — no school."
-            else:
-                schedule_note = "No school today."
+        # Get school schedule for today to recommend homework time
+        school_hrs = get_school_hours(today)
+        dtype = get_day_type(today)
+        if school_hrs:
+            _, _, eh, em = school_hrs
+            end_ampm = "AM" if eh < 12 else "PM"
+            school_end_str = "%d:%02d %s" % (eh % 12 or 12, em, end_ampm)
+            schedule_note = "Today is a %s day. School ends at %s." % (dtype.title(), school_end_str)
+        elif datetime.now(TZ).weekday() >= 5:
+            schedule_note = "Today is a weekend — no school."
+        else:
+            schedule_note = "No school today."
 
-            prompt = (
-                "You are a sharp personal assistant for %s, a high school student and student leader in Park City, Utah.\n"
-                "Current time: %s\n"
-                "School schedule note: %s\n\n"
-                "REFERENCE — Overdue work (NOT quiz/test — never put quizzes/tests in Needs section):\n%s\n\n"
-                "REFERENCE — Due today work (NOT quiz/test):\n%s\n\n"
-                "REFERENCE — Quizzes/tests (for Schedule section ONLY, use EXACT warning lines below as bullets):\n%s\n\n"
-                "REFERENCE — Quizzes/tests in the next 7 days including today (for study/review suggestions ONLY under "
-                "\"If you have time\"; not as homework to turn in):\n%s\n\n"
-                "REFERENCE — Good to do if time (due tomorrow or high-urgency in 2 days):\n%s\n\n"
-                "REFERENCE — Larger / longer homework (papers, projects, big estimates, not already listed above):\n%s\n\n"
-                "Today's calendar events:\n%s\n\n"
-                "Pending tasks:\n%s\n\n"
-                "Projects needing check-in:\n%s\n\n"
-                "Write TODAY'S PLAN using EXACTLY these four markdown sections with ## headings (spell each heading exactly):\n\n"
-                "## Needs to get done today:\n"
-                "• Use bullets. Combine OVERDUE WORK and DUE-TODAY WORK from the reference (not quiz/test).\n"
-                "• If both reference lists are None/empty for work, write one bullet: Nothing critical listed — you're caught up on due-today work.\n"
-                "• You may mention urgent tasks from Pending tasks if relevant.\n\n"
-                "## If you have time it would be good to get this done today:\n"
-                "• Bullets from the 'Good to do if time' reference; optional prep or lighter work.\n"
-                "• **If the upcoming-quizzes reference is not \"- None.\":** add a bullet for each listed quiz/test "
-                "recommending **studying or reviewing** for it today (e.g. \"Review notes / practice problems for the "
-                "**Class** quiz\"). Sooner due dates deserve more urgency. For a quiz **today**, suggest a short focused "
-                "review if there is time before it — still keep the ⚠️ line under Schedule.\n"
-                "• If the only items would be study bullets and you added those, you may omit \"Nothing extra queued.\" "
-                "If there are no good-time items and no upcoming quizzes, one bullet: Nothing extra queued.\n\n"
-                "## Schedule:\n"
-                "• First bullets: today's calendar events (paraphrase from Today's calendar events).\n"
-                "• Then add EVERY line from REFERENCE Quizzes/tests exactly as given (each ⚠️ line is its own bullet).\n"
-                "• If no events and no quiz lines, one bullet: No calendar entries or quizzes/tests flagged.\n\n"
-                "## Upcoming projects and longer homework's:\n"
-                "• Bullets from REFERENCE Larger/longer; English papers, big assignments not already covered above.\n"
-                "• If none, one bullet: Nothing extra flagged.\n\n"
-                "Rules: NEVER list a quiz/test as regular homework under ## Needs to get done today. "
-                "Quizzes/tests **due today or overdue** appear only under ## Schedule as the provided ⚠️ lines. "
-                "Under ## If you have time, you **may** (and should, when the reference lists any) add **study/review** "
-                "bullets for quizzes/tests in the next 7 days — never imply turning in the quiz as an assignment there. "
-                "Use **bold** for assignment names where helpful. No intro paragraph. Only these four sections."
-            ) % (
-                name, now_str, schedule_note,
-                lines_overdue_work, lines_today_work, quiz_test_block,
-                lines_qt_study,
-                lines_good_time, lines_big,
-                events_text, tasks_text, stale_text,
+        prompt = (
+            "You are a sharp personal assistant for %s, a high school student and student leader in Park City, Utah.\n"
+            "Current time: %s\n"
+            "School schedule note: %s\n\n"
+            "REFERENCE — Overdue work (NOT quiz/test — never put quizzes/tests in Needs section):\n%s\n\n"
+            "REFERENCE — Due today work (NOT quiz/test):\n%s\n\n"
+            "REFERENCE — Quizzes/tests (for Schedule section ONLY, use EXACT warning lines below as bullets):\n%s\n\n"
+            "REFERENCE — Quizzes/tests in the next 7 days including today (for study/review suggestions ONLY under "
+            "\"If you have time\"; not as homework to turn in):\n%s\n\n"
+            "REFERENCE — Good to do if time (due tomorrow or high-urgency in 2 days):\n%s\n\n"
+            "REFERENCE — Larger / longer homework (papers, projects, big estimates, not already listed above):\n%s\n\n"
+            "Today's calendar events:\n%s\n\n"
+            "Pending tasks:\n%s\n\n"
+            "Projects needing check-in:\n%s\n\n"
+            "Write TODAY'S PLAN using EXACTLY these four markdown sections with ## headings (spell each heading exactly):\n\n"
+            "## Needs to get done today:\n"
+            "• Use bullets. Combine OVERDUE WORK and DUE-TODAY WORK from the reference (not quiz/test).\n"
+            "• If both reference lists are None/empty for work, write one bullet: Nothing critical listed — you're caught up on due-today work.\n"
+            "• You may mention urgent tasks from Pending tasks if relevant.\n\n"
+            "## If you have time it would be good to get this done today:\n"
+            "• Bullets from the 'Good to do if time' reference; optional prep or lighter work.\n"
+            "• **If the upcoming-quizzes reference is not \"- None.\":** add a bullet for each listed quiz/test "
+            "recommending **studying or reviewing** for it today (e.g. \"Review notes / practice problems for the "
+            "**Class** quiz\"). Sooner due dates deserve more urgency. For a quiz **today**, suggest a short focused "
+            "review if there is time before it — still keep the ⚠️ line under Schedule.\n"
+            "• If the only items would be study bullets and you added those, you may omit \"Nothing extra queued.\" "
+            "If there are no good-time items and no upcoming quizzes, one bullet: Nothing extra queued.\n\n"
+            "## Schedule:\n"
+            "• First bullets: today's calendar events (paraphrase from Today's calendar events).\n"
+            "• Then add EVERY line from REFERENCE Quizzes/tests exactly as given (each ⚠️ line is its own bullet).\n"
+            "• If no events and no quiz lines, one bullet: No calendar entries or quizzes/tests flagged.\n\n"
+            "## Upcoming projects and longer homework's:\n"
+            "• Bullets from REFERENCE Larger/longer; English papers, big assignments not already covered above.\n"
+            "• If none, one bullet: Nothing extra flagged.\n\n"
+            "Rules: NEVER list a quiz/test as regular homework under ## Needs to get done today. "
+            "Quizzes/tests **due today or overdue** appear only under ## Schedule as the provided ⚠️ lines. "
+            "Under ## If you have time, you **may** (and should, when the reference lists any) add **study/review** "
+            "bullets for quizzes/tests in the next 7 days — never imply turning in the quiz as an assignment there. "
+            "Use **bold** for assignment names where helpful. No intro paragraph. Only these four sections."
+        ) % (
+            name, now_str, schedule_note,
+            lines_overdue_work, lines_today_work, quiz_test_block,
+            lines_qt_study,
+            lines_good_time, lines_big,
+            events_text, tasks_text, stale_text,
+        )
+
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=900,
+                messages=[{"role": "user", "content": prompt}]
             )
+            content = message.content[0].text if message.content else "Have a great day!"
+        except Exception as e:
+            log.error("Anthropic API error: %s", e)
+            content = "Could not generate briefing. Check your API key in Settings."
 
-            try:
-                client = anthropic.Anthropic(api_key=api_key)
-                message = client.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=900,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                content = message.content[0].text if message.content else "Have a great day!"
-            except Exception as e:
-                log.error("Anthropic API error: %s", e)
-                content = "Could not generate briefing. Check your API key in Settings."
-
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute("""
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
 INSERT INTO briefing_cache (id, generated_at, content) VALUES (1, NOW(), %s)
 ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content""", (content,))
-            conn.commit()
-            cur.close()
-            conn.close()
-        except Exception as e:
-            log.error("generate_briefing failed: %s", _sanitize_log_message(str(e)))
+        conn.commit()
+        cur.close()
+        conn.close()
 
 
 scheduler = BackgroundScheduler(timezone=TZ)
@@ -982,62 +979,59 @@ scheduler = BackgroundScheduler(timezone=TZ)
 def generate_evening_debrief():
     """Generate a 7 PM evening debrief summarizing the day."""
     with _briefing_lock:
-        try:
-            cfg = get_config()
-            api_key = cfg.get("anthropic_api_key", "")
-            if not api_key:
-                return
-            name = cfg.get("name", "Finn")
-            conn = get_db()
-            cur = conn.cursor()
-            today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-            cur.execute("""
+        cfg = get_config()
+        api_key = cfg.get("anthropic_api_key", "")
+        if not api_key:
+            return
+        name = cfg.get("name", "Finn")
+        conn = get_db()
+        cur = conn.cursor()
+        today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        cur.execute("""
 SELECT assignment_title, class_name, duration_minutes, timed
 FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_start,))
-            done_today = [dict(r) for r in cur.fetchall()]
-            cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC LIMIT 10")
-            pending_tasks = [dict(r) for r in cur.fetchall()]
-            cur.close()
-            conn.close()
-            cal = fetch_ical(CANVAS_ICAL_URL)
-            remaining_asgn = []
-            if cal:
-                all_asgn = parse_canvas_assignments(cal)
-                done_titles = {d["assignment_title"] for d in done_today}
-                remaining_asgn = [a for a in all_asgn if a["title"] not in done_titles]
-            done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
-            remaining_text = "\n".join(["- %s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"]) for a in remaining_asgn[:6]]) or "None."
-            tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in pending_tasks]) or "None."
-            now_str = datetime.now(TZ).strftime("%A, %B %d at %I:%M %p")
-            prompt = (
-                "You are a sharp personal assistant for %s, a high school student in Park City, Utah.\n"
-                "Current time: %s (evening debrief)\n\n"
-                "Completed Today:\n%s\n\n"
-                "Still Due (not completed):\n%s\n\n"
-                "Pending Tasks:\n%s\n\n"
-                "Write a concise evening debrief using ONLY bullet points (start each with •). "
-                "Include: what was accomplished today, what was missed/still needs doing, and a 'Tomorrow's Outlook' section. "
-                "Be direct and encouraging. No intro sentence."
-            ) % (name, now_str, done_text, remaining_text, tasks_text)
-            try:
-                client = anthropic.Anthropic(api_key=api_key)
-                message = client.messages.create(model="claude-sonnet-4-6", max_tokens=600,
-                                                 messages=[{"role": "user", "content": prompt}])
-                content = message.content[0].text if message.content else "Good evening!"
-            except Exception as e:
-                log.error("Evening debrief API error: %s", e)
-                return
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute("""
+        done_today = [dict(r) for r in cur.fetchall()]
+        cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC LIMIT 10")
+        pending_tasks = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        cal = fetch_ical(CANVAS_ICAL_URL)
+        remaining_asgn = []
+        if cal:
+            all_asgn = parse_canvas_assignments(cal)
+            done_titles = {d["assignment_title"] for d in done_today}
+            remaining_asgn = [a for a in all_asgn if a["title"] not in done_titles]
+        done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
+        remaining_text = "\n".join(["- %s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"]) for a in remaining_asgn[:6]]) or "None."
+        tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in pending_tasks]) or "None."
+        now_str = datetime.now(TZ).strftime("%A, %B %d at %I:%M %p")
+        prompt = (
+            "You are a sharp personal assistant for %s, a high school student in Park City, Utah.\n"
+            "Current time: %s (evening debrief)\n\n"
+            "Completed Today:\n%s\n\n"
+            "Still Due (not completed):\n%s\n\n"
+            "Pending Tasks:\n%s\n\n"
+            "Write a concise evening debrief using ONLY bullet points (start each with •). "
+            "Include: what was accomplished today, what was missed/still needs doing, and a 'Tomorrow's Outlook' section. "
+            "Be direct and encouraging. No intro sentence."
+        ) % (name, now_str, done_text, remaining_text, tasks_text)
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(model="claude-sonnet-4-6", max_tokens=600,
+                                             messages=[{"role": "user", "content": prompt}])
+            content = message.content[0].text if message.content else "Good evening!"
+        except Exception as e:
+            log.error("Evening debrief API error: %s", e)
+            return
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
 INSERT INTO debrief_cache (id, generated_at, content) VALUES (1, NOW(), %s)
 ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content""", (content,))
-            conn.commit()
-            cur.close()
-            conn.close()
-            log.info("Evening debrief generated.")
-        except Exception as e:
-            log.error("generate_evening_debrief failed: %s", _sanitize_log_message(str(e)))
+        conn.commit()
+        cur.close()
+        conn.close()
+        log.info("Evening debrief generated.")
 
 
 def schedule_briefing():
@@ -2386,63 +2380,55 @@ def _calculate_next_due_date(recurrence, is_first_creation=False):
 
 def _process_recurring_tasks():
     """Create new task instances for recurring tasks that are due."""
-    conn = None
-    cur = None
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        today = date.today()
+    conn = get_db()
+    cur = conn.cursor()
+    today = date.today()
 
-        # Find all active recurring tasks that might need a new instance
-        # Include tasks where last_created_at is NULL or <= today (need to check interval in Python)
-        cur.execute("""
+    # Find all active recurring tasks that might need a new instance
+    # Include tasks where last_created_at is NULL or <= today (need to check interval in Python)
+    cur.execute("""
 SELECT id, title, notes, urgency, recurrence, last_created_at
 FROM recurring_tasks
 WHERE active = TRUE""")
 
-        tasks_to_check = cur.fetchall()
+    tasks_to_check = cur.fetchall()
 
-        for task in tasks_to_check:
-            task_id = task["id"]
-            title = task["title"]
-            notes = task["notes"]
-            urgency = task["urgency"]
-            recurrence = task["recurrence"]
+    for task in tasks_to_check:
+        task_id = task["id"]
+        title = task["title"]
+        notes = task["notes"]
+        urgency = task["urgency"]
+        recurrence = task["recurrence"]
 
-            # Check if we should create a new instance based on the recurrence interval
-            should_create = False
-            if task["last_created_at"] is None:
-                # First creation (shouldn't happen in normal flow, but handle it)
+        # Check if we should create a new instance based on the recurrence interval
+        should_create = False
+        if task["last_created_at"] is None:
+            # First creation (shouldn't happen in normal flow, but handle it)
+            should_create = True
+        else:
+            last_created = task["last_created_at"].date()
+            # Use consistent comparison: task is due if today is >= the due date
+            if recurrence == "daily" and today > last_created:
                 should_create = True
-            else:
-                last_created = task["last_created_at"].date()
-                # Use consistent comparison: task is due if today is >= the due date
-                if recurrence == "daily" and today > last_created:
-                    should_create = True
-                elif recurrence == "weekly" and today >= last_created + timedelta(weeks=1):
-                    should_create = True
-                elif recurrence == "biweekly" and today >= last_created + timedelta(weeks=2):
-                    should_create = True
-                elif recurrence == "monthly" and today >= last_created + timedelta(days=30):
-                    should_create = True
+            elif recurrence == "weekly" and today >= last_created + timedelta(weeks=1):
+                should_create = True
+            elif recurrence == "biweekly" and today >= last_created + timedelta(weeks=2):
+                should_create = True
+            elif recurrence == "monthly" and today >= last_created + timedelta(days=30):
+                should_create = True
 
-            if should_create:
-                due_date = _calculate_next_due_date(recurrence)
-                task_notes = f"[Recurring: {recurrence}]\n{notes}" if notes else f"[Recurring: {recurrence}]"
-                cur.execute("""
+        if should_create:
+            due_date = _calculate_next_due_date(recurrence)
+            task_notes = f"[Recurring: {recurrence}]\n{notes}" if notes else f"[Recurring: {recurrence}]"
+            cur.execute("""
 INSERT INTO tasks (title, notes, urgency, due_date)
 VALUES (%s, %s, %s, %s)""",
-                            (title, task_notes, urgency, due_date))
-                cur.execute("UPDATE recurring_tasks SET last_created_at = NOW() WHERE id = %s", (task_id,))
+                        (title, task_notes, urgency, due_date))
+            cur.execute("UPDATE recurring_tasks SET last_created_at = NOW() WHERE id = %s", (task_id,))
 
-        conn.commit()
-    except Exception as e:
-        log.error("_process_recurring_tasks failed: %s", _sanitize_log_message(str(e)))
-    finally:
-        if cur:
-            cur.close()
-        if conn:
-            conn.close()
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 # ── Projects ─────────────────────────────────────────────────────────────────
