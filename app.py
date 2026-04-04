@@ -780,15 +780,17 @@ def generate_briefing(force=False):
             name = cfg.get("name", "Finn")
             if not force:
                 conn = get_db()
-                cur = conn.cursor()
-                cur.execute("SELECT generated_at FROM briefing_cache WHERE id = 1")
-                row = cur.fetchone()
-                cur.close()
-                conn.close()
-                if row and row["generated_at"]:
-                    age = datetime.now(TZ) - row["generated_at"].astimezone(TZ)
-                    if age.total_seconds() < 3600:
-                        return
+                try:
+                    cur = conn.cursor()
+                    cur.execute("SELECT generated_at FROM briefing_cache WHERE id = 1")
+                    row = cur.fetchone()
+                    cur.close()
+                    if row and row["generated_at"]:
+                        age = datetime.now(TZ) - row["generated_at"].astimezone(TZ)
+                        if age.total_seconds() < 3600:
+                            return
+                finally:
+                    conn.close()
 
             assignments = []
             cal = fetch_ical(CANVAS_ICAL_URL)
@@ -807,24 +809,26 @@ def generate_briefing(force=False):
 
             # Get completed assignment titles (ever) so we don't flag them
             conn = get_db()
-            cur = conn.cursor()
-            cur.execute("SELECT DISTINCT assignment_title FROM completions")
-            completed_titles = set(r["assignment_title"] for r in cur.fetchall())
-            assignments = [a for a in assignments if a["title"] not in completed_titles]
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT DISTINCT assignment_title FROM completions")
+                completed_titles = set(r["assignment_title"] for r in cur.fetchall())
+                assignments = [a for a in assignments if a["title"] not in completed_titles]
 
-            # Get tasks
-            cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC, created_at ASC LIMIT 5")
-            tasks = [dict(r) for r in cur.fetchall()]
+                # Get tasks
+                cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC, created_at ASC LIMIT 5")
+                tasks = [dict(r) for r in cur.fetchall()]
 
-            # Get stale projects
-            cur.execute("""
+                # Get stale projects
+                cur.execute("""
 SELECT title, last_checkin, checkin_interval_days FROM projects
 WHERE status = 'active' AND (last_checkin IS NULL OR
     NOW() - last_checkin > make_interval(days => checkin_interval_days))
 LIMIT 3""")
-            stale_projects = [dict(r) for r in cur.fetchall()]
-            cur.close()
-            conn.close()
+                stale_projects = [dict(r) for r in cur.fetchall()]
+                cur.close()
+            finally:
+                conn.close()
 
             now_local = datetime.now(TZ)
             now_str = now_local.strftime("%A, %B %d, %Y at %I:%M %p")
@@ -971,13 +975,15 @@ LIMIT 3""")
                 content = "Could not generate briefing. Check your API key in Settings."
 
             conn = get_db()
-            cur = conn.cursor()
-            cur.execute("""
+            try:
+                cur = conn.cursor()
+                cur.execute("""
 INSERT INTO briefing_cache (id, generated_at, content) VALUES (1, NOW(), %s)
 ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content""", (content,))
-            conn.commit()
-            cur.close()
-            conn.close()
+                conn.commit()
+                cur.close()
+            finally:
+                conn.close()
         except Exception as e:
             log.error("generate_briefing failed: %s", _sanitize_log_message(str(e)))
 
@@ -995,16 +1001,18 @@ def generate_evening_debrief():
                 return
             name = cfg.get("name", "Finn")
             conn = get_db()
-            cur = conn.cursor()
-            today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-            cur.execute("""
+            try:
+                cur = conn.cursor()
+                today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+                cur.execute("""
 SELECT assignment_title, class_name, duration_minutes, timed
 FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_start,))
-            done_today = [dict(r) for r in cur.fetchall()]
-            cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC LIMIT 10")
-            pending_tasks = [dict(r) for r in cur.fetchall()]
-            cur.close()
-            conn.close()
+                done_today = [dict(r) for r in cur.fetchall()]
+                cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC LIMIT 10")
+                pending_tasks = [dict(r) for r in cur.fetchall()]
+                cur.close()
+            finally:
+                conn.close()
             cal = fetch_ical(CANVAS_ICAL_URL)
             remaining_asgn = []
             if cal:
@@ -1034,14 +1042,16 @@ FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_
                 log.error("Evening debrief API error: %s", e)
                 return
             conn = get_db()
-            cur = conn.cursor()
-            cur.execute("""
+            try:
+                cur = conn.cursor()
+                cur.execute("""
 INSERT INTO debrief_cache (id, generated_at, content) VALUES (1, NOW(), %s)
 ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content""", (content,))
-            conn.commit()
-            cur.close()
-            conn.close()
-            log.info("Evening debrief generated.")
+                conn.commit()
+                cur.close()
+                log.info("Evening debrief generated.")
+            finally:
+                conn.close()
         except Exception as e:
             log.error("generate_evening_debrief failed: %s", _sanitize_log_message(str(e)))
 
