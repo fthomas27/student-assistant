@@ -877,6 +877,45 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   </div>
 </div>
 
+<!-- EDIT TASK SHEET -->
+
+<div class="bottom-sheet" id="edit-task-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title-sm" style="margin-bottom:16px">Edit Task</div>
+
+  <div id="edit-task-form">
+    <div class="field-group">
+      <div class="field-label">Task Title</div>
+      <input class="field-input" id="edit-task-title" type="text" placeholder="What's the task?">
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">Urgency</div>
+      <div class="form-row">
+        <button class="seg-btn" data-edit-urgency="high" onclick="selectEditUrgency(this)">High</button>
+        <button class="seg-btn selected" data-edit-urgency="medium" onclick="selectEditUrgency(this)">Medium</button>
+        <button class="seg-btn" data-edit-urgency="low" onclick="selectEditUrgency(this)">Low</button>
+      </div>
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">Due Date (optional)</div>
+      <input class="field-input" id="edit-task-due" type="date">
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">Notes (optional)</div>
+      <textarea class="field-input" id="edit-task-notes" rows="2" placeholder="Any details..."></textarea>
+    </div>
+
+    <div class="sheet-actions">
+      <button class="btn btn-outline" onclick="closeEditTaskSheet()">Cancel</button>
+      <button class="btn btn-primary" style="flex:2" onclick="saveEditTask()">Save Changes</button>
+      <button class="btn btn-danger" onclick="deleteEditTask()">Delete</button>
+    </div>
+  </div>
+</div>
+
 <!-- SETTINGS SHEET -->
 
 <div class="settings-sheet" id="settings-sheet">
@@ -1314,8 +1353,8 @@ function loadHomeAssignments() {
       return scorePriority(b) - scorePriority(a);
     });
 
-    // Show top 6 most urgent
-    var toShow = scored.slice(0, 6);
+    // Show top 8 most urgent
+    var toShow = scored.slice(0, 8);
 
     renderHomeAssignments(toShow);
     renderNotifications(assignments);
@@ -1873,7 +1912,8 @@ function buildTaskItem(t) {
   var toggleFn = isProjectTask
     ? 'toggleProjectTaskStatus(' + t.id + ',' + t.project_id + ',\'' + (t.completed ? 'pending' : 'done') + '\')'
     : 'toggleTask(' + t.id + ',' + !t.completed + ')';
-  return '<div class="task-item">' +
+  var editBtn = isProjectTask ? '' : '<button style="position:absolute;right:10px;top:10px;background:none;border:none;color:var(--text2);font-size:18px;cursor:pointer;padding:0" onclick="editTask(' + t.id + ')">✏</button>';
+  return '<div class="task-item" style="position:relative">' +
     '<div class="task-check' + (t.completed ? ' checked' : '') + '" onclick="' + toggleFn + '"></div>' +
     '<div class="task-content">' +
     '<div class="task-title' + (t.completed ? ' done' : '') + '">' + esc(t.title) +
@@ -1882,12 +1922,103 @@ function buildTaskItem(t) {
     (dueStr ? '<div class="task-sub">' + esc(dueStr.trim()) + '</div>' : '') +
     '</div>' +
     '<div class="task-urgency ' + esc(t.urgency || 'medium') + '"></div>' +
+    editBtn +
     '</div>';
 }
 
 function toggleTask(id, completed) {
   fetch('/api/tasks/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ completed: completed }) })
     .then(function() { loadTasks(); });
+}
+
+function editTask(id) {
+  var tasks = document.querySelectorAll('.task-item');
+  var taskData = null;
+
+  // Find the task data from DOM
+  fetch('/api/tasks').then(function(r) { return r.json(); }).then(function(d) {
+    var allTasks = d.tasks || [];
+    taskData = allTasks.find(function(t) { return t.id === id; });
+
+    if (!taskData) return;
+
+    // Set form values
+    document.getElementById('edit-task-title').value = taskData.title;
+    document.getElementById('edit-task-notes').value = taskData.notes || '';
+    document.getElementById('edit-task-due').value = taskData.due_date || '';
+
+    // Set urgency buttons
+    document.querySelectorAll('[data-edit-urgency]').forEach(function(b) { b.classList.remove('selected'); });
+    document.querySelector('[data-edit-urgency="' + (taskData.urgency || 'medium') + '"]').classList.add('selected');
+
+    // Store ID for save
+    document.getElementById('edit-task-form').dataset.taskId = id;
+
+    // Open sheet
+    openEditTaskSheet();
+  });
+}
+
+function openEditTaskSheet() {
+  var backdrop = document.getElementById('sheet-backdrop');
+  var sheet = document.getElementById('edit-task-sheet');
+  if (backdrop) backdrop.style.display = 'block';
+  if (sheet) {
+    sheet.style.display = 'block';
+    setTimeout(function() { sheet.classList.add('open'); }, 10);
+  }
+}
+
+function closeEditTaskSheet() {
+  var backdrop = document.getElementById('sheet-backdrop');
+  var sheet = document.getElementById('edit-task-sheet');
+  if (sheet) sheet.classList.remove('open');
+  setTimeout(function() {
+    if (backdrop) backdrop.style.display = 'none';
+    if (sheet) sheet.style.display = 'none';
+  }, 300);
+}
+
+function saveEditTask() {
+  var taskId = parseInt(document.getElementById('edit-task-form').dataset.taskId);
+  var title = document.getElementById('edit-task-title').value.trim();
+  if (!title) return;
+
+  var urgency = document.querySelector('[data-edit-urgency].selected').getAttribute('data-edit-urgency');
+  var notes = document.getElementById('edit-task-notes').value.trim();
+  var due = document.getElementById('edit-task-due').value || null;
+
+  var payload = {
+    title: title,
+    urgency: urgency,
+    notes: notes,
+    due_date: due
+  };
+
+  fetch('/api/tasks/' + taskId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function() {
+    closeEditTaskSheet();
+    loadTasks();
+  });
+}
+
+function deleteEditTask() {
+  var taskId = parseInt(document.getElementById('edit-task-form').dataset.taskId);
+  if (!confirm('Delete this task?')) return;
+
+  fetch('/api/tasks/' + taskId, { method: 'DELETE' })
+    .then(function() {
+      closeEditTaskSheet();
+      loadTasks();
+    });
+}
+
+function selectEditUrgency(btn) {
+  document.querySelectorAll('[data-edit-urgency]').forEach(function(b) { b.classList.remove('selected'); });
+  btn.classList.add('selected');
 }
 
 // ══════════════════════════════════════════
@@ -2586,7 +2717,7 @@ thread.scrollTop = thread.scrollHeight;
 aiHistory.push({ role: 'user', content: msg });
 
 // Server injects authoritative date, Canvas/synced assignments, tasks, projects, and school schedule.
-var context = 'You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. Use **bold** for key terms, section headings, and important items. Use bullet points for lists. Vary sentence length for clarity. Treat the server-provided today\'s date and assignment list as source of truth for deadlines. If the user asks about something not in that context, say you do not have it and ask them to paste details. ';
+var context = 'You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. Use **bold** for key terms, section headings, and important items. Use bullet points for lists. Vary sentence length for clarity. Treat the server-provided today\'s date and assignment list as source of truth for deadlines. You have access to the school schedule: Park City alternates between red days (shorter schedule) and white days (longer schedule). When asked what color a day is, answer with confidence (e.g., "Wednesday is a red day" or "Friday is a white day"). If the user asks about something not in that context, say you do not have it and ask them to paste details. ';
 
 fetch('/api/chat', {
 method: 'POST',
