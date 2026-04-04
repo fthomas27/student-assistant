@@ -1066,10 +1066,41 @@ var currentWorkoutLogId = null;
 var cachedDebrief = { text: '', generatedAt: null };
 window._calReminderTimers = window._calReminderTimers || {};
 
+// CSRF Token helper - gets token from window cache
+function getCsrfToken() {
+  return window._csrf_token || '';
+}
+
+// Override global fetch to add CSRF token automatically
+window._originalFetch = window.fetch;
+window.fetch = function(url, options) {
+  options = options || {};
+
+  // Add CSRF token for state-changing requests to /api/
+  if (url.includes('/api/') && options.method && ['POST', 'PATCH', 'DELETE', 'PUT'].includes(options.method.toUpperCase())) {
+    options.headers = options.headers || {};
+    options.headers['X-CSRF-Token'] = getCsrfToken();
+  }
+
+  return window._originalFetch(url, options);
+};
+
+// Alias for convenience
+function apiFetch(url, options) {
+  return window.fetch(url, options);
+}
+
 // ══════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', function() {
+  // Fetch and cache CSRF token
+  apiFetch('/api/csrf-token').then(function(r) { return r.json(); }).then(function(d) {
+    window._csrf_token = d.csrf_token;
+  }).catch(function() {
+    console.warn('Failed to fetch CSRF token');
+  });
+
   updateHeaderDate();
   loadConfig();
   syncWorkoutIntensityLabel();

@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import threading
+import secrets
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 
@@ -31,18 +32,75 @@ if not _app_password:
 APP_PASSWORD = _app_password
 
 app.permanent_session_lifetime = timedelta(days=30)
+
+# Secure session cookies
+app.config["SESSION_COOKIE_SECURE"] = True  # HTTPS only
+app.config["SESSION_COOKIE_HTTPONLY"] = True  # No JavaScript access
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # CSRF protection
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
+@app.after_request
+def set_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
+
+
+def _get_csrf_token():
+    """Get or generate CSRF token for current session."""
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_hex(32)
+    return session["_csrf_token"]
+
+
+def _validate_csrf_token():
+    """Validate CSRF token from request. Returns True if valid, False otherwise."""
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return True  # Safe methods don't need CSRF protection
+
+    token = request.headers.get("X-CSRF-Token") or request.form.get("_csrf_token")
+    if not token:
+        log.warning("Missing CSRF token from %s", request.remote_addr)
+        return False
+
+    expected = session.get("_csrf_token")
+    if not expected:
+        log.warning("No CSRF token in session from %s", request.remote_addr)
+        return False
+
+    # Use constant-time comparison
+    return secrets.compare_digest(token, expected)
+
+
 @app.before_request
-def require_auth():
-    if request.path in ('/login', '/logout'):
+def require_auth_and_csrf():
+    # Paths that don't require authentication
+    no_auth_paths = {'/login', '/logout', '/api/csrf-token'}
+
+    # Handle CSRF token generation for GET requests
+    if request.method == "GET" and request.path not in no_auth_paths:
+        _get_csrf_token()
+
+    # Check authentication
+    if request.path in no_auth_paths:
         return None
     if not session.get("authenticated"):
         if request.path.startswith('/api/'):
             return jsonify({"error": "Not authenticated"}), 401
         return redirect("/login")
+
+    # Check CSRF token for state-changing requests
+    if request.path.startswith('/api/') and not _validate_csrf_token():
+        log.warning("CSRF token validation failed for %s from %s", request.path, request.remote_addr)
+        return jsonify({"error": "CSRF token invalid"}), 403
 
 # Default timezone - will be overridden by config if available
 _TZ_DEFAULT = ZoneInfo("America/Denver")
@@ -955,6 +1013,12 @@ def timer_response(row):
 
 # ── Routes ───────────────────────────────────────────────────────────────────
 
+@app.route("/api/csrf-token")
+def api_csrf_token():
+    """Return CSRF token for the current session."""
+    return jsonify({"csrf_token": _get_csrf_token()})
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
@@ -962,16 +1026,23 @@ def login():
             return redirect("/")
         return render_template("login.html")
     data = request.get_json(force=True) or {}
-    if data.get("password") == APP_PASSWORD:
+    # Use constant-time comparison to prevent timing attacks
+    if secrets.compare_digest(data.get("password", ""), APP_PASSWORD):
         session.permanent = True
         session["authenticated"] = True
         return jsonify({"status": "ok"})
-    return jsonify({"error": "Wrong password"}), 401
+    # Don't reveal whether password is wrong or user doesn't exist
+    return jsonify({"error": "Invalid credentials"}), 401
 
 
 @app.route("/logout")
 def logout():
-    session.clear()
+    try:
+        session.clear()
+        return redirect("/login")
+    except Exception as e:
+        log.error("Logout error: %s", str(e)[:100])  # Sanitize error message
+        return redirect("/login")
     return redirect("/login")
 
 
