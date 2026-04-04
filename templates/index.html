@@ -218,9 +218,12 @@ display: flex; align-items: center; gap: 5px; padding: 4px 0;
 -webkit-tap-highlight-color: transparent; opacity: 0.8;
 }
 .refresh-btn:active { opacity: 0.4; }
-.refresh-icon { display: inline-block; }
+.refresh-icon { display: inline-block; transform-origin: center; }
 .refresh-icon.spinning { animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
 
 /* ── NOTIFICATION PILL ── */
 .notif-row {
@@ -658,6 +661,15 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
       <div class="field-label">Notes (optional)</div>
       <textarea class="field-input" id="task-input-notes" rows="2" placeholder="Any details..."></textarea>
     </div>
+    <div class="field-group">
+      <div class="field-label">Repeating?</div>
+      <div class="form-row">
+        <button class="seg-btn selected" data-repeating="none" onclick="selectRepeating(this)">Once</button>
+        <button class="seg-btn" data-repeating="daily" onclick="selectRepeating(this)">Daily</button>
+        <button class="seg-btn" data-repeating="weekly" onclick="selectRepeating(this)">Weekly</button>
+        <button class="seg-btn" data-repeating="monthly" onclick="selectRepeating(this)">Monthly</button>
+      </div>
+    </div>
     <div class="form-actions">
       <button class="btn btn-outline" onclick="toggleTaskForm()">Cancel</button>
       <button class="btn btn-primary" onclick="submitTask()">Add Task</button>
@@ -938,6 +950,7 @@ var activeTimer = null;
 var timerInterval = null;
 var cutoffShown = false;
 var selectedUrgency = 'medium';
+var selectedRepeating = 'none';
 var allProjects = [];
 var currentProjectId = null;
 var currentAsgnDetail = null;
@@ -1769,23 +1782,52 @@ function selectUrgency(btn) {
   selectedUrgency = btn.dataset.urgency;
 }
 
+function selectRepeating(btn) {
+  document.querySelectorAll('[data-repeating]').forEach(function(b) { b.classList.remove('selected'); });
+  btn.classList.add('selected');
+  selectedRepeating = btn.dataset.repeating;
+}
+
 function submitTask() {
   var title = document.getElementById('task-input-title').value.trim();
   if (!title) return;
-  var payload = {
-    title: title,
-    urgency: selectedUrgency,
-    notes: document.getElementById('task-input-notes').value.trim(),
-    due_date: document.getElementById('task-input-due').value || null
-  };
-  fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    .then(function() {
-      document.getElementById('task-input-title').value = '';
-      document.getElementById('task-input-notes').value = '';
-      document.getElementById('task-input-due').value = '';
-      toggleTaskForm();
-      loadTasks();
-    });
+
+  if (selectedRepeating && selectedRepeating !== 'none') {
+    // Create recurring task
+    var payload = {
+      title: title,
+      urgency: selectedUrgency,
+      notes: document.getElementById('task-input-notes').value.trim(),
+      recurrence: selectedRepeating
+    };
+    fetch('/api/recurring-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function() {
+        document.getElementById('task-input-title').value = '';
+        document.getElementById('task-input-notes').value = '';
+        document.getElementById('task-input-due').value = '';
+        document.querySelectorAll('[data-repeating]').forEach(function(b) { b.classList.remove('selected'); });
+        document.querySelector('[data-repeating="none"]').classList.add('selected');
+        selectedRepeating = 'none';
+        toggleTaskForm();
+        loadTasks();
+      });
+  } else {
+    // Create one-time task
+    var payload = {
+      title: title,
+      urgency: selectedUrgency,
+      notes: document.getElementById('task-input-notes').value.trim(),
+      due_date: document.getElementById('task-input-due').value || null
+    };
+    fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function() {
+        document.getElementById('task-input-title').value = '';
+        document.getElementById('task-input-notes').value = '';
+        document.getElementById('task-input-due').value = '';
+        toggleTaskForm();
+        loadTasks();
+      });
+  }
 }
 
 function loadTasks() {
