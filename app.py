@@ -213,6 +213,8 @@ def get_school_hours(d):
 
 def get_db():
     url = os.environ.get("DATABASE_URL", "")
+    if not url:
+        raise ValueError("CRITICAL: DATABASE_URL environment variable must be set")
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     return psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
