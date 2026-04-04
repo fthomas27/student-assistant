@@ -930,6 +930,22 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
     <input class="field-input" id="setting-time" type="time">
   </div>
   <div class="field-group">
+    <div class="field-label">Timezone</div>
+    <select class="field-input" id="setting-timezone">
+      <option value="America/Denver">Mountain Time (America/Denver)</option>
+      <option value="America/Chicago">Central Time (America/Chicago)</option>
+      <option value="America/New_York">Eastern Time (America/New_York)</option>
+      <option value="America/Los_Angeles">Pacific Time (America/Los_Angeles)</option>
+      <option value="America/Anchorage">Alaska Time (America/Anchorage)</option>
+      <option value="Pacific/Honolulu">Hawaii Time (Pacific/Honolulu)</option>
+      <option value="Europe/London">London (Europe/London)</option>
+      <option value="Europe/Paris">Paris (Europe/Paris)</option>
+      <option value="Asia/Tokyo">Tokyo (Asia/Tokyo)</option>
+      <option value="Australia/Sydney">Sydney (Australia/Sydney)</option>
+      <option value="UTC">UTC</option>
+    </select>
+  </div>
+  <div class="field-group">
     <div class="field-label">Timer Auto-Cutoff (× estimate)</div>
     <input class="field-input" id="setting-cutoff" type="number" min="1" max="5" step="0.5" placeholder="2.0">
   </div>
@@ -986,6 +1002,7 @@ var currentTab = 0;
 var assignments = [];
 var completedToday = [];
 var activeTimer = null;
+var appTimezone = 'America/Denver';
 var timerInterval = null;
 var cutoffShown = false;
 var selectedUrgency = 'medium';
@@ -1077,6 +1094,8 @@ function loadConfig() {
     document.getElementById('setting-name').value = d.name || '';
     document.getElementById('setting-time').value = d.morning_briefing_time || '07:00';
     document.getElementById('setting-cutoff').value = d.timer_cutoff_multiplier || '2.0';
+    document.getElementById('setting-timezone').value = d.timezone || 'America/Denver';
+    appTimezone = d.timezone || 'America/Denver';
     var adv = document.getElementById('setting-weekly-advisor');
     if (adv) adv.value = d.weekly_recap_advisor || 'Mr. Goldberg';
     var fn = document.getElementById('setting-formal-name');
@@ -1103,7 +1122,8 @@ function saveSettings() {
   var payload = {
     name: document.getElementById('setting-name').value.trim(),
     morning_briefing_time: document.getElementById('setting-time').value,
-    timer_cutoff_multiplier: document.getElementById('setting-cutoff').value
+    timer_cutoff_multiplier: document.getElementById('setting-cutoff').value,
+    timezone: document.getElementById('setting-timezone').value
   };
   var apikey = document.getElementById('setting-apikey').value.trim();
   if (apikey) payload.anthropic_api_key = apikey;
@@ -1340,27 +1360,52 @@ function scorePriority(a) {
   return score;
 }
 
+function getDateInTimezone(date, tzName) {
+  // Format date to match timezone's local time
+  var formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: tzName,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  var parts = formatter.formatToParts(date);
+  var year = parts.find(p => p.type === 'year').value;
+  var month = parts.find(p => p.type === 'month').value;
+  var day = parts.find(p => p.type === 'day').value;
+  return new Date(year + '-' + month + '-' + day);
+}
+
 function getPriorityLabel(a) {
   var now = new Date();
   var due = new Date(a.due_iso);
+
+  // Calculate dates in the app's configured timezone
+  var todayInTz = getDateInTimezone(now, appTimezone);
+  var dueInTz = getDateInTimezone(due, appTimezone);
+
+  var daysUntilDue = Math.floor((dueInTz - todayInTz) / (1000 * 60 * 60 * 24));
   var hoursUntilDue = (due - now) / 3600000;
+
   var logged = a.minutes_logged || 0;
   var estimate = a.estimate_minutes || 30;
   var notStarted = logged < 5;
 
+  if (daysUntilDue < 0) return { text: 'Overdue', color: 'var(--red)' };
   if (hoursUntilDue < 0) return { text: 'Overdue', color: 'var(--red)' };
   if (hoursUntilDue < 3) return { text: 'Due in ' + Math.round(hoursUntilDue) + 'h', color: 'var(--red)' };
   if (hoursUntilDue < 12) return { text: 'Due in ' + Math.round(hoursUntilDue) + 'h', color: 'var(--amber)' };
-  if (hoursUntilDue < 24) return { text: 'Due today', color: 'var(--amber)' };
-  if (hoursUntilDue < 48) return { text: 'Due tomorrow', color: 'var(--text2)' };
+  if (daysUntilDue === 0) return { text: 'Due today', color: 'var(--amber)' };
+  if (daysUntilDue === 1) return { text: 'Due tomorrow', color: 'var(--text2)' };
+  if (daysUntilDue === 2) return { text: 'Due in 2 days', color: 'var(--text2)' };
   if (notStarted && estimate >= 40) return { text: 'Due ' + due.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}) + ' · ' + estimate + ' min', color: 'var(--accent2)' };
   if (logged > 0) return { text: Math.round(logged) + ' min logged', color: 'var(--green)' };
-  return { text: 'Due ' + new Date(a.due_iso).toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}), color: 'var(--text3)' };
+  return { text: 'Due ' + due.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}), color: 'var(--text3)' };
 }
 
 function loadHomeAssignments() {
   fetch('/api/assignments', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
     assignments = d.assignments || [];
+    appTimezone = d.timezone || 'America/Denver';
 
     // Score and sort all assignments by priority
     var scored = assignments.slice().sort(function(a, b) {
