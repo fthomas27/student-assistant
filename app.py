@@ -33,8 +33,8 @@ APP_PASSWORD = _app_password
 
 app.permanent_session_lifetime = timedelta(days=30)
 
-# Secure session cookies
-app.config["SESSION_COOKIE_SECURE"] = True  # HTTPS only
+# Secure session cookies (allow HTTP in development, require HTTPS in production)
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("ENVIRONMENT", "development") == "production"
 app.config["SESSION_COOKIE_HTTPONLY"] = True  # No JavaScript access
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # CSRF protection
 
