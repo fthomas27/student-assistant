@@ -229,9 +229,10 @@ def get_db():
 
 def init_db():
     conn = get_db()
-    cur = conn.cursor()
+    try:
+        cur = conn.cursor()
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''
@@ -384,9 +385,10 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_completed_at ON completions(completed_at DESC)")
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
     log.info("Database initialized.")
 
 
@@ -402,12 +404,14 @@ def get_config():
         if _config_cache is not None and (time.monotonic() - _config_cache_ts) < CONFIG_CACHE_TTL:
             return _config_cache
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT key, value FROM config")
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    result = {r["key"]: r["value"] for r in rows}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT key, value FROM config")
+        rows = cur.fetchall()
+        cur.close()
+        result = {r["key"]: r["value"] for r in rows}
+    finally:
+        conn.close()
     with _config_cache_lock:
         _config_cache = result
         _config_cache_ts = time.monotonic()
@@ -417,14 +421,16 @@ def get_config():
 def set_config(updates):
     global _config_cache
     conn = get_db()
-    cur = conn.cursor()
-    for k, v in updates.items():
-        cur.execute("""
+    try:
+        cur = conn.cursor()
+        for k, v in updates.items():
+            cur.execute("""
 INSERT INTO config (key, value) VALUES (%s, %s)
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", (k, str(v)))
-    conn.commit()
-    cur.close()
-    conn.close()
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
     with _config_cache_lock:
         _config_cache = None  # invalidate
 
