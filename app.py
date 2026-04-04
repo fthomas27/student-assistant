@@ -1174,6 +1174,8 @@ def api_assignments():
 
 @app.route("/api/assignments/<uid>/estimate", methods=["POST"])
 def api_set_estimate(uid):
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         try:
@@ -1189,12 +1191,15 @@ VALUES (%s, %s, NOW())
 ON CONFLICT (uid) DO UPDATE SET minutes = EXCLUDED.minutes, updated_at = NOW()
 """, (uid, minutes))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok", "minutes": minutes})
     except Exception as e:
         log.error("Assignment estimate set failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to set estimate"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/calendar")
@@ -1446,6 +1451,8 @@ VALUES (%s, %s, %s, %s, %s) RETURNING id""",
 
 @app.route("/api/workout/log/<int:log_id>", methods=["PATCH"])
 def api_workout_log_patch(log_id):
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         if "user_notes" not in data and "perceived_difficulty" not in data:
@@ -1471,12 +1478,15 @@ def api_workout_log_patch(log_id):
                 except (TypeError, ValueError):
                     pass
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Workout log patch failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to update workout log"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/workout/log-custom", methods=["POST"])
@@ -1720,24 +1730,37 @@ def api_timer_stop():
             elapsed = get_timer_elapsed(row)
             elapsed_min = elapsed / 60.0
             if save and row.get("assignment_title") and elapsed_min > 0.5:
-                conn = get_db()
-                cur = conn.cursor()
-                cur.execute("""
+                conn = None
+                cur = None
+                try:
+                    conn = get_db()
+                    cur = conn.cursor()
+                    cur.execute("""
 INSERT INTO completions (assignment_title, class_name, duration_minutes, estimate_minutes, timed)
 VALUES (%s, %s, %s, %s, TRUE)""",
-                            (row["assignment_title"], row.get("class_name", ""),
-                             round(elapsed_min, 2), float(row.get("estimate_minutes") or 30)))
-                conn.commit()
-                cur.close()
-                conn.close()
-            conn2 = get_db()
-            cur2 = conn2.cursor()
-            cur2.execute("""
+                                (row["assignment_title"], row.get("class_name", ""),
+                                 round(elapsed_min, 2), float(row.get("estimate_minutes") or 30)))
+                    conn.commit()
+                finally:
+                    if cur:
+                        cur.close()
+                    if conn:
+                        conn.close()
+
+            conn2 = None
+            cur2 = None
+            try:
+                conn2 = get_db()
+                cur2 = conn2.cursor()
+                cur2.execute("""
 UPDATE timer_state SET active=FALSE, paused_at=NULL, started_at=NULL,
 accumulated_seconds=0, assignment_uid='', assignment_title='', class_name='' WHERE id=1""")
-            conn2.commit()
-            cur2.close()
-            conn2.close()
+                conn2.commit()
+            finally:
+                if cur2:
+                    cur2.close()
+                if conn2:
+                    conn2.close()
         return jsonify({"saved": save, "elapsed_minutes": round(elapsed_min, 2)})
     except Exception as e:
         log.error("Timer stop failed: %s", _sanitize_log_message(str(e)))
@@ -1746,6 +1769,8 @@ accumulated_seconds=0, assignment_uid='', assignment_title='', class_name='' WHE
 
 @app.route("/api/complete", methods=["POST"])
 def api_complete():
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         title = str(data.get("title", ""))[:300]
@@ -1759,12 +1784,15 @@ def api_complete():
 INSERT INTO completions (assignment_title, class_name, duration_minutes, estimate_minutes, timed)
 VALUES (%s, %s, 0, %s, FALSE)""", (title, class_name, estimate))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Complete assignment failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to complete assignment"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/completions/today")
@@ -2014,6 +2042,8 @@ ORDER BY pt.created_at ASC""")
 
 @app.route("/api/tasks", methods=["POST"])
 def api_tasks_create():
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         title = str(data.get("title", "")).strip()[:300]
@@ -2035,16 +2065,21 @@ INSERT INTO tasks (title, notes, urgency, due_date) VALUES (%s, %s, %s, %s) RETU
                     (title, notes, urgency, due_date))
         new_id = cur.fetchone()["id"]
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"id": new_id, "status": "ok"})
     except Exception as e:
         log.error("Task create failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to create task"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/tasks/<int:task_id>", methods=["PATCH"])
 def api_tasks_update(task_id):
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         conn = get_db()
@@ -2063,27 +2098,35 @@ UPDATE tasks SET completed=%s, completed_at=%s WHERE id=%s""",
         if "due_date" in data:
             cur.execute("UPDATE tasks SET due_date=%s WHERE id=%s", (data["due_date"] or None, task_id))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Task update failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to update task"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
 def api_tasks_delete(task_id):
+    conn = None
+    cur = None
     try:
         conn = get_db()
         cur = conn.cursor()
         cur.execute("DELETE FROM tasks WHERE id=%s", (task_id,))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Task delete failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to delete task"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/recurring-tasks", methods=["GET"])
@@ -2106,6 +2149,8 @@ FROM recurring_tasks WHERE active = TRUE ORDER BY created_at DESC""")
 
 @app.route("/api/recurring-tasks", methods=["POST"])
 def api_recurring_tasks_create():
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         title = str(data.get("title", "")).strip()[:200]
@@ -2137,16 +2182,21 @@ VALUES (%s, %s, %s, %s)""",
         cur.execute("UPDATE recurring_tasks SET last_created_at = NOW() WHERE id = %s", (task_id,))
 
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok", "id": task_id}), 201
     except Exception as e:
         log.error("Recurring task create failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to create recurring task"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/recurring-tasks/<int:task_id>", methods=["PATCH"])
 def api_recurring_tasks_update(task_id):
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         conn = get_db()
@@ -2156,27 +2206,35 @@ def api_recurring_tasks_update(task_id):
             cur.execute("UPDATE recurring_tasks SET active=%s WHERE id=%s", (bool(data["active"]), task_id))
 
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Recurring task update failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to update recurring task"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/recurring-tasks/<int:task_id>", methods=["DELETE"])
 def api_recurring_tasks_delete(task_id):
+    conn = None
+    cur = None
     try:
         conn = get_db()
         cur = conn.cursor()
         cur.execute("DELETE FROM recurring_tasks WHERE id=%s", (task_id,))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Recurring task delete failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to delete recurring task"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 def _get_next_monthly_occurrence(position, day_of_week, start_after=None, is_first_creation=False):
@@ -2400,6 +2458,8 @@ ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 WHEN 'done' THEN 
 
 @app.route("/api/projects", methods=["POST"])
 def api_projects_create():
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         title = str(data.get("title", "")).strip()[:300]
@@ -2418,16 +2478,21 @@ VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
                      int(data.get("completion_pct", 0))))
         new_id = cur.fetchone()["id"]
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"id": new_id, "status": "ok"})
     except Exception as e:
         log.error("Project create failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to create project"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/projects/<int:project_id>", methods=["PATCH"])
 def api_projects_update(project_id):
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         conn = get_db()
@@ -2435,8 +2500,6 @@ def api_projects_update(project_id):
         if "status" in data:
             st = str(data["status"]).strip().lower()
             if st not in ("active", "paused", "done"):
-                cur.close()
-                conn.close()
                 return jsonify({"error": "status must be active, paused, or done"}), 400
             cur.execute("UPDATE projects SET status=%s WHERE id=%s", (st, project_id))
         fields = ["title", "description", "lead", "members",
@@ -2472,27 +2535,35 @@ def api_projects_update(project_id):
         if data.get("checkin_now"):
             cur.execute("UPDATE projects SET last_checkin=NOW() WHERE id=%s", (project_id,))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Project update failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to update project"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/projects/<int:project_id>", methods=["DELETE"])
 def api_projects_delete(project_id):
+    conn = None
+    cur = None
     try:
         conn = get_db()
         cur = conn.cursor()
         cur.execute("DELETE FROM projects WHERE id=%s", (project_id,))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Project delete failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to delete project"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/projects/<int:project_id>/notes", methods=["GET"])
@@ -2510,6 +2581,8 @@ def api_project_notes_get(project_id):
 
 @app.route("/api/projects/<int:project_id>/notes", methods=["POST"])
 def api_project_notes_create(project_id):
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         content = str(data.get("content", "")).strip()
@@ -2523,27 +2596,35 @@ def api_project_notes_create(project_id):
         # Also update last_checkin
         cur.execute("UPDATE projects SET last_checkin=NOW() WHERE id=%s", (project_id,))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"id": new_id, "status": "ok"})
     except Exception as e:
         log.error("Project note create failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to create note"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/projects/<int:project_id>/notes/<int:note_id>", methods=["DELETE"])
 def api_project_notes_delete(project_id, note_id):
+    conn = None
+    cur = None
     try:
         conn = get_db()
         cur = conn.cursor()
         cur.execute("DELETE FROM project_notes WHERE id=%s AND project_id=%s", (note_id, project_id))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Project note delete failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to delete note"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 # ── Project Tasks ─────────────────────────────────────────────────────────────
@@ -2567,6 +2648,8 @@ FROM project_tasks WHERE project_id=%s ORDER BY created_at ASC""", (project_id,)
 
 @app.route("/api/projects/<int:project_id>/tasks", methods=["POST"])
 def api_project_tasks_create(project_id):
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         title = str(data.get("title", "")).strip()[:300]
@@ -2584,16 +2667,21 @@ VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
                     (project_id, title, notes, assignee, status, due_date))
         new_id = cur.fetchone()["id"]
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"id": new_id, "status": "ok"})
     except Exception as e:
         log.error("Project task create failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to create task"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/projects/<int:project_id>/tasks/<int:task_id>", methods=["PATCH"])
 def api_project_tasks_update(project_id, task_id):
+    conn = None
+    cur = None
     try:
         data = request.get_json(force=True) or {}
         conn = get_db()
@@ -2609,27 +2697,35 @@ def api_project_tasks_update(project_id, task_id):
                     (val, task_id, project_id)
                 )
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Project task update failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to update task"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/projects/<int:project_id>/tasks/<int:task_id>", methods=["DELETE"])
 def api_project_tasks_delete(project_id, task_id):
+    conn = None
+    cur = None
     try:
         conn = get_db()
         cur = conn.cursor()
         cur.execute("DELETE FROM project_tasks WHERE id=%s AND project_id=%s", (task_id, project_id))
         conn.commit()
-        cur.close()
-        conn.close()
         return jsonify({"status": "ok"})
     except Exception as e:
         log.error("Project task delete failed: %s", _sanitize_log_message(str(e)))
         return jsonify({"error": "Failed to delete task"}), 500
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 @app.route("/api/config", methods=["GET"])
