@@ -2128,8 +2128,8 @@ VALUES (%s, %s, %s, %s, TRUE) RETURNING id""",
                     (title, notes, urgency, recurrence))
         task_id = cur.fetchone()["id"]
 
-        # Create first instance
-        due_date = _calculate_next_due_date(recurrence)
+        # Create first instance with is_first_creation=True so it can be scheduled for today
+        due_date = _calculate_next_due_date(recurrence, is_first_creation=True)
         cur.execute("""
 INSERT INTO tasks (title, notes, urgency, due_date)
 VALUES (%s, %s, %s, %s)""",
@@ -2179,7 +2179,7 @@ def api_recurring_tasks_delete(task_id):
         return jsonify({"error": "Failed to delete recurring task"}), 500
 
 
-def _get_next_monthly_occurrence(position, day_of_week, start_after=None):
+def _get_next_monthly_occurrence(position, day_of_week, start_after=None, is_first_creation=False):
     """
     Calculate next occurrence of a monthly pattern like "first Monday" or "last Friday".
 
@@ -2187,6 +2187,7 @@ def _get_next_monthly_occurrence(position, day_of_week, start_after=None):
         position: "first", "second", "third", "fourth", "last"
         day_of_week: 0-6 (0=Monday, 6=Sunday) - matches Python's weekday()
         start_after: date to start searching after (default: today)
+        is_first_creation: If True, check current month first. If False, skip to next month.
 
     Returns:
         date object of the next occurrence
@@ -2196,8 +2197,12 @@ def _get_next_monthly_occurrence(position, day_of_week, start_after=None):
     if start_after is None:
         start_after = date.today()
 
-    # Start checking from next day
-    check_date = start_after + timedelta(days=1)
+    # For first creation, check if today matches the pattern in the current month
+    # For future recurrences, start checking from next day
+    if is_first_creation:
+        check_date = date(start_after.year, start_after.month, 1)
+    else:
+        check_date = start_after + timedelta(days=1)
 
     # Search within next 2 months to find the pattern
     for _ in range(60):
@@ -2248,13 +2253,18 @@ def _get_next_monthly_occurrence(position, day_of_week, start_after=None):
     return start_after + timedelta(days=30)
 
 
-def _calculate_next_due_date(recurrence):
+def _calculate_next_due_date(recurrence, is_first_creation=False):
     """Calculate next due date based on recurrence pattern.
 
     Supports:
     - Legacy formats: "daily", "weekly", "biweekly", "monthly"
     - JSON: {"type": "weekly", "day_of_week": 0}
     - JSON: {"type": "monthly", "position": "first", "day_of_week": 0}
+
+    Args:
+        recurrence: Recurrence pattern string or JSON
+        is_first_creation: If True, schedule for today if today matches the pattern.
+                          If False, schedule for the next future occurrence.
     """
     import json
     today = date.today()
@@ -2275,7 +2285,8 @@ def _calculate_next_due_date(recurrence):
             # Find next occurrence of this weekday
             days_ahead = (day_of_week - today.weekday()) % 7
             if days_ahead == 0:
-                days_ahead = 7  # Next week if today is the target day
+                # If today is the target day: schedule for today if first creation, next week otherwise
+                days_ahead = 0 if is_first_creation else 7
             return today + timedelta(days=days_ahead)
         elif ptype == "monthly":
             position = pattern.get("position", "first")
@@ -2289,7 +2300,7 @@ def _calculate_next_due_date(recurrence):
             if not isinstance(day_of_week, int) or day_of_week < 0 or day_of_week > 6:
                 log.warning("Invalid day_of_week in monthly pattern: %s", day_of_week)
                 return today + timedelta(days=30)
-            return _get_next_monthly_occurrence(position, day_of_week, today)
+            return _get_next_monthly_occurrence(position, day_of_week, today, is_first_creation)
         else:
             log.warning("Unknown recurrence type: %s", ptype)
             return today + timedelta(days=1)
