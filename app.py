@@ -2970,9 +2970,13 @@ except Exception as e:
 # in the first gunicorn worker (SERVER_SOFTWARE is set before fork).
 _worker_id = os.environ.get("GUNICORN_WORKER_ID", "0")
 if _worker_id in ("", "0", "1"):
-    schedule_briefing()
-    scheduler.start()
-    threading.Thread(target=generate_briefing, daemon=True).start()
+    try:
+        schedule_briefing()
+        scheduler.start()
+        threading.Thread(target=generate_briefing, daemon=True).start()
+        log.info("Scheduler and background tasks started successfully")
+    except Exception as e:
+        log.error("Failed to start scheduler/background tasks: %s", _sanitize_log_message(str(e)), exc_info=True)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
