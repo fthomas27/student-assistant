@@ -1451,6 +1451,11 @@ function getDateInTimezone(date, tzName) {
   return new Date(year + '-' + month + '-' + day);
 }
 
+function isQuizOrTest(title) {
+  var t = (title || '').toLowerCase();
+  return t.includes('quiz') || t.includes('test');
+}
+
 function getPriorityLabel(a) {
   var now = new Date();
   var due = new Date(a.due_iso);
@@ -1572,10 +1577,13 @@ function buildAsgnCard(a, isActive) {
     'style="padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--surface3);color:var(--accent2);font-size:11px;font-weight:600;cursor:pointer">Save</button>' +
     '</div>';
 
+  var isQuiz = isQuizOrTest(a.title);
   var sideButtons = isActive ? '' :
     '<div class="asgn-card-btns" onclick="event.stopPropagation()">' +
-    '<button class="btn btn-primary" onclick="startTimer(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Start</button>' +
-    '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Done</button>' +
+    (isQuiz
+      ? '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',0)">Taken</button>'
+      : '<button class="btn btn-primary" onclick="startTimer(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Start</button>' +
+        '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Done</button>') +
     '</div>';
 
   return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + uid + '" onclick="openAsgnDetail(\'' + uid + '\')">' +
@@ -1630,6 +1638,7 @@ function openAsgnDetail(uid) {
     '<div class="sheet-section-label">Due</div>' +
     '<div class="sheet-body">' + esc(a.due_display || '') + '</div>' +
     '</div>' +
+    (isQuizOrTest(a.title) ? '' :
     '<div class="sheet-section">' +
     '<div class="sheet-section-label">Time Estimate</div>' +
     '<div style="display:flex;align-items:center;gap:8px;margin-top:4px">' +
@@ -1637,12 +1646,14 @@ function openAsgnDetail(uid) {
     '<span style="color:var(--text2);font-size:14px">min</span>' +
     '<span id="estimate-tag" style="font-size:12px;color:var(--text3);margin-left:2px">(' + estLabel + ')</span>' +
     '</div>' +
-    '</div>' +
+    '</div>') +
     (a.description ? '<div class="sheet-section"><div class="sheet-section-label">Details</div><div class="sheet-body">' + esc(a.description) + '</div></div>' : '');
 
   actions.innerHTML =
-    '<button class="btn btn-primary" onclick="startTimerFromDetail()">Start Timer</button>' +
-    '<button class="btn btn-done" onclick="markDoneFromDetail()">Mark Done</button>';
+    (isQuizOrTest(a.title)
+      ? '<button class="btn btn-done" onclick="markDoneFromDetail()">Mark as Taken</button>'
+      : '<button class="btn btn-primary" onclick="startTimerFromDetail()">Start Timer</button>' +
+        '<button class="btn btn-done" onclick="markDoneFromDetail()">Mark Done</button>');
 
   document.getElementById('sheet-backdrop').classList.add('open');
   document.getElementById('asgn-detail-sheet').classList.add('open');
