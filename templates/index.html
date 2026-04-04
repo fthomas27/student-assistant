@@ -2384,10 +2384,10 @@ function openProjectDetail(id) {
 
   var teamContent = '';
   if (p.lead || p.members) {
-    teamContent = '<div class="sheet-section">';
-    if (p.lead) teamContent += '<div class="sheet-body"><strong>Lead:</strong> ' + esc(p.lead) + '</div>';
-    if (p.members) teamContent += '<div class="sheet-body"><strong>Others assigned:</strong> ' + esc(p.members) + '</div>';
-    teamContent += '</div>';
+    var teamLines = '';
+    if (p.lead) teamLines += '<div><strong>Lead:</strong> ' + esc(p.lead) + '</div>';
+    if (p.members) teamLines += '<div><strong>Others assigned:</strong> ' + esc(p.members) + '</div>';
+    teamContent = '<div class="sheet-section"><div class="sheet-body">' + teamLines + '</div></div>';
   }
 
   var content = '<div class="sheet-title">' + esc(p.title) + '</div>' +
