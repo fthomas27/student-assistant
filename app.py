@@ -536,11 +536,16 @@ LIMIT 3""")
             "Today's Schedule:\n%s\n\n"
             "Pending Tasks:\n%s\n\n"
             "Projects needing check-in:\n%s\n\n"
-            "Write a daily briefing using ONLY bullet points (start each with •). "
-            "For EVERY assignment listed, include a bullet that names it, when it's due, and ends with either '— CONCERN' (if due soon, high urgency, or large estimate) or '— OK' (if plenty of time). "
-            "Add bullets for any urgent tasks and today's schedule if present. "
-            "End with ONE bullet recommending the best time today to do homework (based on when school ends and the schedule above). "
-            "Keep each bullet to one line. Be direct. No intro sentence, no paragraph text."
+            "Write a daily briefing using this EXACT format:\n\n"
+            "## Assignments\n"
+            "One bullet per assignment: • **Assignment Name** (Class) due DATE — CONCERN or — OK\n"
+            "Mark CONCERN if due within 2 days, high urgency, or large estimate. Otherwise OK.\n\n"
+            "## Schedule\n"
+            "One bullet per event or task today. If none, write: • Nothing scheduled.\n\n"
+            "## Homework Time\n"
+            "• **Recommended:** STATE THE SPECIFIC TIME WINDOW to do homework today.\n\n"
+            "Rules: Use **bold** for assignment names, recommended time, and section items. "
+            "Keep each bullet to one line. No intro sentence. No paragraph text. Only the sections above."
         ) % (name, now_str, schedule_note, asgn_text, events_text, tasks_text, stale_text)
 
         try:
