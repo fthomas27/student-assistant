@@ -1764,6 +1764,10 @@ function startTimerPoller() {
       // Switch to fast polling (10s) while timer is active
       clearInterval(timerPollerInterval);
       timerPollerInterval = setInterval(pollTimer, 10000);
+    } else if (document.visibilityState === 'hidden') {
+      // App is backgrounded - switch to slow polling to save battery/bandwidth
+      clearInterval(timerPollerInterval);
+      timerPollerInterval = setInterval(pollTimer, 60000);
     }
   });
 }
