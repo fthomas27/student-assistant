@@ -258,6 +258,9 @@ padding: 3px 7px; border-radius: 20px; flex-shrink: 0; margin-top: 2px;
 .asgn-card-btns .btn { flex: none; width: 100%; padding: 7px 8px; font-size: 11px; font-weight: 700; }
 .overdue-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 6px; border-radius: 20px; background: rgba(240,92,92,0.18); color: var(--red); margin-left: 6px; vertical-align: middle; }
 .notif-row { touch-action: pan-y; user-select: none; transition: transform 0.2s; }
+.notif-row.debrief-notif { cursor: pointer; border-color: rgba(124,106,247,0.35); background: linear-gradient(135deg, rgba(124,106,247,0.14), rgba(124,106,247,0.05)); }
+#debrief-notif-slot:empty { display: none; }
+#debrief-notif-slot { margin-bottom: 8px; }
 
 /* ── BUTTONS ── */
 .btn {
@@ -562,6 +565,7 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
 
 <!-- ══ TAB 0: HOME ══ -->
 <div class="tab-panel" id="tab-home">
+  <div id="debrief-notif-slot"></div>
   <div id="notif-container"></div>
 
   <div class="card">
@@ -758,6 +762,18 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   </div>
 </div>
 
+<!-- DAILY DEBRIEF SHEET -->
+
+<div class="bottom-sheet" id="debrief-sheet">
+  <div class="sheet-handle"></div>
+  <div class="sheet-title-sm" style="margin-bottom:4px">Daily debrief</div>
+  <div class="sheet-sub" id="debrief-sheet-sub"></div>
+  <div class="briefing-text" id="debrief-sheet-body" style="margin-top:14px;font-size:14px"></div>
+  <div class="sheet-actions" style="padding-top:16px">
+    <button class="btn btn-outline" style="width:100%" onclick="closeAllSheets()">Close</button>
+  </div>
+</div>
+
 <!-- SETTINGS SHEET -->
 
 <div class="settings-sheet" id="settings-sheet">
@@ -778,6 +794,14 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   <div class="field-group">
     <div class="field-label">Anthropic API Key</div>
     <input class="field-input" id="setting-apikey" type="password" placeholder="sk-ant-...">
+  </div>
+  <div class="field-group">
+    <div class="field-label">Friday email — addressee</div>
+    <input class="field-input" id="setting-weekly-advisor" type="text" placeholder="Mr. Goldberg">
+  </div>
+  <div class="field-group">
+    <div class="field-label">Friday email — sign-off name</div>
+    <input class="field-input" id="setting-formal-name" type="text" placeholder="Finley Thomas">
   </div>
   <button class="save-btn" onclick="saveSettings()">Save</button>
   <div class="save-feedback" id="save-feedback"></div>
@@ -833,6 +857,8 @@ var timerSyncAtMs = 0;
 var timerFocusUserStarted = false;
 var timerFocusPausedUi = null;
 var timerFocusHydrated = false;
+var cachedDebrief = { text: '', generatedAt: null };
+window._calReminderTimers = window._calReminderTimers || {};
 
 // ══════════════════════════════════════════
 // INIT
@@ -846,6 +872,15 @@ document.addEventListener('DOMContentLoaded', function() {
   loadHomeSchedule();
   loadStats();
   startTimerPoller();
+  restoreCalReminders();
+  setInterval(function() {
+    fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
+  }, 120000);
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') {
+      fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
+    }
+  });
 });
 
 function updateHeaderDate() {
@@ -881,6 +916,10 @@ function loadConfig() {
     document.getElementById('setting-name').value = d.name || '';
     document.getElementById('setting-time').value = d.morning_briefing_time || '07:00';
     document.getElementById('setting-cutoff').value = d.timer_cutoff_multiplier || '2.0';
+    var adv = document.getElementById('setting-weekly-advisor');
+    if (adv) adv.value = d.weekly_recap_advisor || 'Mr. Goldberg';
+    var fn = document.getElementById('setting-formal-name');
+    if (fn) fn.value = d.formal_signoff_name || 'Finley Thomas';
   }).catch(function(){});
 }
 
@@ -896,6 +935,7 @@ function closeAllSheets() {
   document.getElementById('asgn-detail-sheet').classList.remove('open');
   document.getElementById('project-detail-sheet').classList.remove('open');
   document.getElementById('cal-event-sheet').classList.remove('open');
+  document.getElementById('debrief-sheet').classList.remove('open');
 }
 
 function saveSettings() {
@@ -906,6 +946,10 @@ function saveSettings() {
   };
   var apikey = document.getElementById('setting-apikey').value.trim();
   if (apikey) payload.anthropic_api_key = apikey;
+  var wadv = document.getElementById('setting-weekly-advisor');
+  var fname = document.getElementById('setting-formal-name');
+  if (wadv) payload.weekly_recap_advisor = wadv.value.trim().slice(0, 200);
+  if (fname) payload.formal_signoff_name = fname.value.trim().slice(0, 200);
   fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     .then(function() {
       document.getElementById('save-feedback').textContent = 'Saved!';
@@ -926,7 +970,157 @@ function renderBriefing(content) {
 function loadBriefing() {
   fetch('/api/briefing').then(function(r) { return r.json(); }).then(function(d) {
     document.getElementById('briefing-text').innerHTML = renderBriefing(d.briefing);
+    updateDebriefFromApi(d);
   }).catch(function(){});
+}
+
+function localDateKey(d) {
+  d = d || new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function isDebriefFromToday(genIso) {
+  if (!genIso) return false;
+  var g = new Date(genIso);
+  if (isNaN(g.getTime())) return false;
+  return localDateKey(g) === localDateKey(new Date());
+}
+
+function updateDebriefFromApi(d) {
+  var deb = (d && d.debrief) ? String(d.debrief).trim() : '';
+  var gen = d && d.debrief_generated_at ? d.debrief_generated_at : null;
+  cachedDebrief.text = deb;
+  cachedDebrief.generatedAt = gen;
+  renderDebriefPill();
+  maybeBrowserNotifyDebrief(gen, deb);
+}
+
+function renderDebriefPill() {
+  var slot = document.getElementById('debrief-notif-slot');
+  if (!slot) return;
+  slot.innerHTML = '';
+  var deb = cachedDebrief.text;
+  var gen = cachedDebrief.generatedAt;
+  if (!deb || !isDebriefFromToday(gen)) return;
+  try {
+    if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
+  } catch (e) {}
+  var when = gen ? formatRelative(gen) : '';
+  var permHint = '';
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    permHint = '<br><span style="font-size:12px;color:var(--text3)">Tip: allow notifications in your browser to get pinged when the debrief is ready.</span>';
+  }
+  slot.innerHTML =
+    '<div class="notif-row debrief-notif" role="button" tabindex="0" onclick="openDebriefSheet()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDebriefSheet();}">' +
+    '<span class="notif-icon">&#127961;</span>' +
+    '<div class="notif-text"><span class="notif-title">Daily debrief</span><br>' +
+    '<span style="color:var(--text3)">Tap to read what happened today' + (when ? ' · ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
+}
+
+function openDebriefSheet() {
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+  var body = document.getElementById('debrief-sheet-body');
+  var sub = document.getElementById('debrief-sheet-sub');
+  if (body) body.innerHTML = cachedDebrief.text ? renderMarkdown(cachedDebrief.text, false) : '<span style="color:var(--text3)">No debrief yet. It is generated around 7:00 PM.</span>';
+  if (sub) sub.textContent = cachedDebrief.generatedAt ? 'Generated ' + formatRelative(cachedDebrief.generatedAt) : '';
+  document.getElementById('sheet-backdrop').classList.add('open');
+  document.getElementById('debrief-sheet').classList.add('open');
+}
+
+function maybeBrowserNotifyDebrief(genIso, debText) {
+  if (!debText || !isDebriefFromToday(genIso)) return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  var key = 'debrief_bn_' + String(genIso).replace(/[^\w.-]/g, '_');
+  try {
+    if (sessionStorage.getItem(key)) return;
+  } catch (e) {}
+  try {
+    var n = new Notification('Daily debrief ready', {
+      body: 'Tap to see how today went',
+      tag: 'student-debrief',
+    });
+    n.onclick = function() {
+      window.focus();
+      openDebriefSheet();
+      try { n.close(); } catch (e2) {}
+    };
+    sessionStorage.setItem(key, '1');
+  } catch (e) {}
+}
+
+function calEventReminderId(e) {
+  return String(e.start_iso || '') + '::' + String(e.title || '') + '::' + String(e.source || '');
+}
+
+function getCalReminders() {
+  try {
+    var raw = localStorage.getItem('cal_reminders_v1');
+    if (!raw) return [];
+    var arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+function setCalReminders(arr) {
+  try {
+    localStorage.setItem('cal_reminders_v1', JSON.stringify(arr));
+  } catch (err) {}
+}
+
+function armCalReminderEntry(entry) {
+  if (!entry || entry.fireAt == null) return;
+  var delay = entry.fireAt - Date.now();
+  if (delay <= 0) return;
+  var id = entry.id;
+  if (window._calReminderTimers[id]) clearTimeout(window._calReminderTimers[id]);
+  window._calReminderTimers[id] = setTimeout(function() {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      var n = new Notification('In 30 min: ' + entry.title, { body: entry.subtitle || 'Event starting soon', tag: 'cal-' + id.slice(0, 80) });
+      n.onclick = function() {
+        window.focus();
+        try { n.close(); } catch (e) {}
+      };
+    }
+    var list = getCalReminders().filter(function(x) { return x.id !== id; });
+    setCalReminders(list);
+    delete window._calReminderTimers[id];
+  }, delay);
+}
+
+function restoreCalReminders() {
+  var now = Date.now();
+  var list = getCalReminders().filter(function(entry) { return entry.fireAt > now; });
+  if (list.length !== getCalReminders().length) setCalReminders(list);
+  list.forEach(armCalReminderEntry);
+}
+
+function scheduleCalEventReminder(e) {
+  if (e.all_day) return { error: '30-minute reminders are not used for all-day events.' };
+  var start = new Date(e.start_iso);
+  if (isNaN(start.getTime())) return { error: 'Could not read this event start time.' };
+  var fireAt = start.getTime() - 30 * 60 * 1000;
+  if (fireAt <= Date.now()) return { error: 'This event is already within 30 minutes or has passed.' };
+  var id = calEventReminderId(e);
+  var list = getCalReminders().filter(function(x) { return x.id !== id; });
+  var subtitle = (e.start_display || '') + (e.location ? ' · ' + e.location : '');
+  list.push({ id: id, fireAt: fireAt, title: e.title, subtitle: subtitle });
+  setCalReminders(list);
+  armCalReminderEntry(list[list.length - 1]);
+  return { ok: true };
+}
+
+function removeCalEventReminder(e) {
+  var id = calEventReminderId(e);
+  var list = getCalReminders().filter(function(x) { return x.id !== id; });
+  setCalReminders(list);
+  if (window._calReminderTimers[id]) {
+    clearTimeout(window._calReminderTimers[id]);
+    delete window._calReminderTimers[id];
+  }
 }
 
 function refreshBriefing() {
@@ -941,6 +1135,7 @@ function refreshBriefing() {
         var genAt = d.generated_at ? new Date(d.generated_at).getTime() : 0;
         if (genAt > startedAt || Date.now() - startedAt > 30000) {
           text.innerHTML = renderBriefing(d.briefing);
+          updateDebriefFromApi(d);
           text.classList.remove('fading');
           icon.classList.remove('spinning');
         } else {
@@ -1644,7 +1839,7 @@ function buildProjectCard(p) {
   return '<div class="project-card' + (p.needs_checkin && p.status === 'active' ? ' stale' : '') + '" onclick="openProjectDetail(' + p.id + ')">' +
     '<div class="project-header">' +
     '<div class="project-title">' + esc(p.title) + '</div>' +
-    '<span class="project-status ' + esc(p.status) + '">' + esc(p.status) + '</span>' +
+    '<span class="project-status ' + esc(p.status) + '">' + esc(projectStatusLabel(p.status)) + '</span>' +
     '</div>' +
     '<div class="project-meta">' + esc(lastCheckin) + (membersStr ? '<br>' + esc(membersStr) : '') + '</div>' +
     (p.needs_checkin && p.status === 'active' ? '<span class="stale-pill" style="display:inline-block;margin-top:4px">Check-in due</span>' : '') +
@@ -1658,6 +1853,43 @@ function toggleUnderwayTasks(id) {
   el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
+function projectStatusLabel(status) {
+  if (status === 'done') return 'complete';
+  return status || 'active';
+}
+
+function markProjectComplete(projectId) {
+  fetch('/api/projects/' + projectId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'done', completion_pct: 100 })
+  }).then(function() {
+    loadProjects();
+    closeAllSheets();
+  }).catch(function(){});
+}
+
+function markProjectActiveAgain(projectId) {
+  fetch('/api/projects/' + projectId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'active' })
+  }).then(function() {
+    loadProjects();
+    closeAllSheets();
+  }).catch(function(){});
+}
+
+function deleteProjectPermanently(projectId) {
+  if (!confirm('Delete this project permanently? All notes and tasks will be removed. This cannot be undone. (Marking complete keeps history — use that if you only want to show it as finished.)')) return;
+  fetch('/api/projects/' + projectId, { method: 'DELETE' })
+    .then(function() {
+      if (currentProjectId === projectId) currentProjectId = null;
+      loadProjects();
+      closeAllSheets();
+    }).catch(function(){});
+}
+
 function openProjectDetail(id) {
   currentProjectId = id;
   var p = allProjects.find(function(x) { return x.id === id; });
@@ -1667,9 +1899,10 @@ function openProjectDetail(id) {
 
   var content = '<div class="sheet-title">' + esc(p.title) + '</div>' +
     '<div class="sheet-sub">' + esc(p.description || '') + '</div>' +
-    '<div style="display:flex;gap:8px;margin-bottom:16px">' +
-    '<span class="project-status ' + esc(p.status) + '">' + esc(p.status) + '</span>' +
+    '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">' +
+    '<span class="project-status ' + esc(p.status) + '">' + esc(projectStatusLabel(p.status)) + '</span>' +
     (p.needs_checkin && p.status === 'active' ? '<span class="stale-pill">Check-in overdue</span>' : '') +
+    (p.status === 'done' ? '<span style="font-size:12px;color:var(--text3)">Marked complete — still here until you delete it.</span>' : '') +
     '</div>' +
 
     '<div class="sheet-section"><div class="sheet-section-label">Team</div>' +
@@ -1700,9 +1933,21 @@ function openProjectDetail(id) {
     '<div id="project-notes-list"><div class="shimmer"></div><div class="shimmer" style="width:70%"></div></div>' +
     '</div>' +
 
-    '<div style="display:flex;gap:8px;margin-top:4px">' +
-    '<button class="btn btn-outline" onclick="closeAllSheets()" style="flex:1">Close</button>' +
-    '<button class="btn btn-gold" onclick="checkinProject(' + id + ')">Log Check-in</button>' +
+    '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    '<button type="button" class="btn btn-outline" onclick="event.stopPropagation();closeAllSheets()" style="flex:1;min-width:100px">Close</button>' +
+    (p.status === 'active' || p.status === 'paused'
+      ? '<button type="button" class="btn btn-gold" onclick="event.stopPropagation();checkinProject(' + id + ')">Log Check-in</button>'
+      : '') +
+    '</div>' +
+    '<div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-top:4px">Project status</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+    (p.status !== 'done'
+      ? '<button type="button" class="btn btn-primary" onclick="event.stopPropagation();markProjectComplete(' + id + ')" style="flex:1;min-width:140px">Mark complete</button>'
+      : '<button type="button" class="btn btn-outline" onclick="event.stopPropagation();markProjectActiveAgain(' + id + ')" style="flex:1;min-width:140px">Mark active again</button>') +
+    '<button type="button" class="btn btn-outline" onclick="event.stopPropagation();deleteProjectPermanently(' + id + ')" style="border-color:rgba(240,92,92,0.45);color:var(--red)">Delete project</button>' +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--text3);line-height:1.45">Mark complete keeps the project on your list as finished. Delete removes it and all notes/tasks forever.</div>' +
     '</div>';
 
   document.getElementById('project-detail-content').innerHTML = content;
@@ -2063,11 +2308,21 @@ function clearChat() {
 function sendWeeklyRecap() {
   var thread = document.getElementById('ai-thread');
   var loadId = 'ai-loading-' + Date.now();
-  thread.innerHTML += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px 14px 4px 14px;padding:12px 14px;margin-bottom:8px;font-size:14px;max-width:88%;margin-left:auto;color:var(--text)">Generate my weekly recap</div>';
-  thread.innerHTML += '<div id="' + loadId + '" style="background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;padding:12px 14px;margin-bottom:8px;font-size:14px;color:var(--text3)">Generating recap…</div>';
+  thread.innerHTML += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px 14px 4px 14px;padding:12px 14px;margin-bottom:8px;font-size:14px;max-width:88%;margin-left:auto;color:var(--text)">Generate Friday weekly email</div>';
+  thread.innerHTML += '<div id="' + loadId + '" style="background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;padding:12px 14px;margin-bottom:8px;font-size:14px;color:var(--text3)">Drafting email…</div>';
   thread.scrollTop = thread.scrollHeight;
-  var context = 'You are a sharp personal assistant for Finn, a high school student in Park City, Utah. ';
-  var msgs = [{ role: 'user', content: 'Please give me a Friday weekly recap. Summarize what I accomplished this week, what assignments and tasks I completed, what I might have missed, and key things to focus on next week. Use bold headings and bullet points.' }];
+  var advEl = document.getElementById('setting-weekly-advisor');
+  var nameEl = document.getElementById('setting-formal-name');
+  var advisor = (advEl && advEl.value.trim()) ? advEl.value.trim() : 'Mr. Goldberg';
+  var signoff = (nameEl && nameEl.value.trim()) ? nameEl.value.trim() : 'Finley Thomas';
+  var context = 'You draft polished, professional emails for a high school student in Park City, Utah. Output must read as a real email: plain paragraphs only — no markdown, no ## headings, no bullet lists unless a short list is truly natural in a letter (prefer prose). Tone: warm, respectful, concise, confident without bragging. ';
+  var userPrompt =
+    'Write a Friday weekly check-in email to my teacher/advisor. Use this exact salutation on its own line: Dear ' + advisor + ',\n\n' +
+    'Then the body: open hoping they have had a good week; mention my commitment to staying on top of classes; weave in anything relevant from the week the system knows about (assignments completed, organization habits, check-ins) without inventing specific grades or events not implied by context; express confidence and momentum; thank them for their support.\n\n' +
+    'Close with a line that says only: Best regards,\n' +
+    'Then a new line with exactly this signature: ' + signoff + '\n\n' +
+    'Keep the full email reasonably brief (roughly 120–220 words) unless the supplied context clearly needs more. Do not add a subject line unless I ask; if you add one, put it on the first line as Subject: ... then a blank line.';
+  var msgs = [{ role: 'user', content: userPrompt }];
   fetch('/api/chat', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ system: context, messages: msgs })
@@ -2102,24 +2357,47 @@ function openCalEventDetail(evtJson) {
   if (e.notes) {
     html += '<div class="sheet-section"><div class="sheet-section-label">Notes</div><div class="sheet-body" style="white-space:pre-line;font-size:13px">' + esc(e.notes.substring(0,300)) + '</div></div>';
   }
+  var rid = calEventReminderId(e);
+  var hasRem = getCalReminders().some(function(x) { return x.id === rid; });
   html += '<div class="sheet-section" style="margin-top:12px">' +
-    '<label style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
-    '<input type="checkbox" id="notif-toggle" style="width:18px;height:18px;accent-color:var(--accent)">' +
-    '<span style="font-size:14px">Set Reminder (via browser)</span></label></div>';
+    '<label style="display:flex;align-items:flex-start;gap:10px;cursor:' + (e.all_day ? 'default' : 'pointer') + '">' +
+    '<input type="checkbox" id="notif-toggle" style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px"' + (hasRem ? ' checked' : '') + (e.all_day ? ' disabled' : '') + '>' +
+    '<span style="font-size:14px;line-height:1.45">Remind me <strong>30 minutes before</strong> this event (browser notification). Keeps working if you leave this tab open.</span></label>' +
+    '<div id="notif-toggle-hint" style="font-size:11px;color:var(--text3);margin-top:8px;margin-left:28px;line-height:1.4"></div></div>';
   document.getElementById('cal-event-content').innerHTML = html;
   document.getElementById('sheet-backdrop').classList.add('open');
   document.getElementById('cal-event-sheet').classList.add('open');
   var notifToggle = document.getElementById('notif-toggle');
+  var hintEl = document.getElementById('notif-toggle-hint');
+  if (e.all_day && hintEl) {
+    hintEl.textContent = 'All-day events: use your calendar app for alerts.';
+  }
   if (notifToggle) {
     notifToggle.addEventListener('change', function() {
+      var hint = document.getElementById('notif-toggle-hint');
       if (this.checked) {
-        if ('Notification' in window) {
-          Notification.requestPermission().then(function(perm) {
-            if (perm === 'granted') {
-              new Notification('Reminder: ' + e.title, { body: timeStr });
-            }
-          });
+        if (!('Notification' in window)) {
+          if (hint) hint.textContent = 'Notifications are not supported in this browser.';
+          this.checked = false;
+          return;
         }
+        Notification.requestPermission().then(function(perm) {
+          if (perm !== 'granted') {
+            if (hint) hint.textContent = 'Permission denied — enable notifications in browser settings.';
+            notifToggle.checked = false;
+            return;
+          }
+          var res = scheduleCalEventReminder(e);
+          if (res.error) {
+            if (hint) hint.textContent = res.error;
+            notifToggle.checked = false;
+          } else if (hint) {
+            hint.textContent = 'You will get a notification 30 minutes before the start time (keep a tab open or return before then).';
+          }
+        });
+      } else {
+        removeCalEventReminder(e);
+        if (hint) hint.textContent = '';
       }
     });
   }
@@ -2154,6 +2432,9 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     var row = el; el = null;
     if (dx < -60) {
       // Swipe left → dismiss
+      if (row.classList.contains('debrief-notif')) {
+        try { sessionStorage.setItem('debrief_hide_' + localDateKey(), '1'); } catch (err) {}
+      }
       row.style.transition = 'transform 0.25s,opacity 0.25s';
       row.style.transform = 'translateX(-110%)'; row.style.opacity = '0';
       setTimeout(function() { if (row.parentNode) row.parentNode.removeChild(row); }, 260);
@@ -2162,10 +2443,11 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
       row.style.transition = 'transform 0.25s,opacity 0.25s';
       row.style.transform = 'translateX(0)'; row.style.opacity = '1';
       var clone = row.cloneNode(true);
+      var debriefSlot = document.getElementById('debrief-notif-slot');
       row.parentNode.removeChild(row);
       setTimeout(function() {
-        var notif = document.getElementById('notif-container');
-        if (notif) notif.appendChild(clone);
+        var target = clone.classList.contains('debrief-notif') && debriefSlot ? debriefSlot : document.getElementById('notif-container');
+        if (target) target.appendChild(clone);
       }, 10 * 60 * 1000);
     } else {
       row.style.transition = 'transform 0.2s,opacity 0.2s';
