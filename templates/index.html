@@ -495,6 +495,13 @@ cursor: pointer; font-family: 'DM Sans', sans-serif; text-align: center;
 -webkit-tap-highlight-color: transparent; transition: all 0.15s;
 }
 .seg-btn.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+.day-btn {
+flex: 0 1 calc(14.28% - 5px); min-width: 40px; padding: 8px; border-radius: var(--r-sm);
+font-size: 12px; font-weight: 600; border: 1px solid var(--border2);
+background: var(--surface2); color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif;
+text-align: center; -webkit-tap-highlight-color: transparent; transition: all 0.15s;
+}
+.day-btn.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
 .form-actions { display: flex; gap: 8px; }
 .add-fab {
 width: 100%; background: var(--surface2); border: 1px dashed var(--border2);
@@ -670,6 +677,44 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
         <button class="seg-btn" data-repeating="monthly" onclick="selectRepeating(this)">Monthly</button>
       </div>
     </div>
+
+    <!-- Weekly Options -->
+    <div class="field-group" id="weekly-options" style="display:none">
+      <div class="field-label">Repeats on:</div>
+      <div class="form-row" style="flex-wrap:wrap;gap:6px">
+        <button class="day-btn" data-day="0" onclick="selectWeeklyDay(this)">Sun</button>
+        <button class="day-btn" data-day="1" onclick="selectWeeklyDay(this)">Mon</button>
+        <button class="day-btn" data-day="2" onclick="selectWeeklyDay(this)">Tue</button>
+        <button class="day-btn" data-day="3" onclick="selectWeeklyDay(this)">Wed</button>
+        <button class="day-btn" data-day="4" onclick="selectWeeklyDay(this)">Thu</button>
+        <button class="day-btn" data-day="5" onclick="selectWeeklyDay(this)">Fri</button>
+        <button class="day-btn" data-day="6" onclick="selectWeeklyDay(this)">Sat</button>
+      </div>
+    </div>
+
+    <!-- Monthly Options -->
+    <div class="field-group" id="monthly-options" style="display:none">
+      <div class="field-label">Repeats on:</div>
+      <div style="display:flex;gap:8px">
+        <select class="field-input" id="monthly-position" style="flex:0 1 auto" onchange="selectMonthlyOption(this)">
+          <option value="first">First</option>
+          <option value="second">Second</option>
+          <option value="third">Third</option>
+          <option value="fourth">Fourth</option>
+          <option value="last">Last</option>
+        </select>
+        <select class="field-input" id="monthly-day" style="flex:1" onchange="selectMonthlyOption(this)">
+          <option value="0">Monday</option>
+          <option value="1">Tuesday</option>
+          <option value="2">Wednesday</option>
+          <option value="3">Thursday</option>
+          <option value="4">Friday</option>
+          <option value="5">Saturday</option>
+          <option value="6">Sunday</option>
+        </select>
+      </div>
+    </div>
+
     <div class="form-actions">
       <button class="btn btn-outline" onclick="toggleTaskForm()">Cancel</button>
       <button class="btn btn-primary" onclick="submitTask()">Add Task</button>
@@ -1007,6 +1052,9 @@ var timerInterval = null;
 var cutoffShown = false;
 var selectedUrgency = 'medium';
 var selectedRepeating = 'none';
+var selectedWeeklyDay = 1;  // 0=Sun, 1=Mon, ..., 6=Sat
+var selectedMonthlyPosition = 'first';
+var selectedMonthlyDay = '0';
 var allProjects = [];
 var currentProjectId = null;
 var currentAsgnDetail = null;
@@ -1903,6 +1951,41 @@ function selectRepeating(btn) {
   document.querySelectorAll('[data-repeating]').forEach(function(b) { b.classList.remove('selected'); });
   btn.classList.add('selected');
   selectedRepeating = btn.dataset.repeating;
+
+  // Show/hide options based on selection
+  document.getElementById('weekly-options').style.display = selectedRepeating === 'weekly' ? 'block' : 'none';
+  document.getElementById('monthly-options').style.display = selectedRepeating === 'monthly' ? 'block' : 'none';
+
+  // Reset selections if switching away
+  if (selectedRepeating !== 'weekly') {
+    document.querySelectorAll('.day-btn').forEach(function(b) { b.classList.remove('selected'); });
+  } else {
+    // Default to Monday for weekly
+    document.querySelector('[data-day="1"]').classList.add('selected');
+    selectedWeeklyDay = 1;
+  }
+
+  if (selectedRepeating !== 'monthly') {
+    document.getElementById('monthly-position').value = 'first';
+    document.getElementById('monthly-day').value = '0';
+  } else {
+    selectedMonthlyPosition = 'first';
+    selectedMonthlyDay = '0';
+  }
+}
+
+function selectWeeklyDay(btn) {
+  document.querySelectorAll('.day-btn').forEach(function(b) { b.classList.remove('selected'); });
+  btn.classList.add('selected');
+  selectedWeeklyDay = parseInt(btn.dataset.day, 10);
+}
+
+function selectMonthlyOption(select) {
+  if (select.id === 'monthly-position') {
+    selectedMonthlyPosition = select.value;
+  } else if (select.id === 'monthly-day') {
+    selectedMonthlyDay = select.value;
+  }
 }
 
 function submitTask() {
@@ -1911,11 +1994,17 @@ function submitTask() {
 
   if (selectedRepeating && selectedRepeating !== 'none') {
     // Create recurring task
+    var recurrenceData = selectedRepeating;
+    if (selectedRepeating === 'weekly') {
+      recurrenceData = JSON.stringify({ type: 'weekly', day_of_week: selectedWeeklyDay });
+    } else if (selectedRepeating === 'monthly') {
+      recurrenceData = JSON.stringify({ type: 'monthly', position: selectedMonthlyPosition, day_of_week: parseInt(selectedMonthlyDay, 10) });
+    }
     var payload = {
       title: title,
       urgency: selectedUrgency,
       notes: document.getElementById('task-input-notes').value.trim(),
-      recurrence: selectedRepeating
+      recurrence: recurrenceData
     };
     fetch('/api/recurring-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       .then(function() {

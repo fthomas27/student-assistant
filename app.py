@@ -1934,9 +1934,101 @@ def api_recurring_tasks_delete(task_id):
     return jsonify({"status": "ok"})
 
 
+def _get_next_monthly_occurrence(position, day_of_week, start_after=None):
+    """
+    Calculate next occurrence of a monthly pattern like "first Monday" or "last Friday".
+
+    Args:
+        position: "first", "second", "third", "fourth", "last"
+        day_of_week: 0-6 (0=Monday, 6=Sunday) - matches Python's weekday()
+        start_after: date to start searching after (default: today)
+
+    Returns:
+        date object of the next occurrence
+    """
+    import calendar as cal_module
+
+    if start_after is None:
+        start_after = date.today()
+
+    # Start checking from next day
+    check_date = start_after + timedelta(days=1)
+
+    # Search within next 2 months to find the pattern
+    for _ in range(60):
+        year, month, _ = check_date.year, check_date.month, check_date.day
+
+        # Get all days in this month with the target weekday
+        days_with_weekday = []
+        for day in range(1, cal_module.monthrange(year, month)[1] + 1):
+            d = date(year, month, day)
+            if d.weekday() == day_of_week:
+                days_with_weekday.append(d)
+
+        if not days_with_weekday:
+            check_date = date(year, month + 1 if month < 12 else year + 1, 1 if month < 12 else 1)
+            if month == 12:
+                year += 1
+            continue
+
+        # Select based on position
+        if position == "first":
+            result = days_with_weekday[0]
+        elif position == "second":
+            result = days_with_weekday[1] if len(days_with_weekday) > 1 else days_with_weekday[-1]
+        elif position == "third":
+            result = days_with_weekday[2] if len(days_with_weekday) > 2 else days_with_weekday[-1]
+        elif position == "fourth":
+            result = days_with_weekday[3] if len(days_with_weekday) > 3 else days_with_weekday[-1]
+        elif position == "last":
+            result = days_with_weekday[-1]
+        else:
+            result = days_with_weekday[0]
+
+        if result > start_after:
+            return result
+
+        # Move to next month
+        check_date = date(year, month + 1 if month < 12 else year + 1, 1)
+
+    return start_after + timedelta(days=30)
+
+
 def _calculate_next_due_date(recurrence):
-    """Calculate next due date based on recurrence pattern."""
+    """Calculate next due date based on recurrence pattern.
+
+    Supports:
+    - Legacy formats: "daily", "weekly", "biweekly", "monthly"
+    - JSON: {"type": "weekly", "day_of_week": 0}
+    - JSON: {"type": "monthly", "position": "first", "day_of_week": 0}
+    """
+    import json
     today = date.today()
+
+    # Try to parse as JSON first
+    try:
+        pattern = json.loads(recurrence)
+        ptype = pattern.get("type", "daily")
+
+        if ptype == "daily":
+            return today + timedelta(days=1)
+        elif ptype == "weekly":
+            day_of_week = pattern.get("day_of_week", 0)
+            # Find next occurrence of this weekday
+            days_ahead = (day_of_week - today.weekday()) % 7
+            if days_ahead == 0:
+                days_ahead = 7  # Next week if today is the target day
+            return today + timedelta(days=days_ahead)
+        elif ptype == "monthly":
+            position = pattern.get("position", "first")
+            day_of_week = pattern.get("day_of_week", 0)
+            return _get_next_monthly_occurrence(position, day_of_week, today)
+        else:
+            return today + timedelta(days=1)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        pass
+
+    # Fall back to legacy string formats
     if recurrence == "daily":
         return today + timedelta(days=1)
     elif recurrence == "weekly":
@@ -1945,6 +2037,7 @@ def _calculate_next_due_date(recurrence):
         return today + timedelta(weeks=2)
     elif recurrence == "monthly":
         return today + timedelta(days=30)
+
     return today + timedelta(weeks=1)
 
 
