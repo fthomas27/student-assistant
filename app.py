@@ -17,6 +17,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import anthropic
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "finn-dashboard-secret-change-me")
 app.permanent_session_lifetime = timedelta(days=30)
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "finn2025")
 logging.basicConfig(level=logging.INFO)
