@@ -1613,6 +1613,30 @@ def api_availability():
     })
 
 
+@app.route("/api/day-type", methods=["GET"])
+def api_day_type():
+    """Return the day type (red, white, or non-school) for a given date."""
+    date_str = request.args.get("date")
+    if not date_str:
+        d = datetime.now(TZ).date()
+    else:
+        try:
+            d = datetime.fromisoformat(date_str).date()
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    dtype = get_day_type(d)
+    color = "red" if dtype == "red" else "white" if dtype == "white" else None
+    is_school_day = dtype is not None
+
+    return jsonify({
+        "date": d.isoformat(),
+        "day_type": color,
+        "is_school_day": is_school_day,
+        "display": f"{d.strftime('%A, %B %-d, %Y')} is a {color} day" if color else f"{d.strftime('%A, %B %-d, %Y')} (no school)"
+    })
+
+
 @app.route("/api/stats")
 def api_stats():
     conn = get_db()
@@ -2178,7 +2202,8 @@ def api_chat():
                     "School runs 7:%02d AM – %d:%02d %s. "
                     "Finn is NOT available during school hours. "
                     "Mon-Thu Red: 7:30–11:53 AM, Mon-Thu White: 7:30–2:25 PM, "
-                    "Fri Red: 7:30–10:25 AM, Fri White: 7:30–11:30 AM."
+                    "Fri Red: 7:30–10:25 AM, Fri White: 7:30–11:30 AM. "
+                    "If asked what color day any date is, look it up from the calendar system."
                 ) % (dtype.title(), sm, eh % 12 or 12, em, "AM" if eh < 12 else "PM")
             else:
                 dow = today.weekday()

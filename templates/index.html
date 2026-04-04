@@ -1314,8 +1314,8 @@ function loadHomeAssignments() {
       return scorePriority(b) - scorePriority(a);
     });
 
-    // Show top 6 most urgent
-    var toShow = scored.slice(0, 6);
+    // Show top 8 most urgent
+    var toShow = scored.slice(0, 8);
 
     renderHomeAssignments(toShow);
     renderNotifications(assignments);
@@ -2586,7 +2586,7 @@ thread.scrollTop = thread.scrollHeight;
 aiHistory.push({ role: 'user', content: msg });
 
 // Server injects authoritative date, Canvas/synced assignments, tasks, projects, and school schedule.
-var context = 'You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. Use **bold** for key terms, section headings, and important items. Use bullet points for lists. Vary sentence length for clarity. Treat the server-provided today\'s date and assignment list as source of truth for deadlines. If the user asks about something not in that context, say you do not have it and ask them to paste details. ';
+var context = 'You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. Use **bold** for key terms, section headings, and important items. Use bullet points for lists. Vary sentence length for clarity. Treat the server-provided today\'s date and assignment list as source of truth for deadlines. You have access to the school schedule: Park City alternates between red days (shorter schedule) and white days (longer schedule). When asked what color a day is, answer with confidence (e.g., "Wednesday is a red day" or "Friday is a white day"). If the user asks about something not in that context, say you do not have it and ask them to paste details. ';
 
 fetch('/api/chat', {
 method: 'POST',
