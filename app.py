@@ -33,7 +33,20 @@ def require_auth():
             return jsonify({"error": "Not authenticated"}), 401
         return redirect("/login")
 
-TZ = ZoneInfo("America/Denver")
+# Default timezone - will be overridden by config if available
+_TZ_DEFAULT = ZoneInfo("America/Denver")
+
+def get_tz():
+    """Get configured timezone from config, default to America/Denver (Mountain Time)."""
+    try:
+        cfg = get_config()
+        tz_str = cfg.get("timezone", "America/Denver")
+        return ZoneInfo(tz_str)
+    except Exception:
+        return _TZ_DEFAULT
+
+# For backward compatibility, initialize with default
+TZ = _TZ_DEFAULT
 
 _briefing_lock = threading.Lock()
 _timer_lock = threading.Lock()
@@ -969,7 +982,8 @@ def api_assignments():
                 a["estimate_minutes"] = estimate_assignment(a["title"], a["class_name"])
                 a["estimate_custom"] = False
             result.append(a)
-        return jsonify({"assignments": result})
+        cfg = get_config()
+        return jsonify({"assignments": result, "timezone": cfg.get("timezone", "America/Denver")})
     except Exception:
         log.exception("/api/assignments failed")
         return jsonify({"assignments": [], "error": "Internal server error fetching assignments."}), 500
@@ -2222,6 +2236,7 @@ def api_config_get():
         "has_api_key": bool(cfg.get("anthropic_api_key", "")),
         "weekly_recap_advisor": cfg.get("weekly_recap_advisor", "Mr. Goldberg"),
         "formal_signoff_name": cfg.get("formal_signoff_name", "Finley Thomas"),
+        "timezone": cfg.get("timezone", "America/Denver"),
     })
 
 
@@ -2230,10 +2245,16 @@ def api_config_post():
     data = request.get_json(force=True) or {}
     allowed = {
         "name", "morning_briefing_time", "timer_cutoff_multiplier", "anthropic_api_key",
-        "weekly_recap_advisor", "formal_signoff_name",
+        "weekly_recap_advisor", "formal_signoff_name", "timezone",
     }
     updates = {k: str(v)[:2000] for k, v in data.items() if k in allowed}
     if updates:
+        # Validate timezone if provided
+        if "timezone" in updates:
+            try:
+                ZoneInfo(updates["timezone"])
+            except Exception:
+                return jsonify({"status": "error", "message": "Invalid timezone"}), 400
         set_config(updates)
         if "morning_briefing_time" in updates:
             schedule_briefing()
