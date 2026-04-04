@@ -1667,14 +1667,18 @@ function openAsgnDetail(uid) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ minutes: mins })
+      }).then(function(r) {
+        if (!r.ok) throw new Error('Failed to save estimate');
+        return r.json();
       }).then(function() {
         a.estimate_minutes = mins;
         a.estimate_custom = true;
         document.getElementById('estimate-tag').textContent = '(your estimate)';
+      }).catch(function(err) {
+        console.error('Error saving estimate:', err);
       });
     };
-    // Remove existing listener to prevent accumulation
-    estimateInput.removeEventListener('change', window._estimateChangeHandler);
+    // Note: removeEventListener is not needed here since estimateInput is a newly created element
     estimateInput.addEventListener('change', window._estimateChangeHandler);
   }
 }
