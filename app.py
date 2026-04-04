@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool
 from psycopg2 import sql as pgsql
 import requests
 from functools import wraps
@@ -218,13 +219,51 @@ def get_school_hours(d):
         return (7, 30, 11, 53) if dtype == "red" else (7, 30, 14, 25)
 
 
-def get_db():
+# Initialize database connection pool
+_db_pool = None
+
+def _init_db_pool():
+    global _db_pool
     url = os.environ.get("DATABASE_URL", "")
     if not url:
         raise ValueError("CRITICAL: DATABASE_URL environment variable must be set")
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
-    return psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+
+    _db_pool = pool.SimpleConnectionPool(
+        1, 10,  # min 1, max 10 connections
+        url,
+        cursor_factory=psycopg2.extras.RealDictCursor,
+        connect_timeout=10,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=5
+    )
+    log.info("Database connection pool initialized with min=1, max=10 connections")
+
+class PooledConnection:
+    """Wrapper that returns connections to pool on close()"""
+    def __init__(self, conn, pool_ref):
+        self._conn = conn
+        self._pool_ref = pool_ref
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self):
+        """Return to pool instead of closing"""
+        try:
+            self._pool_ref.putconn(self._conn)
+        except:
+            self._conn.close()
+
+def get_db():
+    global _db_pool
+    if _db_pool is None:
+        _init_db_pool()
+    conn = _db_pool.getconn()
+    return PooledConnection(conn, _db_pool)
 
 
 def init_db():
