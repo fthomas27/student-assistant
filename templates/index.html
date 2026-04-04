@@ -142,7 +142,53 @@ padding: 14px 4px 6px;
 font-size: 14px; line-height: 1.65; color: var(--text2);
 transition: opacity 0.3s;
 }
+.briefing-text .briefing-section-title {
+font-size: 16px; font-weight: 700; color: var(--text);
+line-height: 1.35; margin: 20px 0 10px;
+letter-spacing: -0.01em;
+}
+.briefing-text .briefing-section-title:first-child { margin-top: 0; }
 .briefing-text.fading { opacity: 0; }
+
+/* ── TIMER FOCUS (expandable while running) ── */
+.timer-focus-panel {
+position: fixed; left: 0; right: 0; bottom: var(--tab-h);
+z-index: 25;
+background: linear-gradient(180deg, var(--surface2) 0%, var(--surface) 100%);
+border-top: 1px solid rgba(124,106,247,0.25);
+box-shadow: 0 -12px 40px rgba(0,0,0,0.45);
+transition: transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+max-height: 48vh;
+display: flex; flex-direction: column;
+padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.timer-focus-panel.hidden { display: none; }
+.timer-focus-panel.collapsed { max-height: none; }
+.timer-focus-panel.collapsed .timer-focus-body { display: none; }
+.timer-focus-bar {
+display: flex; align-items: center; justify-content: space-between;
+gap: 10px; padding: 10px 14px; cursor: pointer;
+-webkit-tap-highlight-color: transparent;
+min-height: 48px;
+}
+.timer-focus-bar:active { opacity: 0.85; }
+.timer-focus-bar-left { flex: 1; min-width: 0; }
+.timer-focus-bar-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timer-focus-bar-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.timer-focus-chevron { font-size: 12px; color: var(--accent2); flex-shrink: 0; transition: transform 0.2s; }
+.timer-focus-panel.collapsed .timer-focus-chevron { transform: rotate(180deg); }
+.timer-focus-body { padding: 0 16px 14px; border-top: 1px solid var(--border); }
+.timer-focus-clock {
+font-family: 'DM Sans', sans-serif; font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums;
+letter-spacing: -0.02em; color: var(--text); text-align: center; margin: 12px 0 4px;
+}
+.timer-focus-clock.over { color: var(--amber); }
+.timer-focus-meta { text-align: center; font-size: 12px; color: var(--text3); margin-bottom: 12px; }
+.timer-focus-track { height: 6px; background: var(--surface3); border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
+.timer-focus-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.3s; }
+.timer-focus-fill.over { background: linear-gradient(90deg, var(--amber), var(--red)); }
+.timer-focus-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.timer-focus-actions .btn { min-width: 88px; }
 .briefing-footer { display: flex; justify-content: flex-end; margin-top: 12px; }
 .refresh-btn {
 background: none; border: none; color: var(--accent2);
@@ -660,6 +706,9 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
       <div class="card-title" style="margin-bottom:0">Ask anything</div>
       <button onclick="clearChat()" style="font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text3);cursor:pointer">Clear</button>
     </div>
+    <p style="font-size:11px;color:var(--text3);line-height:1.45;margin:0 0 10px">
+      Replies use <strong style="color:var(--text2);font-weight:600">today’s date</strong> and <strong style="color:var(--text2);font-weight:600">assignments synced in this app</strong> (plus tasks, projects, and your school schedule). The model does not open Canvas or the web—if something is missing, say so in your message.
+    </p>
     <textarea class="field-input" id="ai-input" rows="3" placeholder="What do you need help with?..." style="margin-bottom:10px"></textarea>
     <div style="display:flex;gap:8px">
       <button class="btn btn-primary" style="flex:1" onclick="sendAiMessage()">Send</button>
@@ -747,6 +796,22 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   </div>
 </div>
 
+<div class="timer-focus-panel hidden" id="timer-focus-panel" aria-live="polite">
+  <div class="timer-focus-bar" id="timer-focus-bar" onclick="toggleTimerFocusExpand()" role="button" tabindex="0">
+    <div class="timer-focus-bar-left">
+      <div class="timer-focus-bar-title" id="timer-focus-title">Timer</div>
+      <div class="timer-focus-bar-sub" id="timer-focus-sub">Tap to expand</div>
+    </div>
+    <span class="timer-focus-chevron" id="timer-focus-chevron">▼</span>
+  </div>
+  <div class="timer-focus-body" id="timer-focus-body">
+    <div class="timer-focus-clock" id="timer-focus-clock">0:00</div>
+    <div class="timer-focus-meta" id="timer-focus-meta"></div>
+    <div class="timer-focus-track"><div class="timer-focus-fill" id="timer-focus-fill" style="width:0%"></div></div>
+    <div class="timer-focus-actions" id="timer-focus-actions"></div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════
 // STATE
@@ -762,6 +827,12 @@ var allProjects = [];
 var currentProjectId = null;
 var currentAsgnDetail = null;
 var aiHistory = [];
+var timerFocusExpanded = true;
+var timerTickHandle = null;
+var timerSyncAtMs = 0;
+var timerFocusUserStarted = false;
+var timerFocusPausedUi = null;
+var timerFocusHydrated = false;
 
 // ══════════════════════════════════════════
 // INIT
@@ -849,7 +920,7 @@ function saveSettings() {
 // BRIEFING
 // ══════════════════════════════════════════
 function renderBriefing(content) {
-  return renderMarkdown(content || 'Generating...');
+  return renderMarkdown(content || 'Generating...', true);
 }
 
 function loadBriefing() {
@@ -1136,24 +1207,148 @@ function markDoneFromDetail() {
 // ══════════════════════════════════════════
 // TIMER
 // ══════════════════════════════════════════
+function getSmoothElapsedMinutes() {
+  if (!activeTimer || !activeTimer.active) return 0;
+  if (activeTimer.paused) return activeTimer.elapsed_minutes || 0;
+  if (!timerSyncAtMs) return activeTimer.elapsed_minutes || 0;
+  return (activeTimer.elapsed_minutes || 0) + (Date.now() - timerSyncAtMs) / 60000;
+}
+
+function formatClockFromMinutes(mins) {
+  var totalSec = Math.max(0, Math.floor(mins * 60));
+  var m = Math.floor(totalSec / 60);
+  var s = totalSec % 60;
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function toggleTimerFocusExpand() {
+  var panel = document.getElementById('timer-focus-panel');
+  if (!panel || panel.classList.contains('hidden')) return;
+  timerFocusExpanded = !timerFocusExpanded;
+  panel.classList.toggle('collapsed', !timerFocusExpanded);
+  updateTimerFocusDisplay();
+}
+
+function syncTimerFocusPanel() {
+  var panel = document.getElementById('timer-focus-panel');
+  if (!panel) return;
+  if (!activeTimer || !activeTimer.active) {
+    panel.classList.add('hidden');
+    panel.classList.remove('collapsed');
+    if (timerTickHandle) { clearInterval(timerTickHandle); timerTickHandle = null; }
+    timerFocusPausedUi = null;
+    return;
+  }
+  panel.classList.remove('hidden');
+  panel.classList.toggle('collapsed', !timerFocusExpanded);
+  if (!timerTickHandle) {
+    timerTickHandle = setInterval(updateTimerFocusDisplay, 1000);
+  }
+  updateTimerFocusDisplay();
+}
+
+function updateTimerFocusDisplay() {
+  if (!activeTimer || !activeTimer.active) return;
+  var titleEl = document.getElementById('timer-focus-title');
+  var subEl = document.getElementById('timer-focus-sub');
+  var clockEl = document.getElementById('timer-focus-clock');
+  var metaEl = document.getElementById('timer-focus-meta');
+  var fillEl = document.getElementById('timer-focus-fill');
+  var actionsEl = document.getElementById('timer-focus-actions');
+  if (!clockEl) return;
+
+  var elapsedMin = getSmoothElapsedMinutes();
+  var est = activeTimer.estimate_minutes || 30;
+  var pct = Math.min((elapsedMin / est) * 100, 100);
+  var overEst = elapsedMin > est;
+  var paused = !!activeTimer.paused;
+
+  if (titleEl) titleEl.textContent = activeTimer.assignment_title || 'Working';
+  if (subEl) {
+    var line = timerFocusExpanded ? 'Tap header to minimize' : formatClockFromMinutes(elapsedMin) + ' · tap to expand';
+    if (activeTimer.class_name) line += ' · ' + activeTimer.class_name;
+    subEl.textContent = line;
+  }
+  clockEl.textContent = formatClockFromMinutes(elapsedMin);
+  clockEl.className = 'timer-focus-clock' + (overEst ? ' over' : '');
+  if (metaEl) {
+    metaEl.textContent = Math.floor(elapsedMin) + ' min elapsed · goal ' + Math.round(est) + ' min' + (paused ? ' · paused' : '');
+  }
+  if (fillEl) {
+    fillEl.style.width = pct + '%';
+    fillEl.className = 'timer-focus-fill' + (overEst ? ' over' : '');
+  }
+  if (actionsEl && timerFocusPausedUi !== paused) {
+    timerFocusPausedUi = paused;
+    var uq = escq(activeTimer.assignment_uid || '');
+    var tq = escq(activeTimer.assignment_title || '');
+    var cq = escq(activeTimer.class_name || '');
+    actionsEl.innerHTML =
+      (paused
+        ? '<button type="button" class="btn btn-primary" onclick="resumeTimerFromFocus(event)">Resume</button>'
+        : '<button type="button" class="btn btn-pause" onclick="pauseTimerFromFocus(event)">Pause</button>') +
+      '<button type="button" class="btn btn-done" onclick="stopTimerFromFocus(event,true,\'' + uq + '\',\'' + tq + '\',\'' + cq + '\')">Done</button>' +
+      '<button type="button" class="btn btn-outline" onclick="stopTimerFromFocus(event,false,\'' + uq + '\',\'' + tq + '\',\'' + cq + '\')">Discard</button>';
+  }
+}
+
+function pauseTimerFromFocus(e) {
+  if (e) e.stopPropagation();
+  pauseTimer(e);
+}
+
+function resumeTimerFromFocus(e) {
+  if (e) e.stopPropagation();
+  resumeTimer(e);
+}
+
+function stopTimerFromFocus(e, save, uid, title, className) {
+  if (e) e.stopPropagation();
+  stopTimer(e, save, uid, title, className);
+}
+
 function startTimer(e, uid, title, className, estimate) {
   if (e) e.stopPropagation();
   fetch('/api/timer/start', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ uid: uid, title: title, class_name: className, estimate_minutes: estimate }) })
     .then(function(r) { return r.json(); })
-    .then(function(d) { activeTimer = d; cutoffShown = false; loadHomeAssignments(); });
+    .then(function(d) {
+      activeTimer = d;
+      cutoffShown = false;
+      timerSyncAtMs = Date.now();
+      timerFocusUserStarted = true;
+      timerFocusHydrated = true;
+      timerFocusExpanded = true;
+      timerFocusPausedUi = null;
+      loadHomeAssignments();
+      syncTimerFocusPanel();
+    });
 }
 
 function pauseTimer(e) { if (e) e.stopPropagation();
-  fetch('/api/timer/pause', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) { activeTimer = d; loadHomeAssignments(); }); }
+  fetch('/api/timer/pause', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) {
+    activeTimer = d;
+    timerSyncAtMs = Date.now();
+    loadHomeAssignments();
+    syncTimerFocusPanel();
+  }); }
 
 function resumeTimer(e) { if (e) e.stopPropagation();
-  fetch('/api/timer/resume', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) { activeTimer = d; loadHomeAssignments(); }); }
+  fetch('/api/timer/resume', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) {
+    activeTimer = d;
+    timerSyncAtMs = Date.now();
+    loadHomeAssignments();
+    syncTimerFocusPanel();
+  }); }
 
 function stopTimer(e, save, uid, title, className) {
   if (e) e.stopPropagation();
   fetch('/api/timer/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ save: save }) })
     .then(function() {
+      if (timerTickHandle) { clearInterval(timerTickHandle); timerTickHandle = null; }
+      timerFocusUserStarted = false;
+      timerFocusHydrated = false;
+      timerFocusPausedUi = null;
       if (save) {
         var card = document.getElementById('asgn-' + uid);
         if (card) {
@@ -1161,12 +1356,21 @@ function stopTimer(e, save, uid, title, className) {
           setTimeout(function() {
             assignments = assignments.filter(function(a) { return a.uid !== uid; });
             activeTimer = null;
+            syncTimerFocusPanel();
             loadHomeAssignments();
             loadCompletedToday();
           }, 550);
+        } else {
+          activeTimer = null;
+          syncTimerFocusPanel();
+          loadHomeAssignments();
+          loadCompletedToday();
         }
       } else {
-        activeTimer = null; cutoffShown = false; loadHomeAssignments();
+        activeTimer = null;
+        cutoffShown = false;
+        syncTimerFocusPanel();
+        loadHomeAssignments();
       }
     });
 }
@@ -1197,6 +1401,12 @@ function pollTimer() {
   fetch('/api/timer').then(function(r) { return r.json(); }).then(function(d) {
     activeTimer = d;
     if (d.active) {
+      timerSyncAtMs = Date.now();
+      if (!timerFocusHydrated) {
+        timerFocusHydrated = true;
+        if (!timerFocusUserStarted) timerFocusExpanded = false;
+      }
+      syncTimerFocusPanel();
       if (d.over_cutoff && !cutoffShown) { cutoffShown = true; showCutoffDialog(d); }
       var uid = d.assignment_uid;
       var card = document.getElementById('asgn-' + uid);
@@ -1209,6 +1419,10 @@ function pollTimer() {
         if (timerDisp) { timerDisp.textContent = elapsed + ' min'; timerDisp.className = 'timer-display' + (over ? ' over' : ''); }
         if (progFill) { progFill.style.width = pct + '%'; progFill.className = 'progress-fill' + (over ? ' over' : ''); }
       }
+    } else {
+      timerSyncAtMs = 0;
+      timerFocusHydrated = false;
+      syncTimerFocusPanel();
     }
   }).catch(function(){});
 }
@@ -1810,11 +2024,8 @@ thread.scrollTop = thread.scrollHeight;
 
 aiHistory.push({ role: 'user', content: msg });
 
-// Build context summary
-var context = 'You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. Use **bold** for key terms, section headings, and important items. Use bullet points for lists. Vary sentence length for clarity. ';
-if (assignments.length > 0) {
-context += 'Upcoming assignments: ' + assignments.map(function(a) { return a.title + ' (' + a.class_name + ', due ' + a.due_display + ')'; }).join('; ') + '. ';
-}
+// Server injects authoritative date, Canvas/synced assignments, tasks, projects, and school schedule.
+var context = 'You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. Use **bold** for key terms, section headings, and important items. Use bullet points for lists. Vary sentence length for clarity. Treat the server-provided today\'s date and assignment list as source of truth for deadlines. If the user asks about something not in that context, say you do not have it and ask them to paste details. ';
 
 fetch('/api/chat', {
 method: 'POST',
@@ -1966,11 +2177,14 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
 // ══════════════════════════════════════════
 // HELPERS
 // ══════════════════════════════════════════
-function renderMarkdown(s) {
+function renderMarkdown(s, isBriefing) {
   return s.split('\n').map(function(line) {
     // ## Section headers
     if (/^##\s+/.test(line)) {
       var heading = esc(line.replace(/^##\s+/, ''));
+      if (isBriefing) {
+        return '<div class="briefing-section-title">' + heading + '</div>';
+      }
       return '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 5px">' + heading + '</div>';
     }
     // Escape HTML then apply inline bold
