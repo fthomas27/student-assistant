@@ -1638,15 +1638,14 @@ function openAsgnDetail(uid) {
     '<div class="sheet-section-label">Due</div>' +
     '<div class="sheet-body">' + esc(a.due_display || '') + '</div>' +
     '</div>' +
-    (isQuizOrTest(a.title) ? '' :
-    '<div class="sheet-section">' +
+    '<div class="sheet-section" id="estimate-section" style="' + (isQuizOrTest(a.title) ? 'display:none' : '') + '">' +
     '<div class="sheet-section-label">Time Estimate</div>' +
     '<div style="display:flex;align-items:center;gap:8px;margin-top:4px">' +
     '<input type="number" id="estimate-input" value="' + estVal + '" min="1" max="600" style="width:72px;padding:6px 8px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:15px;font-weight:600;text-align:center">' +
     '<span style="color:var(--text2);font-size:14px">min</span>' +
     '<span id="estimate-tag" style="font-size:12px;color:var(--text3);margin-left:2px">(' + estLabel + ')</span>' +
     '</div>' +
-    '</div>') +
+    '</div>' +
     (a.description ? '<div class="sheet-section"><div class="sheet-section-label">Details</div><div class="sheet-body">' + esc(a.description) + '</div></div>' : '');
 
   actions.innerHTML =
@@ -1658,25 +1657,26 @@ function openAsgnDetail(uid) {
   document.getElementById('sheet-backdrop').classList.add('open');
   document.getElementById('asgn-detail-sheet').classList.add('open');
 
-  // Save estimate when user changes the input
-  // Create a named handler to avoid listener accumulation when sheet is opened multiple times
+  // Save estimate when user changes the input (only for non-quizzes)
   var estimateInput = document.getElementById('estimate-input');
-  window._estimateChangeHandler = function() {
-    var mins = parseFloat(estimateInput.value);
-    if (isNaN(mins) || mins < 1) return;
-    fetch('/api/assignments/' + encodeURIComponent(a.uid) + '/estimate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ minutes: mins })
-    }).then(function() {
-      a.estimate_minutes = mins;
-      a.estimate_custom = true;
-      document.getElementById('estimate-tag').textContent = '(your estimate)';
-    });
-  };
-  // Remove existing listener to prevent accumulation
-  estimateInput.removeEventListener('change', window._estimateChangeHandler);
-  estimateInput.addEventListener('change', window._estimateChangeHandler);
+  if (estimateInput) {
+    window._estimateChangeHandler = function() {
+      var mins = parseFloat(estimateInput.value);
+      if (isNaN(mins) || mins < 1) return;
+      fetch('/api/assignments/' + encodeURIComponent(a.uid) + '/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minutes: mins })
+      }).then(function() {
+        a.estimate_minutes = mins;
+        a.estimate_custom = true;
+        document.getElementById('estimate-tag').textContent = '(your estimate)';
+      });
+    };
+    // Remove existing listener to prevent accumulation
+    estimateInput.removeEventListener('change', window._estimateChangeHandler);
+    estimateInput.addEventListener('change', window._estimateChangeHandler);
+  }
 }
 
 function startTimerFromDetail() {
