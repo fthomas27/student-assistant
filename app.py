@@ -11,7 +11,6 @@ from psycopg2 import sql as pgsql
 import requests
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, session, redirect
-from flask_wtf.csrf import CSRFProtect
 from icalendar import Calendar
 import recurring_ical_events
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -20,7 +19,6 @@ import anthropic
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "finn-dashboard-secret-change-me")
 app.permanent_session_lifetime = timedelta(days=30)
-csrf = CSRFProtect(app)
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "finn2025")
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -34,12 +32,6 @@ def require_auth():
         if request.path.startswith('/api/'):
             return jsonify({"error": "Not authenticated"}), 401
         return redirect("/login")
-
-# CSRF protection setup: exempt API routes (they use session auth)
-@app.before_request
-def exempt_api_csrf():
-    if request.path.startswith('/api/'):
-        csrf.exempt()
 
 # Default timezone - will be overridden by config if available
 _TZ_DEFAULT = ZoneInfo("America/Denver")
