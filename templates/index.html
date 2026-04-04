@@ -849,7 +849,7 @@ function saveSettings() {
 // BRIEFING
 // ══════════════════════════════════════════
 function renderBriefing(content) {
-  return esc(content || 'Generating...').replace(/\n/g, '<br>');
+  return renderMarkdown(content || 'Generating...');
 }
 
 function loadBriefing() {
