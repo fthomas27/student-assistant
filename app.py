@@ -602,19 +602,21 @@ def get_class_average(class_name):
     if not class_name:
         return None
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
+    try:
+        cur = conn.cursor()
+        cur.execute("""
 SELECT AVG(duration_minutes) as avg FROM (
     SELECT duration_minutes FROM completions
     WHERE class_name = %s AND timed = TRUE AND duration_minutes > 0
     ORDER BY completed_at DESC LIMIT 20
 ) sub""", (class_name,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    if row and row["avg"] is not None:
-        return round(float(row["avg"]), 1)
-    return None
+        row = cur.fetchone()
+        cur.close()
+        if row and row["avg"] is not None:
+            return round(float(row["avg"]), 1)
+        return None
+    finally:
+        conn.close()
 
 
 def get_class_averages_batch(class_names):
@@ -622,22 +624,24 @@ def get_class_averages_batch(class_names):
     if not class_names:
         return {}
     conn = get_db()
-    cur = conn.cursor()
-    # Get all class averages in a single query
-    cur.execute("""
+    try:
+        cur = conn.cursor()
+        # Get all class averages in a single query
+        cur.execute("""
 SELECT class_name, AVG(duration_minutes) as avg FROM (
     SELECT class_name, duration_minutes, ROW_NUMBER() OVER (PARTITION BY class_name ORDER BY completed_at DESC) as rn
     FROM completions
     WHERE class_name = ANY(%s) AND timed = TRUE AND duration_minutes > 0
 ) sub WHERE rn <= 20
 GROUP BY class_name""", (list(class_names),))
-    result = {}
-    for row in cur.fetchall():
-        if row["avg"] is not None:
-            result[row["class_name"]] = round(float(row["avg"]), 1)
-    cur.close()
-    conn.close()
-    return result
+        result = {}
+        for row in cur.fetchall():
+            if row["avg"] is not None:
+                result[row["class_name"]] = round(float(row["avg"]), 1)
+        cur.close()
+        return result
+    finally:
+        conn.close()
 
 
 def estimate_assignment(title, class_name, class_avg_cache=None):
@@ -1088,12 +1092,14 @@ def schedule_briefing():
 
 def get_timer_state_row():
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM timer_state WHERE id = 1")
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return dict(row) if row else {}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM timer_state WHERE id = 1")
+        row = cur.fetchone()
+        cur.close()
+        return dict(row) if row else {}
+    finally:
+        conn.close()
 
 
 def get_timer_elapsed(row):
