@@ -648,6 +648,13 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
 
 <!-- ══ TAB 4: ASSISTANT ══ -->
 <div class="tab-panel" id="tab-assistant">
+  <div class="card" id="avail-card" style="margin-bottom:12px">
+    <div class="card-title" style="margin-bottom:8px">Available Time Today</div>
+    <div id="avail-content">
+      <div class="shimmer" style="width:60%"></div>
+      <div class="shimmer" style="width:80%;margin-top:6px"></div>
+    </div>
+  </div>
   <div class="card" style="margin-bottom:12px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div class="card-title" style="margin-bottom:0">Ask anything</div>
@@ -788,6 +795,7 @@ function switchTab(idx) {
   if (idx === 1) loadTasks();
   if (idx === 2) loadProjects();
   if (idx === 3) loadCalendar();
+  if (idx === 4) loadAvailability();
 }
 
 // ══════════════════════════════════════════
@@ -816,6 +824,7 @@ function closeAllSheets() {
   document.getElementById('settings-sheet').classList.remove('open');
   document.getElementById('asgn-detail-sheet').classList.remove('open');
   document.getElementById('project-detail-sheet').classList.remove('open');
+  document.getElementById('cal-event-sheet').classList.remove('open');
 }
 
 function saveSettings() {
@@ -1722,6 +1731,66 @@ function loadCalendar() {
 }
 
 // ══════════════════════════════════════════
+// AVAILABILITY
+// ══════════════════════════════════════════
+function fmtMins(m) {
+  if (m >= 60) {
+    var h = Math.floor(m / 60), rem = m % 60;
+    return h + 'h' + (rem ? ' ' + rem + 'm' : '');
+  }
+  return m + 'm';
+}
+
+function loadAvailability() {
+  var el = document.getElementById('avail-content');
+  if (!el) return;
+  fetch('/api/availability').then(function(r) { return r.json(); }).then(function(d) {
+    var dayTypeColors = { red: 'var(--red)', white: 'var(--blue)' };
+    var html = '';
+
+    // Header row: day type badge + school hours
+    if (d.is_school_day) {
+      var col = dayTypeColors[d.day_type] || 'var(--text2)';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
+        '<span style="font-size:12px;font-weight:700;padding:2px 9px;border-radius:20px;background:rgba(128,128,128,0.1);color:' + col + '">' +
+        esc((d.day_type || '').toUpperCase()) + ' DAY</span>' +
+        '<span style="font-size:12px;color:var(--text3)">School: ' + esc(d.school_hours || '') + '</span>' +
+        '</div>';
+    } else {
+      html += '<div style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:10px">No School Today</div>';
+    }
+
+    // Recommended homework time — prominent callout
+    if (d.recommended_homework_time) {
+      var rw = d.recommended_homework_time;
+      html += '<div style="background:rgba(76,175,130,0.12);border:1px solid rgba(76,175,130,0.3);border-radius:10px;padding:10px 12px;margin-bottom:10px">' +
+        '<div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px">Recommended Homework Time</div>' +
+        '<div style="font-size:16px;font-weight:700;color:var(--text)">' + esc(rw.start) + ' – ' + esc(rw.end) + '</div>' +
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + fmtMins(rw.minutes) + ' available</div>' +
+        '</div>';
+    }
+
+    // All free windows
+    if (d.free_windows && d.free_windows.length > 0) {
+      html += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px">All Free Windows</div>';
+      d.free_windows.forEach(function(w) {
+        var isRec = d.recommended_homework_time && w.start === d.recommended_homework_time.start;
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)' + (isRec ? ';opacity:0.5' : '') + '">' +
+          '<span style="font-size:13px;font-weight:' + (isRec ? '400' : '500') + '">' + esc(w.start) + ' – ' + esc(w.end) + '</span>' +
+          '<span style="font-size:11px;color:var(--green);font-weight:600">' + fmtMins(w.minutes) + '</span>' +
+          '</div>';
+      });
+      html += '<div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:right">' + fmtMins(d.total_free_minutes) + ' free today</div>';
+    } else {
+      html += '<div style="font-size:13px;color:var(--text3)">No more free time today</div>';
+    }
+    el.innerHTML = html;
+  }).catch(function() {
+    if (el) el.innerHTML = '<div style="font-size:13px;color:var(--text3)">Could not load schedule</div>';
+  });
+}
+
+// ══════════════════════════════════════════
 // AI ASSISTANT
 // ══════════════════════════════════════════
 function sendAiMessage() {
@@ -1796,7 +1865,7 @@ function sendWeeklyRecap() {
     aiHistory.push({ role: 'user', content: msgs[0].content });
     aiHistory.push({ role: 'assistant', content: reply });
     var loadEl = document.getElementById(loadId);
-    if (loadEl) { loadEl.style.color = 'var(--text2)'; loadEl.innerHTML = esc(reply).replace(/\n/g,'<br>'); }
+    if (loadEl) { loadEl.style.color = 'var(--text2)'; loadEl.innerHTML = renderMarkdown(reply); }
     thread.scrollTop = thread.scrollHeight;
   }).catch(function() {
     var loadEl = document.getElementById(loadId);

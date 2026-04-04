@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 import threading
 from datetime import datetime, timedelta, date
@@ -41,6 +42,77 @@ _timer_lock = threading.Lock()
 PERSONAL_ICAL_URL = "https://p107-caldav.icloud.com/published/2/OTg1NzQ4NTY5ODU3NDg1NhsR_oH4Uc5HZPs6egZwYCgNaNoVdbGZnhTJRBFIsovYYGFTxg1u1ClSf4dPKWfDbUirJMtTPpJPtm_Zct60PgM"
 CANVAS_ICAL_URL = "https://pcsd.instructure.com/feeds/calendars/user_wC7Sn9BAtT2VtytLikpkf7f2hC8Pz90mqGLPXR9F.ics"
 SPORTS_ICAL_URL = "https://api.olliesports.com/ical/team-NgstTqqq97a7sBEoUbq1Ig89P0mFplM1.ics?accountId=rxwb8YV8yIfpjwKHxxndqXcQ3ss2"
+
+# ── Park City School District 2025-2026 Bell Schedule ────────────────────────
+# Red Day = shorter (A-block), White Day = longer (B-block), alternating each school day
+# First day of school: 2025-08-18 (Red day)
+SCHOOL_YEAR_START = date(2025, 8, 18)
+SCHOOL_YEAR_END = date(2026, 6, 5)
+
+# All dates with no school (students)
+_ns_ranges = [
+    (date(2025, 8, 7), date(2025, 8, 15)),   # Teacher work days before school
+    (date(2025, 9, 1), date(2025, 9, 1)),    # Labor Day
+    (date(2025, 9, 23), date(2025, 9, 23)),  # Rosh Hashanah
+    (date(2025, 10, 2), date(2025, 10, 3)),  # Yom Kippur + Fall Break
+    (date(2025, 11, 7), date(2025, 11, 7)),  # Prof Development
+    (date(2025, 11, 26), date(2025, 11, 28)),# Thanksgiving
+    (date(2025, 12, 22), date(2026, 1, 2)),  # Winter Break
+    (date(2026, 1, 19), date(2026, 1, 19)),  # MLK Day
+    (date(2026, 2, 16), date(2026, 2, 20)),  # Presidents Day + February Break
+    (date(2026, 3, 20), date(2026, 3, 20)),  # Prof Development
+    (date(2026, 4, 13), date(2026, 4, 17)),  # Teacher Comp + Spring Break
+    (date(2026, 5, 22), date(2026, 5, 22)),  # Make Up Snow Day
+    (date(2026, 5, 25), date(2026, 5, 25)),  # Memorial Day
+]
+NO_SCHOOL_DATES = set()
+for _s, _e in _ns_ranges:
+    _cur = _s
+    while _cur <= _e:
+        NO_SCHOOL_DATES.add(_cur)
+        _cur += timedelta(days=1)
+
+
+def is_school_day(d):
+    """Return True if d is a regular school day (weekday, not holiday, within school year)."""
+    if d < SCHOOL_YEAR_START or d > SCHOOL_YEAR_END:
+        return False
+    if d.weekday() >= 5:  # Saturday/Sunday
+        return False
+    return d not in NO_SCHOOL_DATES
+
+
+def _build_day_type_cache():
+    cache = {}
+    cur = SCHOOL_YEAR_START
+    count = 0
+    while cur <= SCHOOL_YEAR_END:
+        if is_school_day(cur):
+            cache[cur] = "red" if count % 2 == 0 else "white"
+            count += 1
+        else:
+            cache[cur] = None
+        cur += timedelta(days=1)
+    return cache
+
+_DAY_TYPE_CACHE = _build_day_type_cache()
+
+
+def get_day_type(d):
+    """Return 'red', 'white', or None for non-school days. O(1) lookup."""
+    return _DAY_TYPE_CACHE.get(d)
+
+
+def get_school_hours(d):
+    """Return (start_hour, start_min, end_hour, end_min) for school on day d, or None."""
+    dtype = get_day_type(d)
+    if dtype is None:
+        return None
+    dow = d.weekday()  # 0=Mon, 4=Fri
+    if dow == 4:  # Friday
+        return (7, 30, 10, 25) if dtype == "red" else (7, 30, 11, 30)
+    else:  # Mon-Thu
+        return (7, 30, 11, 53) if dtype == "red" else (7, 30, 14, 25)
 
 
 def get_db():
@@ -163,17 +235,32 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     log.info("Database initialized.")
 
 
+_config_cache = None
+_config_cache_ts = 0.0
+_config_cache_lock = threading.Lock()
+CONFIG_CACHE_TTL = 30  # seconds
+
+
 def get_config():
+    global _config_cache, _config_cache_ts
+    with _config_cache_lock:
+        if _config_cache is not None and (time.monotonic() - _config_cache_ts) < CONFIG_CACHE_TTL:
+            return _config_cache
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT key, value FROM config")
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return {r["key"]: r["value"] for r in rows}
+    result = {r["key"]: r["value"] for r in rows}
+    with _config_cache_lock:
+        _config_cache = result
+        _config_cache_ts = time.monotonic()
+    return result
 
 
 def set_config(updates):
+    global _config_cache
     conn = get_db()
     cur = conn.cursor()
     for k, v in updates.items():
@@ -183,20 +270,39 @@ ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", (k, str(v)))
     conn.commit()
     cur.close()
     conn.close()
+    with _config_cache_lock:
+        _config_cache = None  # invalidate
+
+
+_ical_cache = {}  # url -> (monotonic_time, Calendar)
+_ical_cache_lock = threading.Lock()
+ICAL_CACHE_TTL = 300  # 5 minutes
 
 
 def fetch_ical(url):
     if not url:
         return None
-    # Convert webcal to https
     if url.startswith("webcal://"):
         url = "https://" + url[9:]
+    now = time.monotonic()
+    with _ical_cache_lock:
+        if url in _ical_cache:
+            cached_at, cached_cal = _ical_cache[url]
+            if now - cached_at < ICAL_CACHE_TTL:
+                return cached_cal
     try:
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
-        return Calendar.from_ical(resp.content)
+        cal = Calendar.from_ical(resp.content)
+        with _ical_cache_lock:
+            _ical_cache[url] = (time.monotonic(), cal)
+        return cal
     except Exception as e:
         log.warning("iCal fetch failed for %s: %s", url, e)
+        # Return stale cache on failure rather than None
+        with _ical_cache_lock:
+            if url in _ical_cache:
+                return _ical_cache[url][1]
         return None
 
 
@@ -290,6 +396,7 @@ def parse_calendar_events(cal, days_ahead=30):
             "start_display": "All Day" if all_day else start_local.strftime("%-I:%M %p"),
             "end_display": end_local.strftime("%-I:%M %p") if end_local and not all_day else "",
             "start_iso": start_local.isoformat(),
+            "end_iso": end_local.isoformat() if end_local else "",
             "date": start_local.strftime("%Y-%m-%d"),
             "all_day": all_day
         })
@@ -407,18 +514,34 @@ LIMIT 3""")
         tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "No pending tasks."
         stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or "None."
 
+        # Get school schedule for today to recommend homework time
+        today = datetime.now(TZ).date()
+        school_hrs = get_school_hours(today)
+        dtype = get_day_type(today)
+        if school_hrs:
+            _, _, eh, em = school_hrs
+            end_ampm = "AM" if eh < 12 else "PM"
+            school_end_str = "%d:%02d %s" % (eh % 12 or 12, em, end_ampm)
+            schedule_note = "Today is a %s day. School ends at %s." % (dtype.title(), school_end_str)
+        elif datetime.now(TZ).weekday() >= 5:
+            schedule_note = "Today is a weekend — no school."
+        else:
+            schedule_note = "No school today."
+
         prompt = (
             "You are a sharp personal assistant for %s, a high school student and student leader in Park City, Utah.\n"
-            "Current time: %s\n\n"
+            "Current time: %s\n"
+            "School schedule note: %s\n\n"
             "Upcoming Assignments:\n%s\n\n"
             "Today's Schedule:\n%s\n\n"
             "Pending Tasks:\n%s\n\n"
             "Projects needing check-in:\n%s\n\n"
             "Write a daily briefing using ONLY bullet points (start each with •). "
             "For EVERY assignment listed, include a bullet that names it, when it's due, and ends with either '— CONCERN' (if due soon, high urgency, or large estimate) or '— OK' (if plenty of time). "
-            "Then add bullets for any urgent tasks and today's schedule if present. "
+            "Add bullets for any urgent tasks and today's schedule if present. "
+            "End with ONE bullet recommending the best time today to do homework (based on when school ends and the schedule above). "
             "Keep each bullet to one line. Be direct. No intro sentence, no paragraph text."
-        ) % (name, now_str, asgn_text, events_text, tasks_text, stale_text)
+        ) % (name, now_str, schedule_note, asgn_text, events_text, tasks_text, stale_text)
 
         try:
             client = anthropic.Anthropic(api_key=api_key)
@@ -822,6 +945,130 @@ FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_
     return jsonify({"completions": rows})
 
 
+@app.route("/api/availability")
+def api_availability():
+    """Return today's school schedule and free time windows."""
+    today = datetime.now(TZ).date()
+    now_local = datetime.now(TZ)
+    dtype = get_day_type(today)
+    school_hours = get_school_hours(today)
+
+    # Build busy blocks for today (school + personal events)
+    busy = []
+    if school_hours:
+        sh, sm, eh, em = school_hours
+        busy.append({
+            "start": now_local.replace(hour=sh, minute=sm, second=0, microsecond=0),
+            "end": now_local.replace(hour=eh, minute=em, second=0, microsecond=0),
+            "label": "School (%s day)" % dtype.title()
+        })
+
+    # Personal calendar events today
+    try:
+        cal = fetch_ical(PERSONAL_ICAL_URL)
+        if cal:
+            for e in parse_calendar_events(cal, days_ahead=1):
+                if e["date"] == today.isoformat() and not e.get("all_day"):
+                    try:
+                        es = datetime.fromisoformat(e["start_iso"])
+                        ee_str = e.get("end_iso") or e["start_iso"]
+                        ee = datetime.fromisoformat(ee_str)
+                        if es.tzinfo is None:
+                            es = es.replace(tzinfo=TZ)
+                        if ee.tzinfo is None:
+                            ee = ee.replace(tzinfo=TZ)
+                        busy.append({"start": es, "end": ee, "label": e["title"]})
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # Sort and merge busy blocks
+    busy.sort(key=lambda x: x["start"])
+    merged = []
+    for b in busy:
+        if merged and b["start"] <= merged[-1]["end"]:
+            merged[-1]["end"] = max(merged[-1]["end"], b["end"])
+            merged[-1]["label"] += " + " + b["label"]
+        else:
+            merged.append(dict(b))
+
+    # Find free windows from now until 10 PM
+    day_end = now_local.replace(hour=22, minute=0, second=0, microsecond=0)
+    free = []
+    cursor = now_local.replace(second=0, microsecond=0)
+    for b in merged:
+        if b["end"] <= cursor:
+            continue
+        if b["start"] > cursor:
+            mins = int((b["start"] - cursor).total_seconds() / 60)
+            if mins >= 15:
+                free.append({
+                    "start": cursor.strftime("%-I:%M %p"),
+                    "end": b["start"].strftime("%-I:%M %p"),
+                    "minutes": mins
+                })
+        cursor = max(cursor, b["end"])
+    if cursor < day_end:
+        mins = int((day_end - cursor).total_seconds() / 60)
+        if mins >= 15:
+            free.append({
+                "start": cursor.strftime("%-I:%M %p"),
+                "end": "10:00 PM",
+                "minutes": mins
+            })
+
+    # School hours display
+    school_display = None
+    if school_hours:
+        sh, sm, eh, em = school_hours
+        school_display = "%d:%02d AM – %d:%02d %s" % (
+            sh % 12 or 12, sm,
+            eh % 12 or 12, em,
+            "AM" if eh < 12 else "PM"
+        )
+
+    # Pick recommended homework window: first free window ≥ 45 min after school/3pm
+    min_start_hour = 14  # don't recommend before 2 PM
+    if school_hours:
+        _, _, eh, em = school_hours
+        min_start_hour = max(eh, 14)
+    recommended = None
+    for w in free:
+        # parse start time to compare hour
+        try:
+            win_start = merged[0]["end"] if merged else now_local
+            # Use the cursor logic: compare to min_start_hour
+            # Re-derive the window start as a datetime for comparison
+            parts = w["start"].replace(" AM", "").replace(" PM", "").split(":")
+            h, m = int(parts[0]), int(parts[1])
+            if "PM" in w["start"] and h != 12:
+                h += 12
+            elif "AM" in w["start"] and h == 12:
+                h = 0
+            if h >= min_start_hour and w["minutes"] >= 45:
+                recommended = w
+                break
+        except Exception:
+            pass
+    if recommended is None:
+        # Fall back to any window ≥ 30 min
+        for w in free:
+            if w["minutes"] >= 30:
+                recommended = w
+                break
+
+    return jsonify({
+        "date": today.isoformat(),
+        "day_type": dtype,
+        "school_hours": school_display,
+        "is_school_day": dtype is not None,
+        "free_windows": free,
+        "total_free_minutes": sum(w["minutes"] for w in free),
+        "recommended_homework_time": recommended
+    })
+
+
 @app.route("/api/stats")
 def api_stats():
     conn = get_db()
@@ -1187,6 +1434,29 @@ def api_chat():
     if not api_key:
         return jsonify({"error": "ANTHROPIC_API_KEY not configured. Add it in Settings."}), 500
     try:
+        # Inject school schedule context
+        try:
+            today = datetime.now(TZ).date()
+            dtype = get_day_type(today)
+            school_hours = get_school_hours(today)
+            if school_hours:
+                sh, sm, eh, em = school_hours
+                system_prompt += (
+                    " Today is a %s day at Park City High School. "
+                    "School runs 7:%02d AM – %d:%02d %s. "
+                    "Finn is NOT available during school hours. "
+                    "Mon-Thu Red: 7:30–11:53 AM, Mon-Thu White: 7:30–2:25 PM, "
+                    "Fri Red: 7:30–10:25 AM, Fri White: 7:30–11:30 AM."
+                ) % (dtype.title(), sm, eh % 12 or 12, em, "AM" if eh < 12 else "PM")
+            else:
+                dow = today.weekday()
+                if dow >= 5:
+                    system_prompt += " Today is a weekend — no school."
+                else:
+                    system_prompt += " Today is a no-school day (holiday or break)."
+        except Exception:
+            pass
+
         # Inject live assignments into the system prompt
         try:
             cal = fetch_ical(CANVAS_ICAL_URL)
