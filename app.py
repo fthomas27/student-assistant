@@ -103,8 +103,11 @@ def require_auth_and_csrf():
             log.warning("CSRF token validation failed for %s from %s", request.path, request.remote_addr)
             return jsonify({"error": "CSRF token invalid"}), 403
     except Exception as e:
-        log.error("Error in before_request handler: %s", str(e), exc_info=True)
-        return jsonify({"error": "Internal server error"}), 500
+        log.error("Error in before_request handler: %s", _sanitize_log_message(str(e)))
+        # Return appropriate response based on request type
+        if request.path.startswith('/api/'):
+            return jsonify({"error": "Internal server error"}), 500
+        return "Internal Server Error", 500
 
 # Default timezone - will be overridden by config if available
 _TZ_DEFAULT = ZoneInfo("America/Denver")
