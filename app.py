@@ -82,25 +82,29 @@ def _validate_csrf_token():
 
 @app.before_request
 def require_auth_and_csrf():
-    # Paths that don't require authentication
-    no_auth_paths = {'/login', '/logout', '/api/csrf-token'}
+    try:
+        # Paths that don't require authentication
+        no_auth_paths = {'/login', '/logout', '/api/csrf-token'}
 
-    # Handle CSRF token generation for GET requests
-    if request.method == "GET" and request.path not in no_auth_paths:
-        _get_csrf_token()
+        # Handle CSRF token generation for GET requests
+        if request.method == "GET" and request.path not in no_auth_paths:
+            _get_csrf_token()
 
-    # Check authentication
-    if request.path in no_auth_paths:
-        return None
-    if not session.get("authenticated"):
-        if request.path.startswith('/api/'):
-            return jsonify({"error": "Not authenticated"}), 401
-        return redirect("/login")
+        # Check authentication
+        if request.path in no_auth_paths:
+            return None
+        if not session.get("authenticated"):
+            if request.path.startswith('/api/'):
+                return jsonify({"error": "Not authenticated"}), 401
+            return redirect("/login")
 
-    # Check CSRF token for state-changing requests
-    if request.path.startswith('/api/') and not _validate_csrf_token():
-        log.warning("CSRF token validation failed for %s from %s", request.path, request.remote_addr)
-        return jsonify({"error": "CSRF token invalid"}), 403
+        # Check CSRF token for state-changing requests
+        if request.path.startswith('/api/') and not _validate_csrf_token():
+            log.warning("CSRF token validation failed for %s from %s", request.path, request.remote_addr)
+            return jsonify({"error": "CSRF token invalid"}), 403
+    except Exception as e:
+        log.error("Error in before_request handler: %s", str(e), exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
 
 # Default timezone - will be overridden by config if available
 _TZ_DEFAULT = ZoneInfo("America/Denver")
