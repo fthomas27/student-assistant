@@ -37,6 +37,16 @@ TZ = ZoneInfo("America/Denver")
 
 _briefing_lock = threading.Lock()
 _timer_lock = threading.Lock()
+_workout_lock = threading.Lock()
+
+# Workout rotation: advances each time a plan is generated (not by calendar day).
+WORKOUT_FOCUS_CYCLE = [
+    ("back", "Back"),
+    ("biceps_triceps", "Biceps & Triceps"),
+    ("core_cardio", "Core / Cardio"),
+    ("legs", "Legs"),
+    ("shoulders", "Shoulders"),
+]
 
 # ── Hardcoded calendar URLs ──────────────────────────────────────────────────
 PERSONAL_ICAL_URL = "https://p107-caldav.icloud.com/published/2/OTg1NzQ4NTY5ODU3NDg1NhsR_oH4Uc5HZPs6egZwYCgNaNoVdbGZnhTJRBFIsovYYGFTxg1u1ClSf4dPKWfDbUirJMtTPpJPtm_Zct60PgM"
@@ -223,6 +233,25 @@ CREATE TABLE IF NOT EXISTS project_tasks (
     due_date DATE
 )""")
 
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS workout_state (
+    id INT PRIMARY KEY DEFAULT 1,
+    last_focus_index INT NOT NULL DEFAULT -1
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS workout_logs (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    focus_key TEXT NOT NULL,
+    focus_label TEXT NOT NULL,
+    intensity INT NOT NULL,
+    location TEXT NOT NULL,
+    plan_content TEXT NOT NULL,
+    user_notes TEXT NOT NULL DEFAULT '',
+    perceived_difficulty INT
+)""")
+
     defaults = {
         "name": "Finn",
         "morning_briefing_time": "07:00",
@@ -239,6 +268,7 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     cur.execute("INSERT INTO timer_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
     cur.execute("INSERT INTO briefing_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
     cur.execute("INSERT INTO debrief_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
+    cur.execute("INSERT INTO workout_state (id, last_focus_index) VALUES (1, -1) ON CONFLICT (id) DO NOTHING")
     conn.commit()
     cur.close()
     conn.close()
@@ -956,6 +986,208 @@ def api_briefing():
 def api_briefing_refresh():
     threading.Thread(target=generate_briefing, kwargs={"force": True}, daemon=True).start()
     return jsonify({"status": "refreshing"})
+
+
+def _workout_history_block(cur):
+    cur.execute("""
+SELECT created_at, focus_label, intensity, location, user_notes, perceived_difficulty
+FROM workout_logs ORDER BY created_at DESC LIMIT 12""")
+    rows = cur.fetchall()
+    if not rows:
+        return "No prior logged workouts yet — this is their first tracked session."
+    lines = []
+    for r in reversed(rows):
+        ts = r["created_at"].strftime("%Y-%m-%d") if r["created_at"] else ""
+        felt = ""
+        if r.get("perceived_difficulty") is not None:
+            felt = " | after: felt %s/10" % r["perceived_difficulty"]
+        notes = (r.get("user_notes") or "").strip()
+        note_part = (" | athlete note: " + notes[:180]) if notes else ""
+        loc = "home gym" if r["location"] == "home" else "rec gym"
+        lines.append(
+            "- %s: %s | intensity %s/10 | %s%s%s"
+            % (ts, r["focus_label"], r["intensity"], loc, felt, note_part)
+        )
+    return "\n".join(lines)
+
+
+@app.route("/api/workout", methods=["GET"])
+def api_workout_get():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT last_focus_index FROM workout_state WHERE id = 1")
+    row = cur.fetchone()
+    if not row:
+        cur.execute("INSERT INTO workout_state (id, last_focus_index) VALUES (1, -1)")
+        conn.commit()
+        last_i = -1
+    else:
+        last_i = int(row["last_focus_index"])
+    n = len(WORKOUT_FOCUS_CYCLE)
+    next_i = (last_i + 1) % n
+    key, label = WORKOUT_FOCUS_CYCLE[next_i]
+    cur.execute("""
+SELECT id, created_at, focus_label, intensity, location,
+       LEFT(plan_content, 160) as preview, user_notes, perceived_difficulty
+FROM workout_logs ORDER BY created_at DESC LIMIT 20""")
+    logs = []
+    for r in cur.fetchall():
+        logs.append({
+            "id": r["id"],
+            "created_at": r["created_at"].isoformat() if r["created_at"] else None,
+            "focus_label": r["focus_label"],
+            "intensity": r["intensity"],
+            "location": r["location"],
+            "preview": (r["preview"] or "").strip(),
+            "user_notes": r.get("user_notes") or "",
+            "perceived_difficulty": r["perceived_difficulty"],
+        })
+    cur.close()
+    conn.close()
+    return jsonify({
+        "next_focus_index": next_i,
+        "next_focus_key": key,
+        "next_focus_label": label,
+        "rotation": [{"key": a[0], "label": a[1]} for a in WORKOUT_FOCUS_CYCLE],
+        "recent_logs": logs,
+    })
+
+
+@app.route("/api/workout/generate", methods=["POST"])
+def api_workout_generate():
+    data = request.get_json(force=True) or {}
+    try:
+        intensity = int(data.get("intensity", 5))
+    except (TypeError, ValueError):
+        intensity = 5
+    intensity = max(1, min(10, intensity))
+    location = str(data.get("location", "home")).strip().lower()
+    if location not in ("home", "rec"):
+        location = "home"
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    if not api_key:
+        return jsonify({"error": "Add your Anthropic API key in Settings to generate workouts."}), 500
+
+    with _workout_lock:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT last_focus_index FROM workout_state WHERE id = 1 FOR UPDATE")
+        row = cur.fetchone()
+        if not row:
+            cur.execute(
+                "INSERT INTO workout_state (id, last_focus_index) VALUES (1, -1) ON CONFLICT (id) DO NOTHING"
+            )
+            cur.execute("SELECT last_focus_index FROM workout_state WHERE id = 1 FOR UPDATE")
+            row = cur.fetchone()
+        last_i = int(row["last_focus_index"])
+        next_i = (last_i + 1) % len(WORKOUT_FOCUS_CYCLE)
+        focus_key, focus_label = WORKOUT_FOCUS_CYCLE[next_i]
+        history_text = _workout_history_block(cur)
+
+        now_local = datetime.now(TZ)
+        name = get_config().get("name", "Finn")
+        if location == "home":
+            equip = (
+                "HOME GYM: dumbbells only up to 35 lb each, plus bodyweight. "
+                "No barbell rack, no heavy machines, no cable stack unless you describe a bodyweight or DB substitute. "
+                "Be creative with unilateral work, tempo, and density."
+            )
+        else:
+            equip = (
+                "REC GYM (full gym): barbells, squat rack, cables, machines, dumbbells beyond 35 lb, all standard equipment."
+            )
+
+        user_prompt = (
+            "Athlete name: %s.\n"
+            "Today: %s.\n"
+            "Today's rotation focus (must be the primary emphasis of this session): **%s**.\n"
+            "Target difficulty: **%d / 10** (1 = very easy recovery, 5 = moderate, 8–10 = very demanding).\n"
+            "Training location: **%s**.\n\n"
+            "Equipment rules: %s\n\n"
+            "Recent history — learn from these (honor notes, vary exercises if they repeat complaints, match intensity trends):\n%s\n\n"
+            "Write ONE complete workout for today. Include warm-up, main lifts/accessories appropriate to the focus, "
+            "optional finisher if intensity ≥ 6, and cool-down. Use **bold** for exercise names. "
+            "Give sets, reps or time, rest, and one short form cue per main movement. "
+            "Do not skip the rotation focus — secondary work should support it."
+        ) % (
+            name,
+            now_local.strftime("%A, %B %-d, %Y"),
+            focus_label,
+            intensity,
+            "Home gym (≤35 lb dumbbells + bodyweight)" if location == "home" else "Rec / full gym",
+            equip,
+            history_text,
+        )
+
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=2000,
+                messages=[{"role": "user", "content": user_prompt}],
+                system=(
+                    "You are an experienced, safety-conscious strength and conditioning coach for a high school student. "
+                    "Programs must be realistic for the equipment listed. Never recommend reckless loading. "
+                    "If history shows an injury concern or 'too hard', scale down proactively."
+                ),
+            )
+            content = message.content[0].text if message.content else ""
+        except Exception as e:
+            log.error("Workout generate API error: %s", e)
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Could not generate workout. Check API key and try again."}), 500
+
+        cur.execute("""
+INSERT INTO workout_logs (focus_key, focus_label, intensity, location, plan_content)
+VALUES (%s, %s, %s, %s, %s) RETURNING id""",
+                    (focus_key, focus_label, intensity, location, content))
+        log_id = cur.fetchone()["id"]
+        cur.execute("UPDATE workout_state SET last_focus_index=%s WHERE id=1", (next_i,))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    return jsonify({
+        "plan": content,
+        "log_id": log_id,
+        "focus_key": focus_key,
+        "focus_label": focus_label,
+        "intensity": intensity,
+        "location": location,
+    })
+
+
+@app.route("/api/workout/log/<int:log_id>", methods=["PATCH"])
+def api_workout_log_patch(log_id):
+    data = request.get_json(force=True) or {}
+    if "user_notes" not in data and "perceived_difficulty" not in data:
+        return jsonify({"error": "Nothing to update"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    if "user_notes" in data:
+        cur.execute(
+            "UPDATE workout_logs SET user_notes=%s WHERE id=%s",
+            (str(data.get("user_notes") or "")[:2000], log_id),
+        )
+    if "perceived_difficulty" in data:
+        pd_raw = data.get("perceived_difficulty")
+        if pd_raw is None:
+            cur.execute("UPDATE workout_logs SET perceived_difficulty=NULL WHERE id=%s", (log_id,))
+        else:
+            try:
+                pd = max(1, min(10, int(pd_raw)))
+                cur.execute(
+                    "UPDATE workout_logs SET perceived_difficulty=%s WHERE id=%s",
+                    (pd, log_id),
+                )
+            except (TypeError, ValueError):
+                pass
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
 
 
 @app.route("/api/timer", methods=["GET"])
