@@ -595,6 +595,17 @@ def _is_quiz_or_test_title(title):
     return "quiz" in t or "test" in t
 
 
+def _validate_date_format(date_str):
+    """Validate that date string is in YYYY-MM-DD format."""
+    if not date_str:
+        return True
+    try:
+        date.fromisoformat(date_str)
+        return True
+    except ValueError:
+        return False
+
+
 def _is_big_work_assignment(a):
     est = estimate_assignment(a.get("title", ""), a.get("class_name", ""))
     if est >= 45:
@@ -1819,7 +1830,13 @@ def api_tasks_create():
         return jsonify({"error": "title required"}), 400
     notes = str(data.get("notes", ""))[:2000]
     urgency = str(data.get("urgency", "low"))
+    # Validate urgency is one of allowed values
+    if urgency not in ("high", "medium", "low"):
+        urgency = "low"
     due_date = data.get("due_date") or None
+    # Validate due_date format if provided
+    if due_date and not _validate_date_format(due_date):
+        return jsonify({"error": "due_date must be YYYY-MM-DD format"}), 400
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -2028,6 +2045,10 @@ def _calculate_next_due_date(recurrence):
             return today + timedelta(days=1)
         elif ptype == "weekly":
             day_of_week = pattern.get("day_of_week", 0)
+            # Validate day_of_week is in range [0, 6]
+            if not isinstance(day_of_week, int) or day_of_week < 0 or day_of_week > 6:
+                log.warning("Invalid day_of_week in recurring task pattern: %s", day_of_week)
+                return today + timedelta(days=1)
             # Find next occurrence of this weekday
             days_ahead = (day_of_week - today.weekday()) % 7
             if days_ahead == 0:
@@ -2036,11 +2057,21 @@ def _calculate_next_due_date(recurrence):
         elif ptype == "monthly":
             position = pattern.get("position", "first")
             day_of_week = pattern.get("day_of_week", 0)
+            # Validate position is in allowed set
+            valid_positions = {"first", "second", "third", "fourth", "last"}
+            if position not in valid_positions:
+                log.warning("Invalid position in monthly pattern: %s", position)
+                return today + timedelta(days=30)
+            # Validate day_of_week is in range [0, 6]
+            if not isinstance(day_of_week, int) or day_of_week < 0 or day_of_week > 6:
+                log.warning("Invalid day_of_week in monthly pattern: %s", day_of_week)
+                return today + timedelta(days=30)
             return _get_next_monthly_occurrence(position, day_of_week, today)
         else:
+            log.warning("Unknown recurrence type: %s", ptype)
             return today + timedelta(days=1)
-    except (json.JSONDecodeError, ValueError, TypeError):
-        pass
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
+        log.warning("Failed to parse recurrence pattern: %s", e)
 
     # Fall back to legacy string formats
     if recurrence == "daily":
@@ -2357,8 +2388,13 @@ def api_config_post():
     if updates:
         # Validate timezone if provided
         if "timezone" in updates:
+            tz_str = updates["timezone"]
+            # Validate length to prevent injection attacks
+            if len(tz_str) > 50:
+                return jsonify({"status": "error", "message": "Timezone name too long"}), 400
             try:
-                ZoneInfo(updates["timezone"])
+                # Verify it's a valid timezone
+                ZoneInfo(tz_str)
             except Exception:
                 return jsonify({"status": "error", "message": "Invalid timezone"}), 400
         set_config(updates)
