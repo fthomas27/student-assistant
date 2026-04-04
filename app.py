@@ -766,22 +766,23 @@ def _is_big_work_assignment(a):
 
 def generate_briefing(force=False):
     with _briefing_lock:
-        cfg = get_config()
-        api_key = cfg.get("anthropic_api_key", "")
-        if not api_key:
-            return
-        name = cfg.get("name", "Finn")
-        if not force:
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute("SELECT generated_at FROM briefing_cache WHERE id = 1")
-            row = cur.fetchone()
-            cur.close()
-            conn.close()
-            if row and row["generated_at"]:
-                age = datetime.now(TZ) - row["generated_at"].astimezone(TZ)
-                if age.total_seconds() < 3600:
-                    return
+        try:
+            cfg = get_config()
+            api_key = cfg.get("anthropic_api_key", "")
+            if not api_key:
+                return
+            name = cfg.get("name", "Finn")
+            if not force:
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute("SELECT generated_at FROM briefing_cache WHERE id = 1")
+                row = cur.fetchone()
+                cur.close()
+                conn.close()
+                if row and row["generated_at"]:
+                    age = datetime.now(TZ) - row["generated_at"].astimezone(TZ)
+                    if age.total_seconds() < 3600:
+                        return
 
         assignments = []
         cal = fetch_ical(CANVAS_ICAL_URL)
@@ -951,26 +952,28 @@ LIMIT 3""")
             events_text, tasks_text, stale_text,
         )
 
-        try:
-            client = anthropic.Anthropic(api_key=api_key)
-            message = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=900,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            content = message.content[0].text if message.content else "Have a great day!"
-        except Exception as e:
-            log.error("Anthropic API error: %s", e)
-            content = "Could not generate briefing. Check your API key in Settings."
+            try:
+                client = anthropic.Anthropic(api_key=api_key)
+                message = client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=900,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                content = message.content[0].text if message.content else "Have a great day!"
+            except Exception as e:
+                log.error("Anthropic API error: %s", e)
+                content = "Could not generate briefing. Check your API key in Settings."
 
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("""
 INSERT INTO briefing_cache (id, generated_at, content) VALUES (1, NOW(), %s)
 ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content""", (content,))
-        conn.commit()
-        cur.close()
-        conn.close()
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            log.error("generate_briefing failed: %s", _sanitize_log_message(str(e)))
 
 
 scheduler = BackgroundScheduler(timezone=TZ)
@@ -979,59 +982,62 @@ scheduler = BackgroundScheduler(timezone=TZ)
 def generate_evening_debrief():
     """Generate a 7 PM evening debrief summarizing the day."""
     with _briefing_lock:
-        cfg = get_config()
-        api_key = cfg.get("anthropic_api_key", "")
-        if not api_key:
-            return
-        name = cfg.get("name", "Finn")
-        conn = get_db()
-        cur = conn.cursor()
-        today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-        cur.execute("""
+        try:
+            cfg = get_config()
+            api_key = cfg.get("anthropic_api_key", "")
+            if not api_key:
+                return
+            name = cfg.get("name", "Finn")
+            conn = get_db()
+            cur = conn.cursor()
+            today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+            cur.execute("""
 SELECT assignment_title, class_name, duration_minutes, timed
 FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_start,))
-        done_today = [dict(r) for r in cur.fetchall()]
-        cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC LIMIT 10")
-        pending_tasks = [dict(r) for r in cur.fetchall()]
-        cur.close()
-        conn.close()
-        cal = fetch_ical(CANVAS_ICAL_URL)
-        remaining_asgn = []
-        if cal:
-            all_asgn = parse_canvas_assignments(cal)
-            done_titles = {d["assignment_title"] for d in done_today}
-            remaining_asgn = [a for a in all_asgn if a["title"] not in done_titles]
-        done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
-        remaining_text = "\n".join(["- %s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"]) for a in remaining_asgn[:6]]) or "None."
-        tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in pending_tasks]) or "None."
-        now_str = datetime.now(TZ).strftime("%A, %B %d at %I:%M %p")
-        prompt = (
-            "You are a sharp personal assistant for %s, a high school student in Park City, Utah.\n"
-            "Current time: %s (evening debrief)\n\n"
-            "Completed Today:\n%s\n\n"
-            "Still Due (not completed):\n%s\n\n"
-            "Pending Tasks:\n%s\n\n"
-            "Write a concise evening debrief using ONLY bullet points (start each with •). "
-            "Include: what was accomplished today, what was missed/still needs doing, and a 'Tomorrow's Outlook' section. "
-            "Be direct and encouraging. No intro sentence."
-        ) % (name, now_str, done_text, remaining_text, tasks_text)
-        try:
-            client = anthropic.Anthropic(api_key=api_key)
-            message = client.messages.create(model="claude-sonnet-4-6", max_tokens=600,
-                                             messages=[{"role": "user", "content": prompt}])
-            content = message.content[0].text if message.content else "Good evening!"
-        except Exception as e:
-            log.error("Evening debrief API error: %s", e)
-            return
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("""
+            done_today = [dict(r) for r in cur.fetchall()]
+            cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC LIMIT 10")
+            pending_tasks = [dict(r) for r in cur.fetchall()]
+            cur.close()
+            conn.close()
+            cal = fetch_ical(CANVAS_ICAL_URL)
+            remaining_asgn = []
+            if cal:
+                all_asgn = parse_canvas_assignments(cal)
+                done_titles = {d["assignment_title"] for d in done_today}
+                remaining_asgn = [a for a in all_asgn if a["title"] not in done_titles]
+            done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
+            remaining_text = "\n".join(["- %s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"]) for a in remaining_asgn[:6]]) or "None."
+            tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in pending_tasks]) or "None."
+            now_str = datetime.now(TZ).strftime("%A, %B %d at %I:%M %p")
+            prompt = (
+                "You are a sharp personal assistant for %s, a high school student in Park City, Utah.\n"
+                "Current time: %s (evening debrief)\n\n"
+                "Completed Today:\n%s\n\n"
+                "Still Due (not completed):\n%s\n\n"
+                "Pending Tasks:\n%s\n\n"
+                "Write a concise evening debrief using ONLY bullet points (start each with •). "
+                "Include: what was accomplished today, what was missed/still needs doing, and a 'Tomorrow's Outlook' section. "
+                "Be direct and encouraging. No intro sentence."
+            ) % (name, now_str, done_text, remaining_text, tasks_text)
+            try:
+                client = anthropic.Anthropic(api_key=api_key)
+                message = client.messages.create(model="claude-sonnet-4-6", max_tokens=600,
+                                                 messages=[{"role": "user", "content": prompt}])
+                content = message.content[0].text if message.content else "Good evening!"
+            except Exception as e:
+                log.error("Evening debrief API error: %s", e)
+                return
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("""
 INSERT INTO debrief_cache (id, generated_at, content) VALUES (1, NOW(), %s)
 ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content""", (content,))
-        conn.commit()
-        cur.close()
-        conn.close()
-        log.info("Evening debrief generated.")
+            conn.commit()
+            cur.close()
+            conn.close()
+            log.info("Evening debrief generated.")
+        except Exception as e:
+            log.error("generate_evening_debrief failed: %s", _sanitize_log_message(str(e)))
 
 
 def schedule_briefing():
@@ -2380,55 +2386,63 @@ def _calculate_next_due_date(recurrence, is_first_creation=False):
 
 def _process_recurring_tasks():
     """Create new task instances for recurring tasks that are due."""
-    conn = get_db()
-    cur = conn.cursor()
-    today = date.today()
+    conn = None
+    cur = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        today = date.today()
 
-    # Find all active recurring tasks that might need a new instance
-    # Include tasks where last_created_at is NULL or <= today (need to check interval in Python)
-    cur.execute("""
+        # Find all active recurring tasks that might need a new instance
+        # Include tasks where last_created_at is NULL or <= today (need to check interval in Python)
+        cur.execute("""
 SELECT id, title, notes, urgency, recurrence, last_created_at
 FROM recurring_tasks
 WHERE active = TRUE""")
 
-    tasks_to_check = cur.fetchall()
+        tasks_to_check = cur.fetchall()
 
-    for task in tasks_to_check:
-        task_id = task["id"]
-        title = task["title"]
-        notes = task["notes"]
-        urgency = task["urgency"]
-        recurrence = task["recurrence"]
+        for task in tasks_to_check:
+            task_id = task["id"]
+            title = task["title"]
+            notes = task["notes"]
+            urgency = task["urgency"]
+            recurrence = task["recurrence"]
 
-        # Check if we should create a new instance based on the recurrence interval
-        should_create = False
-        if task["last_created_at"] is None:
-            # First creation (shouldn't happen in normal flow, but handle it)
-            should_create = True
-        else:
-            last_created = task["last_created_at"].date()
-            # Use consistent comparison: task is due if today is >= the due date
-            if recurrence == "daily" and today > last_created:
+            # Check if we should create a new instance based on the recurrence interval
+            should_create = False
+            if task["last_created_at"] is None:
+                # First creation (shouldn't happen in normal flow, but handle it)
                 should_create = True
-            elif recurrence == "weekly" and today >= last_created + timedelta(weeks=1):
-                should_create = True
-            elif recurrence == "biweekly" and today >= last_created + timedelta(weeks=2):
-                should_create = True
-            elif recurrence == "monthly" and today >= last_created + timedelta(days=30):
-                should_create = True
+            else:
+                last_created = task["last_created_at"].date()
+                # Use consistent comparison: task is due if today is >= the due date
+                if recurrence == "daily" and today > last_created:
+                    should_create = True
+                elif recurrence == "weekly" and today >= last_created + timedelta(weeks=1):
+                    should_create = True
+                elif recurrence == "biweekly" and today >= last_created + timedelta(weeks=2):
+                    should_create = True
+                elif recurrence == "monthly" and today >= last_created + timedelta(days=30):
+                    should_create = True
 
-        if should_create:
-            due_date = _calculate_next_due_date(recurrence)
-            task_notes = f"[Recurring: {recurrence}]\n{notes}" if notes else f"[Recurring: {recurrence}]"
-            cur.execute("""
+            if should_create:
+                due_date = _calculate_next_due_date(recurrence)
+                task_notes = f"[Recurring: {recurrence}]\n{notes}" if notes else f"[Recurring: {recurrence}]"
+                cur.execute("""
 INSERT INTO tasks (title, notes, urgency, due_date)
 VALUES (%s, %s, %s, %s)""",
-                        (title, task_notes, urgency, due_date))
-            cur.execute("UPDATE recurring_tasks SET last_created_at = NOW() WHERE id = %s", (task_id,))
+                            (title, task_notes, urgency, due_date))
+                cur.execute("UPDATE recurring_tasks SET last_created_at = NOW() WHERE id = %s", (task_id,))
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        conn.commit()
+    except Exception as e:
+        log.error("_process_recurring_tasks failed: %s", _sanitize_log_message(str(e)))
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 # ── Projects ─────────────────────────────────────────────────────────────────
