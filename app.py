@@ -2480,22 +2480,34 @@ ORDER BY pn.created_at DESC LIMIT 6""")
         return jsonify({"error": "Failed to reach AI. Check server logs."}), 500
 
 
-init_db()
+# Initialize database if available
+try:
+    init_db()
+    log.info("Database initialized successfully")
+except Exception as e:
+    log.warning(f"Database initialization failed: {e}. Running in limited mode.")
 
 # Seed API key from env var into DB so it persists across deploys
-_env_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-if _env_api_key and not get_config().get("anthropic_api_key", ""):
-    set_config({"anthropic_api_key": _env_api_key})
-    log.info("Seeded ANTHROPIC_API_KEY from environment into DB config")
+try:
+    _env_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if _env_api_key and not get_config().get("anthropic_api_key", ""):
+        set_config({"anthropic_api_key": _env_api_key})
+        log.info("Seeded ANTHROPIC_API_KEY from environment into DB config")
+except Exception as e:
+    log.warning(f"Could not seed API key: {e}")
 
 # Guard: only start scheduler and background briefing in the first/main worker.
 # With gunicorn --workers 1 this always runs. With multiple workers it only runs
 # in the first gunicorn worker (SERVER_SOFTWARE is set before fork).
-_worker_id = os.environ.get("GUNICORN_WORKER_ID", "0")
-if _worker_id in ("", "0", "1"):
-    schedule_briefing()
-    scheduler.start()
-    threading.Thread(target=generate_briefing, daemon=True).start()
+try:
+    _worker_id = os.environ.get("GUNICORN_WORKER_ID", "0")
+    if _worker_id in ("", "0", "1"):
+        schedule_briefing()
+        scheduler.start()
+        threading.Thread(target=generate_briefing, daemon=True).start()
+        log.info("Background scheduler started")
+except Exception as e:
+    log.warning(f"Background scheduler failed to start: {e}")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
