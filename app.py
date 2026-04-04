@@ -2326,28 +2326,30 @@ def _process_recurring_tasks():
     cur = conn.cursor()
     today = date.today()
 
-    # Find all active recurring tasks where last_created_at is older than recurrence interval
+    # Find all active recurring tasks that might need a new instance
+    # Include tasks where last_created_at is NULL or <= today (need to check interval in Python)
     cur.execute("""
-SELECT id, title, notes, urgency, recurrence
+SELECT id, title, notes, urgency, recurrence, last_created_at
 FROM recurring_tasks
-WHERE active = TRUE
-AND (last_created_at IS NULL OR last_created_at::date < %s)""", (today,))
+WHERE active = TRUE""")
 
-    tasks_to_create = cur.fetchall()
+    tasks_to_check = cur.fetchall()
 
-    for task in tasks_to_create:
+    for task in tasks_to_check:
         task_id = task["id"]
         title = task["title"]
         notes = task["notes"]
         urgency = task["urgency"]
         recurrence = task["recurrence"]
 
-        # Check if we should create a new instance
+        # Check if we should create a new instance based on the recurrence interval
         should_create = False
         if task["last_created_at"] is None:
+            # First creation (shouldn't happen in normal flow, but handle it)
             should_create = True
         else:
             last_created = task["last_created_at"].date()
+            # Use consistent comparison: task is due if today is >= the due date
             if recurrence == "daily" and today > last_created:
                 should_create = True
             elif recurrence == "weekly" and today >= last_created + timedelta(weeks=1):
