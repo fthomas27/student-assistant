@@ -752,6 +752,10 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   <div class="card" id="workout-plan-card" style="display:none">
     <div class="card-title">Your plan</div>
     <div class="workout-plan-box briefing-text" id="workout-plan-body"></div>
+    <div style="margin-top:14px;display:flex;gap:8px">
+      <button type="button" class="btn btn-outline" style="flex:1" onclick="regenerateWorkout()" id="workout-regenerate-btn">Change it up</button>
+      <button type="button" class="btn btn-outline" style="flex:1" onclick="markWorkoutDone()">Done</button>
+    </div>
     <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
       <div class="field-label" style="margin-bottom:6px">Help the coach learn (optional)</div>
       <p style="font-size:11px;color:var(--text3);margin:0 0 8px">How did this session feel after you finished?</p>
@@ -763,6 +767,16 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
       <button type="button" class="btn btn-outline" style="width:100%;margin-top:10px" onclick="saveWorkoutFeedback()">Save feedback for next time</button>
       <div id="workout-feedback-saved" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Saved.</div>
     </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Log what you did</div>
+    <p style="font-size:12px;color:var(--text3);line-height:1.45;margin-bottom:12px">
+      Describe a workout you completed. The AI will categorize and format it.
+    </p>
+    <textarea class="field-input" id="workout-custom-desc" rows="3" placeholder="e.g. 5x5 squats, 3x8 leg press, 10 min treadmill, hamstring stretches…" style="margin-bottom:10px"></textarea>
+    <button type="button" class="btn btn-primary" style="width:100%" id="workout-custom-log-btn" onclick="logCustomWorkout()">Log this workout</button>
+    <div id="workout-custom-err" style="font-size:12px;color:var(--red);margin-top:10px;display:none"></div>
+    <div id="workout-custom-success" style="font-size:12px;color:var(--green);margin-top:10px;display:none">Workout logged!</div>
   </div>
   <div class="section-label">Recent sessions</div>
   <div id="workout-history-list" class="card" style="padding:12px 16px">
@@ -2262,6 +2276,80 @@ function saveWorkoutFeedback() {
   }).catch(function(){});
 }
 
+function logCustomWorkout() {
+  var desc = document.getElementById('workout-custom-desc');
+  var btn = document.getElementById('workout-custom-log-btn');
+  var err = document.getElementById('workout-custom-err');
+  var success = document.getElementById('workout-custom-success');
+
+  if (err) err.style.display = 'none';
+  if (success) success.style.display = 'none';
+
+  var description = desc ? desc.value.trim() : '';
+  if (!description) {
+    if (err) { err.textContent = 'Describe what you did'; err.style.display = 'block'; }
+    return;
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Logging…'; }
+
+  fetch('/api/workout/log-custom', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description: description })
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+  .then(function(res) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Log this workout'; }
+    if (!res.ok) {
+      if (err) { err.textContent = res.d.error || 'Failed to log'; err.style.display = 'block'; }
+      return;
+    }
+    if (desc) desc.value = '';
+    if (success) { success.style.display = 'block'; setTimeout(function() { success.style.display = 'none'; }, 2500); }
+    loadWorkoutTab();
+  }).catch(function() {
+    if (btn) { btn.disabled = false; btn.textContent = 'Log this workout'; }
+    if (err) { err.textContent = 'Network error'; err.style.display = 'block'; }
+  });
+}
+
+function regenerateWorkout() {
+  if (!currentWorkoutLogId) return;
+  var btn = document.getElementById('workout-regenerate-btn');
+  var body = document.getElementById('workout-plan-body');
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
+
+  fetch('/api/workout/regenerate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ log_id: currentWorkoutLogId })
+  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
+  .then(function(res) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Change it up'; }
+    if (!res.ok) {
+      if (btn) { btn.textContent = (res.d.error || 'Failed') + ' – try again'; }
+      return;
+    }
+    if (body) body.innerHTML = renderMarkdown(res.d.plan || '', false);
+    var saved = document.getElementById('workout-feedback-saved');
+    if (saved) saved.style.display = 'none';
+    if (body) body.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }).catch(function() {
+    if (btn) { btn.disabled = false; btn.textContent = 'Change it up'; btn.style.color = 'var(--red)'; }
+  });
+}
+
+function markWorkoutDone() {
+  if (!currentWorkoutLogId) return;
+  var card = document.getElementById('workout-plan-card');
+  if (card) card.style.display = 'none';
+  var customCard = document.getElementById('workout-custom-desc');
+  if (customCard) customCard.value = '';
+  currentWorkoutLogId = null;
+  loadWorkoutTab();
+}
+
 // ══════════════════════════════════════════
 // CALENDAR
 // ══════════════════════════════════════════
@@ -2645,23 +2733,85 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
 // HELPERS
 // ══════════════════════════════════════════
 function renderMarkdown(s, isBriefing) {
-  return s.split('\n').map(function(line) {
-    // ## Section headers
-    if (/^##\s+/.test(line)) {
-      var heading = esc(line.replace(/^##\s+/, ''));
-      if (isBriefing) {
-        return '<div class="briefing-section-title">' + heading + '</div>';
+  var lines = s.split('\n');
+  var result = [];
+  var inTable = false;
+  var tableRows = [];
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+
+    // Check if line is a table row (starts and ends with |)
+    if (/^\|.+\|$/.test(line.trim())) {
+      if (!inTable) {
+        inTable = true;
+        tableRows = [];
       }
-      return '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 5px">' + heading + '</div>';
+      tableRows.push(line.trim());
+    } else {
+      // If we were in a table, render it
+      if (inTable && tableRows.length > 0) {
+        result.push(renderTable(tableRows));
+        inTable = false;
+        tableRows = [];
+      }
+
+      // ## Section headers
+      if (/^##\s+/.test(line)) {
+        var heading = esc(line.replace(/^##\s+/, ''));
+        if (isBriefing) {
+          result.push('<div class="briefing-section-title">' + heading + '</div>');
+        } else {
+          result.push('<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 5px">' + heading + '</div>');
+        }
+      } else {
+        // Escape HTML then apply inline bold
+        var out = esc(line)
+          .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);font-weight:700">$1</strong>');
+        // Color — CONCERN and — OK
+        out = out.replace(/—\s*CONCERN/g, '<span style="color:var(--red);font-weight:700">— CONCERN</span>');
+        out = out.replace(/—\s*OK/g, '<span style="color:var(--green);font-weight:700">— OK</span>');
+        if (out !== line || line === '') result.push(out);
+      }
     }
-    // Escape HTML then apply inline bold
-    var out = esc(line)
-      .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);font-weight:700">$1</strong>');
-    // Color — CONCERN and — OK
-    out = out.replace(/—\s*CONCERN/g, '<span style="color:var(--red);font-weight:700">— CONCERN</span>');
-    out = out.replace(/—\s*OK/g, '<span style="color:var(--green);font-weight:700">— OK</span>');
-    return out;
-  }).join('<br>');
+  }
+
+  // Handle any remaining table
+  if (inTable && tableRows.length > 0) {
+    result.push(renderTable(tableRows));
+  }
+
+  return result.join('<br>');
+}
+
+function renderTable(tableRows) {
+  if (tableRows.length === 0) return '';
+
+  var cells = tableRows[0].split('|').map(function(c) { return c.trim(); }).filter(function(c) { return c.length > 0; });
+  var html = '<table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px">';
+
+  // Header row
+  html += '<tr>';
+  for (var i = 0; i < cells.length; i++) {
+    var cell = esc(cells[i]).replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);font-weight:700">$1</strong>');
+    html += '<th style="border:1px solid var(--border);padding:8px 10px;text-align:left;background:var(--surface3);font-weight:600;color:var(--text2)">' + cell + '</th>';
+  }
+  html += '</tr>';
+
+  // Data rows (skip separator row if present)
+  var startIdx = tableRows.length > 1 && /^[\|\s\-:]+$/.test(tableRows[1]) ? 2 : 1;
+  for (var i = startIdx; i < tableRows.length; i++) {
+    var rowCells = tableRows[i].split('|').map(function(c) { return c.trim(); }).filter(function(c) { return c.length > 0; });
+    html += '<tr>';
+    for (var j = 0; j < cells.length && j < rowCells.length; j++) {
+      var cellContent = esc(rowCells[j]).replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);font-weight:700">$1</strong>');
+      html += '<td style="border:1px solid var(--border);padding:8px 10px;text-align:left">' + cellContent + '</td>';
+    }
+    html += '</tr>';
+  }
+
+  html += '</table>';
+  return html;
 }
 
 function esc(s) {
