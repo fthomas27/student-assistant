@@ -1159,9 +1159,9 @@ def api_workout_generate():
     if location not in ("home", "rec"):
         location = "home"
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return jsonify({"error": "Add your Anthropic API key in Settings to generate workouts."}), 500
+        return jsonify({"error": "Add your Anthropic API key in Railway environment to generate workouts."}), 500
 
     with _workout_lock:
         conn = get_db()
@@ -1291,9 +1291,9 @@ def api_workout_log_custom():
     if not user_description:
         return jsonify({"error": "Workout description required"}), 400
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return jsonify({"error": "Add your Anthropic API key in Settings to log workouts."}), 500
+        return jsonify({"error": "Add your Anthropic API key in Railway environment to log workouts."}), 500
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
@@ -1359,9 +1359,9 @@ def api_workout_regenerate():
     if log_id <= 0:
         return jsonify({"error": "log_id required"}), 400
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return jsonify({"error": "Add your Anthropic API key in Settings to regenerate workouts."}), 500
+        return jsonify({"error": "Add your Anthropic API key in Railway environment to regenerate workouts."}), 500
 
     conn = get_db()
     cur = conn.cursor()
@@ -2359,9 +2359,9 @@ def api_chat():
     data = request.get_json(force=True) or {}
     system_prompt = data.get("system", "")
     messages = data.get("messages", [])
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return jsonify({"error": "ANTHROPIC_API_KEY not configured. Add it in Settings."}), 500
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured in Railway environment."}), 500
     try:
         now_chat = datetime.now(TZ)
         system_prompt = (
@@ -2481,12 +2481,6 @@ ORDER BY pn.created_at DESC LIMIT 6""")
 
 
 init_db()
-
-# Seed API key from env var into DB so it persists across deploys
-_env_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-if _env_api_key and not get_config().get("anthropic_api_key", ""):
-    set_config({"anthropic_api_key": _env_api_key})
-    log.info("Seeded ANTHROPIC_API_KEY from environment into DB config")
 
 # Guard: only start scheduler and background briefing in the first/main worker.
 # With gunicorn --workers 1 this always runs. With multiple workers it only runs
