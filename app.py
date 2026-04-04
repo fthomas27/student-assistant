@@ -234,6 +234,18 @@ CREATE TABLE IF NOT EXISTS project_tasks (
 )""")
 
     cur.execute("""
+CREATE TABLE IF NOT EXISTS recurring_tasks (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    title TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    urgency TEXT NOT NULL DEFAULT 'low',
+    recurrence TEXT NOT NULL,
+    last_created_at TIMESTAMPTZ,
+    active BOOLEAN NOT NULL DEFAULT TRUE
+)""")
+
+    cur.execute("""
 CREATE TABLE IF NOT EXISTS workout_state (
     id INT PRIMARY KEY DEFAULT 1,
     last_focus_index INT NOT NULL DEFAULT -1
@@ -785,8 +797,12 @@ def schedule_briefing():
     # Evening debrief at 7:00 PM
     scheduler.add_job(generate_evening_debrief, "cron", hour=19, minute=0,
                       id="evening_debrief", replace_existing=True)
+    # Process recurring tasks daily at midnight
+    scheduler.add_job(_process_recurring_tasks, "cron", hour=0, minute=0,
+                      id="process_recurring_tasks", replace_existing=True)
     log.info("Briefing scheduled for %02d:%02d Mountain", hour, minute)
     log.info("Evening debrief scheduled for 19:00 Mountain")
+    log.info("Recurring tasks processor scheduled for 00:00 Mountain")
 
 
 def get_timer_state_row():
@@ -1732,6 +1748,152 @@ def api_tasks_delete(task_id):
     cur.close()
     conn.close()
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/recurring-tasks", methods=["GET"])
+def api_recurring_tasks_get():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+SELECT id, title, notes, urgency, recurrence, last_created_at, active, created_at
+FROM recurring_tasks WHERE active = TRUE ORDER BY created_at DESC""")
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    for r in rows:
+        if r["last_created_at"]:
+            r["last_created_at"] = r["last_created_at"].isoformat()
+        if r["created_at"]:
+            r["created_at"] = r["created_at"].isoformat()
+    return jsonify({"recurring_tasks": rows})
+
+
+@app.route("/api/recurring-tasks", methods=["POST"])
+def api_recurring_tasks_create():
+    data = request.get_json(force=True) or {}
+    title = str(data.get("title", "")).strip()[:200]
+    notes = str(data.get("notes", "")).strip()[:2000]
+    urgency = str(data.get("urgency", "low")).lower()
+    if urgency not in ("low", "medium", "high"):
+        urgency = "low"
+    recurrence = str(data.get("recurrence", "weekly")).lower()
+    if recurrence not in ("daily", "weekly", "biweekly", "monthly"):
+        recurrence = "weekly"
+
+    if not title:
+        return jsonify({"error": "Title required"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+INSERT INTO recurring_tasks (title, notes, urgency, recurrence, active)
+VALUES (%s, %s, %s, %s, TRUE) RETURNING id""",
+                (title, notes, urgency, recurrence))
+    task_id = cur.fetchone()["id"]
+
+    # Create first instance
+    due_date = _calculate_next_due_date(recurrence)
+    cur.execute("""
+INSERT INTO tasks (title, notes, urgency, due_date)
+VALUES (%s, %s, %s, %s)""",
+                (title, f"[Recurring: {recurrence}]\n{notes}" if notes else f"[Recurring: {recurrence}]", urgency, due_date))
+    cur.execute("UPDATE recurring_tasks SET last_created_at = NOW() WHERE id = %s", (task_id,))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok", "id": task_id}), 201
+
+
+@app.route("/api/recurring-tasks/<int:task_id>", methods=["PATCH"])
+def api_recurring_tasks_update(task_id):
+    data = request.get_json(force=True) or {}
+    conn = get_db()
+    cur = conn.cursor()
+
+    if "active" in data:
+        cur.execute("UPDATE recurring_tasks SET active=%s WHERE id=%s", (bool(data["active"]), task_id))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/recurring-tasks/<int:task_id>", methods=["DELETE"])
+def api_recurring_tasks_delete(task_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM recurring_tasks WHERE id=%s", (task_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+def _calculate_next_due_date(recurrence):
+    """Calculate next due date based on recurrence pattern."""
+    today = date.today()
+    if recurrence == "daily":
+        return today + timedelta(days=1)
+    elif recurrence == "weekly":
+        return today + timedelta(weeks=1)
+    elif recurrence == "biweekly":
+        return today + timedelta(weeks=2)
+    elif recurrence == "monthly":
+        return today + timedelta(days=30)
+    return today + timedelta(weeks=1)
+
+
+def _process_recurring_tasks():
+    """Create new task instances for recurring tasks that are due."""
+    conn = get_db()
+    cur = conn.cursor()
+    today = date.today()
+
+    # Find all active recurring tasks where last_created_at is older than recurrence interval
+    cur.execute("""
+SELECT id, title, notes, urgency, recurrence
+FROM recurring_tasks
+WHERE active = TRUE
+AND (last_created_at IS NULL OR last_created_at::date < %s)""", (today,))
+
+    tasks_to_create = cur.fetchall()
+
+    for task in tasks_to_create:
+        task_id = task["id"]
+        title = task["title"]
+        notes = task["notes"]
+        urgency = task["urgency"]
+        recurrence = task["recurrence"]
+
+        # Check if we should create a new instance
+        should_create = False
+        if task["last_created_at"] is None:
+            should_create = True
+        else:
+            last_created = task["last_created_at"].date()
+            if recurrence == "daily" and today > last_created:
+                should_create = True
+            elif recurrence == "weekly" and today >= last_created + timedelta(weeks=1):
+                should_create = True
+            elif recurrence == "biweekly" and today >= last_created + timedelta(weeks=2):
+                should_create = True
+            elif recurrence == "monthly" and today >= last_created + timedelta(days=30):
+                should_create = True
+
+        if should_create:
+            due_date = _calculate_next_due_date(recurrence)
+            task_notes = f"[Recurring: {recurrence}]\n{notes}" if notes else f"[Recurring: {recurrence}]"
+            cur.execute("""
+INSERT INTO tasks (title, notes, urgency, due_date)
+VALUES (%s, %s, %s, %s)""",
+                        (title, task_notes, urgency, due_date))
+            cur.execute("UPDATE recurring_tasks SET last_created_at = NOW() WHERE id = %s", (task_id,))
+
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 # ── Projects ─────────────────────────────────────────────────────────────────

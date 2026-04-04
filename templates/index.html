@@ -218,9 +218,12 @@ display: flex; align-items: center; gap: 5px; padding: 4px 0;
 -webkit-tap-highlight-color: transparent; opacity: 0.8;
 }
 .refresh-btn:active { opacity: 0.4; }
-.refresh-icon { display: inline-block; }
+.refresh-icon { display: inline-block; transform-origin: center; }
 .refresh-icon.spinning { animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
 
 /* ── NOTIFICATION PILL ── */
 .notif-row {
@@ -658,6 +661,15 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
       <div class="field-label">Notes (optional)</div>
       <textarea class="field-input" id="task-input-notes" rows="2" placeholder="Any details..."></textarea>
     </div>
+    <div class="field-group">
+      <div class="field-label">Repeating?</div>
+      <div class="form-row">
+        <button class="seg-btn selected" data-repeating="none" onclick="selectRepeating(this)">Once</button>
+        <button class="seg-btn" data-repeating="daily" onclick="selectRepeating(this)">Daily</button>
+        <button class="seg-btn" data-repeating="weekly" onclick="selectRepeating(this)">Weekly</button>
+        <button class="seg-btn" data-repeating="monthly" onclick="selectRepeating(this)">Monthly</button>
+      </div>
+    </div>
     <div class="form-actions">
       <button class="btn btn-outline" onclick="toggleTaskForm()">Cancel</button>
       <button class="btn btn-primary" onclick="submitTask()">Add Task</button>
@@ -938,6 +950,7 @@ var activeTimer = null;
 var timerInterval = null;
 var cutoffShown = false;
 var selectedUrgency = 'medium';
+var selectedRepeating = 'none';
 var allProjects = [];
 var currentProjectId = null;
 var currentAsgnDetail = null;
@@ -1769,23 +1782,52 @@ function selectUrgency(btn) {
   selectedUrgency = btn.dataset.urgency;
 }
 
+function selectRepeating(btn) {
+  document.querySelectorAll('[data-repeating]').forEach(function(b) { b.classList.remove('selected'); });
+  btn.classList.add('selected');
+  selectedRepeating = btn.dataset.repeating;
+}
+
 function submitTask() {
   var title = document.getElementById('task-input-title').value.trim();
   if (!title) return;
-  var payload = {
-    title: title,
-    urgency: selectedUrgency,
-    notes: document.getElementById('task-input-notes').value.trim(),
-    due_date: document.getElementById('task-input-due').value || null
-  };
-  fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    .then(function() {
-      document.getElementById('task-input-title').value = '';
-      document.getElementById('task-input-notes').value = '';
-      document.getElementById('task-input-due').value = '';
-      toggleTaskForm();
-      loadTasks();
-    });
+
+  if (selectedRepeating && selectedRepeating !== 'none') {
+    // Create recurring task
+    var payload = {
+      title: title,
+      urgency: selectedUrgency,
+      notes: document.getElementById('task-input-notes').value.trim(),
+      recurrence: selectedRepeating
+    };
+    fetch('/api/recurring-tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function() {
+        document.getElementById('task-input-title').value = '';
+        document.getElementById('task-input-notes').value = '';
+        document.getElementById('task-input-due').value = '';
+        document.querySelectorAll('[data-repeating]').forEach(function(b) { b.classList.remove('selected'); });
+        document.querySelector('[data-repeating="none"]').classList.add('selected');
+        selectedRepeating = 'none';
+        toggleTaskForm();
+        loadTasks();
+      });
+  } else {
+    // Create one-time task
+    var payload = {
+      title: title,
+      urgency: selectedUrgency,
+      notes: document.getElementById('task-input-notes').value.trim(),
+      due_date: document.getElementById('task-input-due').value || null
+    };
+    fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function() {
+        document.getElementById('task-input-title').value = '';
+        document.getElementById('task-input-notes').value = '';
+        document.getElementById('task-input-due').value = '';
+        toggleTaskForm();
+        loadTasks();
+      });
+  }
 }
 
 function loadTasks() {
@@ -2738,28 +2780,56 @@ function renderMarkdown(s, isBriefing) {
   var result = [];
   var inTable = false;
   var tableRows = [];
+  var inList = false;
+  var listItems = [];
 
   for (var i = 0; i < lines.length; i++) {
     var line = lines[i];
+    var trimmed = line.trim();
 
     // Check if line is a table row (starts and ends with |)
-    if (/^\|.+\|$/.test(line.trim())) {
+    if (/^\|.+\|$/.test(trimmed)) {
+      // Close list if open
+      if (inList && listItems.length > 0) {
+        result.push(renderBulletList(listItems, isBriefing));
+        inList = false;
+        listItems = [];
+      }
       if (!inTable) {
         inTable = true;
         tableRows = [];
       }
-      tableRows.push(line.trim());
+      tableRows.push(trimmed);
+    } else if (/^[-*]\s+/.test(trimmed)) {
+      // This is a bullet point
+      if (!inList) {
+        if (inTable && tableRows.length > 0) {
+          result.push(renderTable(tableRows));
+          inTable = false;
+          tableRows = [];
+        }
+        inList = true;
+        listItems = [];
+      }
+      var bulletText = trimmed.replace(/^[-*]\s+/, '');
+      listItems.push(bulletText);
     } else {
-      // If we were in a table, render it
+      // Close table if open
       if (inTable && tableRows.length > 0) {
         result.push(renderTable(tableRows));
         inTable = false;
         tableRows = [];
       }
+      // Close list if open
+      if (inList && listItems.length > 0) {
+        result.push(renderBulletList(listItems, isBriefing));
+        inList = false;
+        listItems = [];
+      }
 
       // ## Section headers
-      if (/^##\s+/.test(line)) {
-        var heading = esc(line.replace(/^##\s+/, ''));
+      if (/^##\s+/.test(trimmed)) {
+        var heading = esc(trimmed.replace(/^##\s+/, ''));
         if (isBriefing) {
           result.push('<div class="briefing-section-title">' + heading + '</div>');
         } else {
@@ -2767,22 +2837,39 @@ function renderMarkdown(s, isBriefing) {
         }
       } else {
         // Escape HTML then apply inline bold
-        var out = esc(line)
+        var out = esc(trimmed)
           .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);font-weight:700">$1</strong>');
         // Color — CONCERN and — OK
         out = out.replace(/—\s*CONCERN/g, '<span style="color:var(--red);font-weight:700">— CONCERN</span>');
         out = out.replace(/—\s*OK/g, '<span style="color:var(--green);font-weight:700">— OK</span>');
-        if (out !== line || line === '') result.push(out);
+        if (out !== trimmed || trimmed === '') result.push(out);
       }
     }
   }
 
-  // Handle any remaining table
+  // Handle any remaining list or table
+  if (inList && listItems.length > 0) {
+    result.push(renderBulletList(listItems, isBriefing));
+  }
   if (inTable && tableRows.length > 0) {
     result.push(renderTable(tableRows));
   }
 
   return result.join('<br>');
+}
+
+function renderBulletList(items, isBriefing) {
+  var html = '<div style="margin:12px 0">';
+  for (var i = 0; i < items.length; i++) {
+    var itemText = esc(items[i])
+      .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);font-weight:700">$1</strong>');
+    html += '<div style="display:flex;align-items:flex-start;gap:12px;margin:10px 0;font-size:15px;line-height:1.5">';
+    html += '<div style="width:10px;height:10px;border-radius:50%;background:var(--accent);flex-shrink:0;margin-top:4px"></div>';
+    html += '<div>' + itemText + '</div>';
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
 }
 
 function renderTable(tableRows) {
