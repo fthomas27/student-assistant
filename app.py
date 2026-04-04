@@ -229,9 +229,10 @@ def get_db():
 
 def init_db():
     conn = get_db()
-    cur = conn.cursor()
+    try:
+        cur = conn.cursor()
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''
@@ -384,9 +385,10 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_completed_at ON completions(completed_at DESC)")
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
     log.info("Database initialized.")
 
 
@@ -402,12 +404,14 @@ def get_config():
         if _config_cache is not None and (time.monotonic() - _config_cache_ts) < CONFIG_CACHE_TTL:
             return _config_cache
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT key, value FROM config")
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    result = {r["key"]: r["value"] for r in rows}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT key, value FROM config")
+        rows = cur.fetchall()
+        cur.close()
+        result = {r["key"]: r["value"] for r in rows}
+    finally:
+        conn.close()
     with _config_cache_lock:
         _config_cache = result
         _config_cache_ts = time.monotonic()
@@ -417,14 +421,16 @@ def get_config():
 def set_config(updates):
     global _config_cache
     conn = get_db()
-    cur = conn.cursor()
-    for k, v in updates.items():
-        cur.execute("""
+    try:
+        cur = conn.cursor()
+        for k, v in updates.items():
+            cur.execute("""
 INSERT INTO config (key, value) VALUES (%s, %s)
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", (k, str(v)))
-    conn.commit()
-    cur.close()
-    conn.close()
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
     with _config_cache_lock:
         _config_cache = None  # invalidate
 
@@ -596,19 +602,21 @@ def get_class_average(class_name):
     if not class_name:
         return None
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
+    try:
+        cur = conn.cursor()
+        cur.execute("""
 SELECT AVG(duration_minutes) as avg FROM (
     SELECT duration_minutes FROM completions
     WHERE class_name = %s AND timed = TRUE AND duration_minutes > 0
     ORDER BY completed_at DESC LIMIT 20
 ) sub""", (class_name,))
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    if row and row["avg"] is not None:
-        return round(float(row["avg"]), 1)
-    return None
+        row = cur.fetchone()
+        cur.close()
+        if row and row["avg"] is not None:
+            return round(float(row["avg"]), 1)
+        return None
+    finally:
+        conn.close()
 
 
 def get_class_averages_batch(class_names):
@@ -616,22 +624,24 @@ def get_class_averages_batch(class_names):
     if not class_names:
         return {}
     conn = get_db()
-    cur = conn.cursor()
-    # Get all class averages in a single query
-    cur.execute("""
+    try:
+        cur = conn.cursor()
+        # Get all class averages in a single query
+        cur.execute("""
 SELECT class_name, AVG(duration_minutes) as avg FROM (
     SELECT class_name, duration_minutes, ROW_NUMBER() OVER (PARTITION BY class_name ORDER BY completed_at DESC) as rn
     FROM completions
     WHERE class_name = ANY(%s) AND timed = TRUE AND duration_minutes > 0
 ) sub WHERE rn <= 20
 GROUP BY class_name""", (list(class_names),))
-    result = {}
-    for row in cur.fetchall():
-        if row["avg"] is not None:
-            result[row["class_name"]] = round(float(row["avg"]), 1)
-    cur.close()
-    conn.close()
-    return result
+        result = {}
+        for row in cur.fetchall():
+            if row["avg"] is not None:
+                result[row["class_name"]] = round(float(row["avg"]), 1)
+        cur.close()
+        return result
+    finally:
+        conn.close()
 
 
 def estimate_assignment(title, class_name, class_avg_cache=None):
@@ -1082,12 +1092,14 @@ def schedule_briefing():
 
 def get_timer_state_row():
     conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM timer_state WHERE id = 1")
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return dict(row) if row else {}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM timer_state WHERE id = 1")
+        row = cur.fetchone()
+        cur.close()
+        return dict(row) if row else {}
+    finally:
+        conn.close()
 
 
 def get_timer_elapsed(row):
