@@ -1,2530 +1,1739 @@
-<!DOCTYPE html>
-
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Finn</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
-<style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
---bg: #0a0a0f;
---surface: #111118;
---surface2: #18181f;
---surface3: #1e1e28;
---border: rgba(255,255,255,0.07);
---border2: rgba(255,255,255,0.12);
---text: #f0f0f5;
---text2: #8888a0;
---text3: #555568;
---accent: #7c6af7;
---accent2: #a89cf8;
---blue: #4a9eff;
---gold: #c9a84c;
---gold2: #e8c97a;
---yellow: #f0c040;
---red: #f05c5c;
---amber: #e8963a;
---green: #4caf82;
---tab-h: 68px;
---header-h: 58px;
---r: 16px;
---r-sm: 10px;
-}
-
-body {
-font-family: 'DM Sans', sans-serif;
-background: var(--bg);
-color: var(--text);
-height: 100dvh;
-overflow: hidden;
-display: flex;
-flex-direction: column;
-}
-
-/* ── HEADER ── */
-.header {
-height: var(--header-h);
-background: rgba(10,10,15,0.9);
-backdrop-filter: blur(24px);
--webkit-backdrop-filter: blur(24px);
-border-bottom: 1px solid var(--border);
-display: flex;
-align-items: center;
-justify-content: space-between;
-padding: 0 20px;
-flex-shrink: 0;
-position: relative;
-z-index: 10;
-}
-
-.header-left { display: flex; flex-direction: column; }
-.header-greeting {
-font-family: 'DM Serif Display', serif;
-font-size: 19px;
-color: var(--text);
-line-height: 1.1;
-}
-.header-date { font-size: 11px; color: var(--text3); font-weight: 400; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 2px; }
-
-.gear-btn {
-width: 36px; height: 36px;
-border: 1px solid var(--border2);
-background: var(--surface2);
-border-radius: 50%;
-display: flex; align-items: center; justify-content: center;
-cursor: pointer; font-size: 16px; color: var(--text2);
--webkit-tap-highlight-color: transparent;
-transition: background 0.15s, border-color 0.15s;
-}
-.gear-btn:active { background: var(--surface3); }
-
-/* ── VIEWPORT ── */
-.view-port { flex: 1; overflow: hidden; position: relative; }
-.tabs-wrapper {
-display: flex; width: 500%; height: 100%;
-transition: transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-.tab-panel {
-width: 20%; height: 100%;
-overflow-y: auto; -webkit-overflow-scrolling: touch;
-padding: 14px 16px calc(var(--tab-h) + 16px);
-}
-
-/* ── TAB BAR ── */
-.tab-bar {
-height: var(--tab-h);
-background: rgba(10,10,15,0.95);
-backdrop-filter: blur(24px);
--webkit-backdrop-filter: blur(24px);
-border-top: 1px solid var(--border);
-display: flex; align-items: center; justify-content: space-around;
-flex-shrink: 0;
-padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-.tab-item {
-display: flex; flex-direction: column; align-items: center; gap: 4px;
-cursor: pointer; padding: 6px 12px;
-border: none; background: none;
--webkit-tap-highlight-color: transparent;
-}
-.tab-icon { font-size: 22px; line-height: 1; transition: transform 0.2s; filter: grayscale(1) opacity(0.4); }
-.tab-item.active .tab-icon { filter: none; transform: scale(1.1); }
-.tab-label { font-size: 9px; font-weight: 500; color: var(--text3); letter-spacing: 0.04em; text-transform: uppercase; transition: color 0.15s; }
-.tab-item.active .tab-label { color: var(--accent2); }
-
-/* ── CARDS ── */
-.card {
-background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r);
-padding: 16px;
-margin-bottom: 12px;
-}
-.card-title {
-font-size: 10px; font-weight: 600; color: var(--text3);
-text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px;
-}
-
-/* ── SECTION LABEL ── */
-.section-label {
-font-size: 10px; font-weight: 600; color: var(--text3);
-text-transform: uppercase; letter-spacing: 0.1em;
-padding: 14px 4px 6px;
-}
-
-/* ── BRIEFING ── */
-.briefing-text {
-font-size: 14px; line-height: 1.65; color: var(--text2);
-transition: opacity 0.3s;
-}
-.briefing-text .briefing-section-title {
-font-size: 16px; font-weight: 700; color: var(--text);
-line-height: 1.35; margin: 20px 0 10px;
-letter-spacing: -0.01em;
-}
-.briefing-text .briefing-section-title:first-child { margin-top: 0; }
-.briefing-text.fading { opacity: 0; }
-
-/* ── TIMER FOCUS (expandable while running) ── */
-.timer-focus-panel {
-position: fixed; left: 0; right: 0; bottom: var(--tab-h);
-z-index: 25;
-background: linear-gradient(180deg, var(--surface2) 0%, var(--surface) 100%);
-border-top: 1px solid rgba(124,106,247,0.25);
-box-shadow: 0 -12px 40px rgba(0,0,0,0.45);
-transition: transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-max-height: 48vh;
-display: flex; flex-direction: column;
-padding-bottom: env(safe-area-inset-bottom, 0px);
-}
-.timer-focus-panel.hidden { display: none; }
-.timer-focus-panel.collapsed { max-height: none; }
-.timer-focus-panel.collapsed .timer-focus-body { display: none; }
-.timer-focus-bar {
-display: flex; align-items: center; justify-content: space-between;
-gap: 10px; padding: 10px 14px; cursor: pointer;
--webkit-tap-highlight-color: transparent;
-min-height: 48px;
-}
-.timer-focus-bar:active { opacity: 0.85; }
-.timer-focus-bar-left { flex: 1; min-width: 0; }
-.timer-focus-bar-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.timer-focus-bar-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
-.timer-focus-chevron { font-size: 12px; color: var(--accent2); flex-shrink: 0; transition: transform 0.2s; }
-.timer-focus-panel.collapsed .timer-focus-chevron { transform: rotate(180deg); }
-.timer-focus-body { padding: 0 16px 14px; border-top: 1px solid var(--border); }
-.timer-focus-clock {
-font-family: 'DM Sans', sans-serif; font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums;
-letter-spacing: -0.02em; color: var(--text); text-align: center; margin: 12px 0 4px;
-}
-.timer-focus-clock.over { color: var(--amber); }
-.timer-focus-meta { text-align: center; font-size: 12px; color: var(--text3); margin-bottom: 12px; }
-.timer-focus-track { height: 6px; background: var(--surface3); border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
-.timer-focus-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width 0.3s; }
-.timer-focus-fill.over { background: linear-gradient(90deg, var(--amber), var(--red)); }
-.timer-focus-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
-.timer-focus-actions .btn { min-width: 88px; }
-.briefing-footer { display: flex; justify-content: flex-end; margin-top: 12px; }
-.refresh-btn {
-background: none; border: none; color: var(--accent2);
-font-size: 13px; font-weight: 500; cursor: pointer;
-display: flex; align-items: center; gap: 5px; padding: 4px 0;
--webkit-tap-highlight-color: transparent; opacity: 0.8;
-}
-.refresh-btn:active { opacity: 0.4; }
-.refresh-icon { display: inline-block; }
-.refresh-icon.spinning { animation: spin 0.8s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── NOTIFICATION PILL ── */
-.notif-row {
-background: linear-gradient(135deg, rgba(124,106,247,0.12), rgba(124,106,247,0.05));
-border: 1px solid rgba(124,106,247,0.25);
-border-radius: var(--r-sm);
-padding: 12px 14px;
-margin-bottom: 8px;
-display: flex; align-items: flex-start; gap: 10px;
-}
-.notif-icon { font-size: 16px; margin-top: 1px; flex-shrink: 0; }
-.notif-text { font-size: 13px; color: var(--text2); line-height: 1.4; flex: 1; }
-.notif-title { font-weight: 600; color: var(--text); font-size: 13px; }
-
-/* ── ASSIGNMENT CARDS ── */
-.asgn-card {
-background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r);
-padding: 14px 16px;
-margin-bottom: 10px;
-transition: transform 0.2s, border-color 0.2s;
-position: relative; overflow: hidden;
-cursor: pointer;
-}
-.asgn-card::before {
-content: '';
-position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-border-radius: 3px 0 0 3px;
-}
-.asgn-card.urgency-high::before { background: var(--red); }
-.asgn-card.urgency-medium::before { background: var(--amber); }
-.asgn-card.urgency-low::before { background: var(--green); }
-.asgn-card.active-timer { border-color: rgba(124,106,247,0.4); background: rgba(124,106,247,0.06); }
-.asgn-card.completing { animation: fadeSlide 0.5s ease forwards; }
-@keyframes fadeSlide {
-0% { opacity: 1; transform: scale(1); }
-100% { opacity: 0; transform: scale(0.95) translateY(-6px); }
-}
-
-.asgn-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
-.asgn-title { font-size: 15px; font-weight: 500; line-height: 1.3; flex: 1; }
-.urgency-badge {
-font-size: 9px; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase;
-padding: 3px 7px; border-radius: 20px; flex-shrink: 0; margin-top: 2px;
-}
-.urgency-badge.high { background: rgba(240,92,92,0.15); color: var(--red); }
-.urgency-badge.medium { background: rgba(232,150,58,0.15); color: var(--amber); }
-.urgency-badge.low { background: rgba(76,175,130,0.15); color: var(--green); }
-
-.asgn-meta { font-size: 12px; color: var(--text3); margin-bottom: 10px; }
-.asgn-actions { display: flex; gap: 8px; }
-.asgn-card-layout { display: flex; gap: 10px; align-items: flex-start; }
-.asgn-card-body { flex: 1; min-width: 0; }
-.asgn-card-btns { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; width: 66px; }
-.asgn-card-btns .btn { flex: none; width: 100%; padding: 7px 8px; font-size: 11px; font-weight: 700; }
-.overdue-badge { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 6px; border-radius: 20px; background: rgba(240,92,92,0.18); color: var(--red); margin-left: 6px; vertical-align: middle; }
-.notif-row { touch-action: pan-y; user-select: none; transition: transform 0.2s; }
-.notif-row.debrief-notif { cursor: pointer; border-color: rgba(124,106,247,0.35); background: linear-gradient(135deg, rgba(124,106,247,0.14), rgba(124,106,247,0.05)); }
-#debrief-notif-slot:empty { display: none; }
-#debrief-notif-slot { margin-bottom: 8px; }
-
-/* ── BUTTONS ── */
-.btn {
-border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 600;
-padding: 9px 16px; cursor: pointer; font-family: 'DM Sans', sans-serif;
--webkit-tap-highlight-color: transparent;
-transition: opacity 0.15s, transform 0.1s;
-}
-.btn:active { opacity: 0.7; transform: scale(0.97); }
-.btn-primary { background: var(--accent); color: #fff; flex: 1; }
-.btn-done { background: rgba(76,175,130,0.2); color: var(--green); flex: 1; border: 1px solid rgba(76,175,130,0.3); }
-.btn-pause { background: rgba(232,150,58,0.2); color: var(--amber); flex: 1; border: 1px solid rgba(232,150,58,0.3); }
-.btn-outline { background: var(--surface2); color: var(--text2); flex: 1; border: 1px solid var(--border2); }
-.btn-danger { background: rgba(240,92,92,0.2); color: var(--red); border: 1px solid rgba(240,92,92,0.3); }
-.btn-gold { background: rgba(201,168,76,0.18); color: var(--gold2); border: 1px solid rgba(201,168,76,0.3); }
-
-/* ── TIMER ── */
-.timer-section { display: none; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
-.asgn-card.active-timer .timer-section { display: block; }
-.timer-display { font-family: 'DM Serif Display', serif; font-size: 26px; margin-bottom: 8px; color: var(--text); }
-.timer-display.over { color: var(--amber); }
-.progress-track { height: 3px; background: var(--surface3); border-radius: 2px; overflow: hidden; margin-bottom: 10px; }
-.progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.5s linear; }
-.progress-fill.over { background: var(--amber); }
-
-/* ── TASKS ── */
-.task-item {
-background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r-sm);
-padding: 13px 15px;
-margin-bottom: 8px;
-display: flex; align-items: center; gap: 12px;
-position: relative;
-}
-.task-check {
-width: 20px; height: 20px; border-radius: 50%;
-border: 1.5px solid var(--border2);
-flex-shrink: 0; cursor: pointer; background: transparent;
-display: flex; align-items: center; justify-content: center;
-transition: all 0.2s; -webkit-tap-highlight-color: transparent;
-}
-.task-check.checked { background: var(--green); border-color: var(--green); }
-.task-check.checked::after { content: '✓'; font-size: 11px; color: #fff; font-weight: 700; }
-.task-content { flex: 1; min-width: 0; }
-.task-title { font-size: 14px; font-weight: 500; line-height: 1.3; }
-.task-title.done { text-decoration: line-through; color: var(--text3); }
-.task-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
-.task-urgency {
-width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-}
-.task-urgency.high { background: var(--red); }
-.task-urgency.medium { background: var(--amber); }
-.task-urgency.low { background: var(--green); }
-
-/* ── PROJECTS ── */
-.project-card {
-background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r);
-padding: 16px;
-margin-bottom: 12px;
-cursor: pointer;
-transition: border-color 0.2s;
-}
-.project-card:active { border-color: var(--border2); }
-.project-card.stale { border-color: rgba(201,168,76,0.25); }
-.project-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.project-title { font-size: 16px; font-weight: 600; flex: 1; line-height: 1.2; }
-.project-status {
-font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
-padding: 3px 8px; border-radius: 20px; flex-shrink: 0;
-}
-.project-status.active { background: rgba(76,175,130,0.15); color: var(--green); }
-.project-status.paused { background: rgba(232,150,58,0.15); color: var(--amber); }
-.project-status.done { background: rgba(136,136,160,0.15); color: var(--text3); }
-.project-meta { font-size: 12px; color: var(--text3); margin-bottom: 10px; line-height: 1.6; }
-.project-progress-track {
-height: 4px; background: var(--surface3); border-radius: 2px; overflow: hidden; margin-bottom: 8px;
-}
-.project-progress-fill { height: 100%; border-radius: 2px; transition: width 0.4s; }
-.project-progress-fill.p-low { background: var(--text3); }
-.project-progress-fill.p-mid { background: var(--accent); }
-.project-progress-fill.p-high { background: var(--green); }
-.project-footer { display: flex; align-items: center; justify-content: space-between; }
-.project-pct { font-size: 13px; font-weight: 600; color: var(--accent2); }
-.stale-pill {
-background: rgba(201,168,76,0.15); color: var(--gold2);
-font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
-padding: 3px 8px; border-radius: 20px; border: 1px solid rgba(201,168,76,0.25);
-}
-
-/* ── CALENDAR WEEK VIEW ── */
-.week-day {
-background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r);
-margin-bottom: 10px;
-overflow: hidden;
-}
-.week-day.is-today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.week-day-hdr {
-display: flex; align-items: center; gap: 10px;
-padding: 10px 14px;
-background: var(--surface2);
-border-bottom: 1px solid var(--border);
-}
-.week-day.is-today .week-day-hdr { background: rgba(124,106,247,0.08); }
-.week-day-name { font-size: 11px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; min-width: 30px; }
-.week-day.is-today .week-day-name { color: var(--accent2); }
-.week-day-num { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
-.week-day.is-today .week-day-num { color: var(--accent); }
-.week-today-pill { margin-left: auto; font-size: 10px; font-weight: 700; color: var(--accent); background: rgba(124,106,247,0.15); border-radius: 20px; padding: 2px 8px; letter-spacing: 0.05em; }
-.week-event { display: flex; align-items: flex-start; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--border); }
-.week-event:last-child { border-bottom: none; }
-.week-event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
-.week-event-dot.personal { background: var(--blue); }
-.week-event-dot.sports { background: var(--accent); }
-.week-event-dot.canvas { background: var(--green); }
-.week-event-dot.canvas.high { background: var(--red); }
-.week-event-dot.canvas.medium { background: var(--yellow); }
-.week-event-title { font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.35; }
-.week-event-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
-.week-empty { padding: 10px 14px; font-size: 13px; color: var(--text3); font-style: italic; }
-
-/* ── DETAIL SHEET ── */
-.sheet-backdrop {
-position: fixed; inset: 0; background: rgba(0,0,0,0.6);
-z-index: 100; opacity: 0; pointer-events: none;
-transition: opacity 0.3s; backdrop-filter: blur(4px);
-}
-.sheet-backdrop.open { opacity: 1; pointer-events: all; }
-
-.bottom-sheet {
-position: fixed; bottom: 0; left: 0; right: 0;
-background: var(--surface);
-border: 1px solid var(--border2);
-border-bottom: none;
-border-radius: 22px 22px 0 0;
-padding: 20px 20px calc(28px + env(safe-area-inset-bottom, 0px));
-z-index: 101;
-transform: translateY(100%);
-transition: transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-max-height: 88dvh; overflow-y: auto;
-}
-.bottom-sheet.open { transform: translateY(0); }
-.sheet-handle { width: 36px; height: 4px; background: var(--surface3); border-radius: 2px; margin: 0 auto 18px; }
-.sheet-title { font-family: 'DM Serif Display', serif; font-size: 22px; margin-bottom: 6px; line-height: 1.2; }
-.sheet-sub { font-size: 13px; color: var(--text3); margin-bottom: 16px; }
-.sheet-section { margin-bottom: 18px; }
-.sheet-section-label {
-font-size: 10px; font-weight: 600; color: var(--text3);
-text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px;
-}
-.sheet-body { font-size: 14px; color: var(--text2); line-height: 1.65; }
-.sheet-actions { display: flex; gap: 10px; margin-top: 20px; }
-
-/* ── SETTINGS SHEET ── */
-.settings-sheet {
-position: fixed; bottom: 0; left: 0; right: 0;
-background: var(--surface);
-border: 1px solid var(--border2);
-border-bottom: none;
-border-radius: 22px 22px 0 0;
-padding: 20px 20px calc(28px + env(safe-area-inset-bottom, 0px));
-z-index: 101;
-transform: translateY(100%);
-transition: transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-max-height: 88dvh; overflow-y: auto;
-}
-.settings-sheet.open { transform: translateY(0); }
-.sheet-title-sm { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
-.field-group { margin-bottom: 16px; }
-.field-label { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
-.field-input {
-width: 100%;
-background: var(--surface2);
-border: 1px solid var(--border2);
-border-radius: var(--r-sm);
-padding: 12px 14px; font-size: 15px; font-family: 'DM Sans', sans-serif;
-color: var(--text); outline: none; transition: border-color 0.2s;
-}
-.field-input:focus { border-color: var(--accent); }
-.save-btn {
-width: 100%; background: var(--accent); color: #fff; border: none;
-border-radius: var(--r-sm); padding: 14px; font-size: 15px; font-weight: 600;
-cursor: pointer; margin-top: 8px; font-family: 'DM Sans', sans-serif;
--webkit-tap-highlight-color: transparent; transition: opacity 0.15s;
-}
-.save-btn:active { opacity: 0.8; }
-.save-feedback { text-align: center; font-size: 13px; color: var(--green); margin-top: 10px; height: 18px; }
-
-/* ── FORM (add task / project) ── */
-.inline-form {
-background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r);
-padding: 16px;
-margin-bottom: 12px;
-display: none;
-}
-.inline-form.open { display: block; }
-.form-row { display: flex; gap: 8px; margin-bottom: 10px; }
-.seg-btn {
-flex: 1; padding: 8px 4px; border-radius: var(--r-sm); font-size: 12px; font-weight: 600;
-border: 1px solid var(--border2); background: var(--surface2); color: var(--text2);
-cursor: pointer; font-family: 'DM Sans', sans-serif; text-align: center;
--webkit-tap-highlight-color: transparent; transition: all 0.15s;
-}
-.seg-btn.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
-.form-actions { display: flex; gap: 8px; }
-.add-fab {
-width: 100%; background: var(--surface2); border: 1px dashed var(--border2);
-border-radius: var(--r-sm); padding: 12px; font-size: 13px; font-weight: 500;
-color: var(--text3); cursor: pointer; font-family: 'DM Sans', sans-serif;
--webkit-tap-highlight-color: transparent; transition: border-color 0.15s, color 0.15s;
-margin-bottom: 10px;
-}
-.add-fab:active { border-color: var(--accent); color: var(--accent2); }
-
-/* ── NOTES ── */
-.note-item {
-background: var(--surface2);
-border: 1px solid var(--border);
-border-radius: var(--r-sm);
-padding: 12px 14px;
-margin-bottom: 8px;
-position: relative;
-}
-.note-content { font-size: 14px; line-height: 1.6; color: var(--text2); white-space: pre-wrap; }
-.note-date { font-size: 11px; color: var(--text3); margin-top: 6px; }
-.note-del {
-position: absolute; top: 10px; right: 10px;
-background: none; border: none; color: var(--text3); font-size: 16px; cursor: pointer;
--webkit-tap-highlight-color: transparent; padding: 4px;
-}
-
-/* ── DIALOG ── */
-.dialog-overlay {
-position: fixed; inset: 0; background: rgba(0,0,0,0.7);
-z-index: 200; display: flex; align-items: center; justify-content: center;
-padding: 24px; opacity: 0; pointer-events: none;
-transition: opacity 0.2s; backdrop-filter: blur(6px);
-}
-.dialog-overlay.open { opacity: 1; pointer-events: all; }
-.dialog-box {
-background: var(--surface); border: 1px solid var(--border2);
-border-radius: 20px; padding: 26px 22px 20px;
-width: 100%; max-width: 320px; text-align: center;
-transform: scale(0.92); transition: transform 0.2s;
-}
-.dialog-overlay.open .dialog-box { transform: scale(1); }
-.dialog-title { font-family: 'DM Serif Display', serif; font-size: 20px; margin-bottom: 8px; }
-.dialog-sub { font-size: 14px; color: var(--text2); margin-bottom: 22px; line-height: 1.5; }
-.dialog-actions { display: flex; gap: 10px; }
-.btn-dialog-cancel { flex: 1; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 12px; border: 1px solid var(--border2); background: var(--surface2); color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
-.btn-dialog-confirm { flex: 1; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
-
-/* ── EMPTY STATE ── */
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; text-align: center; gap: 8px; }
-.empty-emoji { font-size: 44px; }
-.empty-title { font-family: 'DM Serif Display', serif; font-size: 20px; }
-.empty-sub { font-size: 14px; color: var(--text3); line-height: 1.5; }
-
-/* ── SHIMMER ── */
-.shimmer {
-background: linear-gradient(90deg, var(--surface) 25%, var(--surface2) 50%, var(--surface) 75%);
-background-size: 200% 100%; animation: shimmer 1.6s infinite;
-border-radius: 8px; height: 16px; margin-bottom: 8px;
-}
-@keyframes shimmer { to { background-position: -200% 0; } }
-
-/* ── CHECKIN BTN IN PROJECT ── */
-.checkin-btn {
-background: rgba(201,168,76,0.15); color: var(--gold2);
-border: 1px solid rgba(201,168,76,0.3);
-border-radius: var(--r-sm); padding: 8px 14px; font-size: 12px; font-weight: 600;
-cursor: pointer; font-family: 'DM Sans', sans-serif;
--webkit-tap-highlight-color: transparent; transition: opacity 0.15s;
-}
-.checkin-btn:active { opacity: 0.6; }
-
-/* ── SCROLLBAR HIDE ── */
-.tab-panel::-webkit-scrollbar,
-.bottom-sheet::-webkit-scrollbar,
-.settings-sheet::-webkit-scrollbar { display: none; }
-</style>
-
-</head>
-<body>
-
-<header class="header">
-  <div class="header-left">
-    <div class="header-greeting" id="header-greeting">Good morning, Finn</div>
-    <div class="header-date" id="header-date"></div>
-  </div>
-  <button class="gear-btn" onclick="openSettings()">⚙</button>
-</header>
-
-<div class="view-port">
-  <div class="tabs-wrapper" id="tabs-wrapper">
-
-<!-- ══ TAB 0: HOME ══ -->
-<div class="tab-panel" id="tab-home">
-  <div id="debrief-notif-slot"></div>
-  <div id="notif-container"></div>
-
-  <div class="card">
-    <div class="card-title">Today's Plan</div>
-    <div class="briefing-text" id="briefing-text">
-      <div class="shimmer"></div>
-      <div class="shimmer" style="width:85%"></div>
-      <div class="shimmer" style="width:70%"></div>
-    </div>
-    <div class="briefing-footer">
-      <button class="refresh-btn" onclick="refreshBriefing()">
-        <span class="refresh-icon" id="refresh-icon">↻</span> Refresh
-      </button>
-    </div>
-  </div>
-
-  <div id="stats-row" style="display:none;display:flex;gap:8px;margin-bottom:12px">
-    <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;text-align:center">
-      <div id="stat-streak" style="font-size:20px;font-weight:700;color:var(--accent)">—</div>
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px">🔥 Streak</div>
-    </div>
-    <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;text-align:center">
-      <div id="stat-hours" style="font-size:20px;font-weight:700;color:var(--blue)">—</div>
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px">⏱ Hrs/week</div>
-    </div>
-    <div style="flex:1;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-sm);padding:10px 12px;text-align:center">
-      <div id="stat-accuracy" style="font-size:20px;font-weight:700;color:var(--green)">—</div>
-      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-top:2px">🎯 Accuracy</div>
-    </div>
-  </div>
-
-  <div class="section-label" id="schedule-label" style="display:none">Today's Schedule</div>
-  <div id="home-schedule-list"></div>
-
-  <div class="section-label">Due Today & Tomorrow</div>
-  <div id="home-assignments-container"></div>
-
-  <div id="completed-section" style="display:none;margin-top:4px">
-    <div onclick="toggleCompletedToday()" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:pointer;margin-bottom:0">
-      <span style="font-size:13px;font-weight:600;color:var(--text2)">✓ Completed Today</span>
-      <span id="completed-badge" style="background:var(--green);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:2px 8px">0</span>
-    </div>
-    <div id="completed-today-list" style="background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);overflow:hidden;max-height:0;transition:max-height 0.3s ease"></div>
-  </div>
-</div>
-
-<!-- ══ TAB 1: TASKS ══ -->
-<div class="tab-panel" id="tab-tasks">
-  <button class="add-fab" onclick="toggleTaskForm()">+ Add Task</button>
-
-  <div class="inline-form" id="task-form">
-    <div class="field-group">
-      <div class="field-label">Task</div>
-      <input class="field-input" id="task-input-title" type="text" placeholder="What needs doing?">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Urgency</div>
-      <div class="form-row">
-        <button class="seg-btn" data-urgency="high" onclick="selectUrgency(this)">High</button>
-        <button class="seg-btn selected" data-urgency="medium" onclick="selectUrgency(this)">Medium</button>
-        <button class="seg-btn" data-urgency="low" onclick="selectUrgency(this)">Low</button>
-      </div>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Due Date (optional)</div>
-      <input class="field-input" id="task-input-due" type="date">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Notes (optional)</div>
-      <textarea class="field-input" id="task-input-notes" rows="2" placeholder="Any details..."></textarea>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-outline" onclick="toggleTaskForm()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitTask()">Add Task</button>
-    </div>
-  </div>
-
-  <div id="tasks-container">
-    <div class="shimmer"></div>
-    <div class="shimmer" style="width:80%"></div>
-    <div class="shimmer" style="width:90%"></div>
-  </div>
-</div>
-
-<!-- ══ TAB 2: PROJECTS ══ -->
-<div class="tab-panel" id="tab-projects">
-  <button class="add-fab" onclick="toggleProjectForm()">+ New Project</button>
-
-  <div class="inline-form" id="project-form">
-    <div class="field-group">
-      <div class="field-label">Project Name</div>
-      <input class="field-input" id="proj-input-title" type="text" placeholder="Project name">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Description</div>
-      <textarea class="field-input" id="proj-input-desc" rows="2" placeholder="What's this project about?"></textarea>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Lead</div>
-      <input class="field-input" id="proj-input-lead" type="text" placeholder="Lead person">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Team Members</div>
-      <input class="field-input" id="proj-input-members" type="text" placeholder="Comma separated names">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Check-in Interval (days)</div>
-      <input class="field-input" id="proj-input-interval" type="number" value="7" min="1" max="30">
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-outline" onclick="toggleProjectForm()">Cancel</button>
-      <button class="btn btn-primary" onclick="submitProject()">Create</button>
-    </div>
-  </div>
-
-  <div id="projects-container">
-    <div class="shimmer" style="height:110px;border-radius:16px;margin-bottom:12px"></div>
-    <div class="shimmer" style="height:110px;border-radius:16px;margin-bottom:12px"></div>
-  </div>
-</div>
-
-<!-- ══ TAB 3: CALENDAR ══ -->
-<div class="tab-panel" id="tab-calendar">
-  <div id="calendar-container">
-    <div class="shimmer"></div>
-    <div class="shimmer" style="width:70%"></div>
-    <div class="shimmer"></div>
-  </div>
-</div>
-
-<!-- ══ TAB 4: ASSISTANT ══ -->
-<div class="tab-panel" id="tab-assistant">
-  <div class="card" id="avail-card" style="margin-bottom:12px">
-    <div class="card-title" style="margin-bottom:8px">Available Time Today</div>
-    <div id="avail-content">
-      <div class="shimmer" style="width:60%"></div>
-      <div class="shimmer" style="width:80%;margin-top:6px"></div>
-    </div>
-  </div>
-  <div class="card" style="margin-bottom:12px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div class="card-title" style="margin-bottom:0">Ask anything</div>
-      <button onclick="clearChat()" style="font-size:11px;padding:4px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text3);cursor:pointer">Clear</button>
-    </div>
-    <p style="font-size:11px;color:var(--text3);line-height:1.45;margin:0 0 10px">
-      Replies use <strong style="color:var(--text2);font-weight:600">today’s date</strong> and <strong style="color:var(--text2);font-weight:600">assignments synced in this app</strong> (plus tasks, projects, and your school schedule). The model does not open Canvas or the web—if something is missing, say so in your message.
-    </p>
-    <textarea class="field-input" id="ai-input" rows="3" placeholder="What do you need help with?..." style="margin-bottom:10px"></textarea>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-primary" style="flex:1" onclick="sendAiMessage()">Send</button>
-      <button class="btn btn-outline" onclick="sendWeeklyRecap()" style="white-space:nowrap">Friday Recap</button>
-    </div>
-  </div>
-  <div id="ai-thread"></div>
-</div>
-
-  </div>
-</div>
-
-<nav class="tab-bar">
-  <button class="tab-item active" onclick="switchTab(0)" id="tab-btn-0"><span class="tab-icon">🏠</span><span class="tab-label">Home</span></button>
-  <button class="tab-item" onclick="switchTab(1)" id="tab-btn-1"><span class="tab-icon">✅</span><span class="tab-label">Tasks</span></button>
-  <button class="tab-item" onclick="switchTab(2)" id="tab-btn-2"><span class="tab-icon">📁</span><span class="tab-label">Projects</span></button>
-  <button class="tab-item" onclick="switchTab(3)" id="tab-btn-3"><span class="tab-icon">📅</span><span class="tab-label">Calendar</span></button>
-  <button class="tab-item" onclick="switchTab(4)" id="tab-btn-4"><span class="tab-icon">🤖</span><span class="tab-label">AI</span></button>
-</nav>
-
-<!-- SHEET BACKDROP -->
-
-<div class="sheet-backdrop" id="sheet-backdrop" onclick="closeAllSheets()"></div>
-
-<!-- ASSIGNMENT DETAIL SHEET -->
-
-<div class="bottom-sheet" id="asgn-detail-sheet">
-  <div class="sheet-handle"></div>
-  <div id="asgn-detail-content"></div>
-  <div class="sheet-actions" id="asgn-detail-actions"></div>
-</div>
-
-<!-- PROJECT DETAIL SHEET -->
-
-<div class="bottom-sheet" id="project-detail-sheet">
-  <div class="sheet-handle"></div>
-  <div id="project-detail-content"></div>
-</div>
-
-<!-- CALENDAR EVENT DETAIL SHEET -->
-
-<div class="bottom-sheet" id="cal-event-sheet">
-  <div class="sheet-handle"></div>
-  <div id="cal-event-content"></div>
-  <div class="sheet-actions" style="padding-top:12px">
-    <button class="btn btn-outline" style="width:100%" onclick="closeAllSheets()">Close</button>
-  </div>
-</div>
-
-<!-- DAILY DEBRIEF SHEET -->
-
-<div class="bottom-sheet" id="debrief-sheet">
-  <div class="sheet-handle"></div>
-  <div class="sheet-title-sm" style="margin-bottom:4px">Daily debrief</div>
-  <div class="sheet-sub" id="debrief-sheet-sub"></div>
-  <div class="briefing-text" id="debrief-sheet-body" style="margin-top:14px;font-size:14px"></div>
-  <div class="sheet-actions" style="padding-top:16px">
-    <button class="btn btn-outline" style="width:100%" onclick="closeAllSheets()">Close</button>
-  </div>
-</div>
-
-<!-- SETTINGS SHEET -->
-
-<div class="settings-sheet" id="settings-sheet">
-  <div class="sheet-handle"></div>
-  <div class="sheet-title-sm">⚙ Settings</div>
-  <div class="field-group">
-    <div class="field-label">Your Name</div>
-    <input class="field-input" id="setting-name" type="text" placeholder="Finn">
-  </div>
-  <div class="field-group">
-    <div class="field-label">Morning Briefing Time</div>
-    <input class="field-input" id="setting-time" type="time">
-  </div>
-  <div class="field-group">
-    <div class="field-label">Timer Auto-Cutoff (× estimate)</div>
-    <input class="field-input" id="setting-cutoff" type="number" min="1" max="5" step="0.5" placeholder="2.0">
-  </div>
-  <div class="field-group">
-    <div class="field-label">Anthropic API Key</div>
-    <input class="field-input" id="setting-apikey" type="password" placeholder="sk-ant-...">
-  </div>
-  <div class="field-group">
-    <div class="field-label">Friday email — addressee</div>
-    <input class="field-input" id="setting-weekly-advisor" type="text" placeholder="Mr. Goldberg">
-  </div>
-  <div class="field-group">
-    <div class="field-label">Friday email — sign-off name</div>
-    <input class="field-input" id="setting-formal-name" type="text" placeholder="Finley Thomas">
-  </div>
-  <button class="save-btn" onclick="saveSettings()">Save</button>
-  <div class="save-feedback" id="save-feedback"></div>
-</div>
-
-<!-- CUTOFF DIALOG -->
-
-<div class="dialog-overlay" id="cutoff-dialog">
-  <div class="dialog-box">
-    <div class="dialog-title">Still going?</div>
-    <div class="dialog-sub" id="cutoff-dialog-sub">You've hit the auto-cutoff.</div>
-    <div class="dialog-actions">
-      <button class="btn-dialog-cancel" onclick="handleCutoff(false)">Discard</button>
-      <button class="btn-dialog-confirm" onclick="handleCutoff(true)">Done</button>
-    </div>
-  </div>
-</div>
-
-<div class="timer-focus-panel hidden" id="timer-focus-panel" aria-live="polite">
-  <div class="timer-focus-bar" id="timer-focus-bar" onclick="toggleTimerFocusExpand()" role="button" tabindex="0">
-    <div class="timer-focus-bar-left">
-      <div class="timer-focus-bar-title" id="timer-focus-title">Timer</div>
-      <div class="timer-focus-bar-sub" id="timer-focus-sub">Tap to expand</div>
-    </div>
-    <span class="timer-focus-chevron" id="timer-focus-chevron">▼</span>
-  </div>
-  <div class="timer-focus-body" id="timer-focus-body">
-    <div class="timer-focus-clock" id="timer-focus-clock">0:00</div>
-    <div class="timer-focus-meta" id="timer-focus-meta"></div>
-    <div class="timer-focus-track"><div class="timer-focus-fill" id="timer-focus-fill" style="width:0%"></div></div>
-    <div class="timer-focus-actions" id="timer-focus-actions"></div>
-  </div>
-</div>
-
-<script>
-// ══════════════════════════════════════════
-// STATE
-// ══════════════════════════════════════════
-var currentTab = 0;
-var assignments = [];
-var completedToday = [];
-var activeTimer = null;
-var timerInterval = null;
-var cutoffShown = false;
-var selectedUrgency = 'medium';
-var allProjects = [];
-var currentProjectId = null;
-var currentAsgnDetail = null;
-var aiHistory = [];
-var timerFocusExpanded = true;
-var timerTickHandle = null;
-var timerSyncAtMs = 0;
-var timerFocusUserStarted = false;
-var timerFocusPausedUi = null;
-var timerFocusHydrated = false;
-var cachedDebrief = { text: '', generatedAt: null };
-window._calReminderTimers = window._calReminderTimers || {};
-
-// ══════════════════════════════════════════
-// INIT
-// ══════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', function() {
-  updateHeaderDate();
-  loadConfig();
-  loadBriefing();
-  loadHomeAssignments();
-  loadCompletedToday();
-  loadHomeSchedule();
-  loadStats();
-  startTimerPoller();
-  restoreCalReminders();
-  setInterval(function() {
-    fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
-  }, 120000);
-  document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible') {
-      fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
+import os
+import time
+import logging
+import threading
+from datetime import datetime, timedelta, date
+from zoneinfo import ZoneInfo
+
+import psycopg2
+import psycopg2.extras
+from psycopg2 import sql as pgsql
+import requests
+from functools import wraps
+from flask import Flask, request, jsonify, render_template, session, redirect
+from icalendar import Calendar
+import recurring_ical_events
+from apscheduler.schedulers.background import BackgroundScheduler
+import anthropic
+
+app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "finn-dashboard-secret-change-me")
+app.permanent_session_lifetime = timedelta(days=30)
+APP_PASSWORD = os.environ.get("APP_PASSWORD", "finn2025")
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
+
+
+@app.before_request
+def require_auth():
+    if request.path in ('/login', '/logout'):
+        return None
+    if not session.get("authenticated"):
+        if request.path.startswith('/api/'):
+            return jsonify({"error": "Not authenticated"}), 401
+        return redirect("/login")
+
+TZ = ZoneInfo("America/Denver")
+
+_briefing_lock = threading.Lock()
+_timer_lock = threading.Lock()
+
+# ── Hardcoded calendar URLs ──────────────────────────────────────────────────
+PERSONAL_ICAL_URL = "https://p107-caldav.icloud.com/published/2/OTg1NzQ4NTY5ODU3NDg1NhsR_oH4Uc5HZPs6egZwYCgNaNoVdbGZnhTJRBFIsovYYGFTxg1u1ClSf4dPKWfDbUirJMtTPpJPtm_Zct60PgM"
+CANVAS_ICAL_URL = "https://pcsd.instructure.com/feeds/calendars/user_wC7Sn9BAtT2VtytLikpkf7f2hC8Pz90mqGLPXR9F.ics"
+SPORTS_ICAL_URL = "https://api.olliesports.com/ical/team-NgstTqqq97a7sBEoUbq1Ig89P0mFplM1.ics?accountId=rxwb8YV8yIfpjwKHxxndqXcQ3ss2"
+
+# ── Park City School District 2025-2026 Bell Schedule ────────────────────────
+# Red Day = shorter (A-block), White Day = longer (B-block), alternating each school day
+# First day of school: 2025-08-18 (Red day)
+SCHOOL_YEAR_START = date(2025, 8, 18)
+SCHOOL_YEAR_END = date(2026, 6, 5)
+
+# All dates with no school (students)
+_ns_ranges = [
+    (date(2025, 8, 7), date(2025, 8, 15)),   # Teacher work days before school
+    (date(2025, 9, 1), date(2025, 9, 1)),    # Labor Day
+    (date(2025, 9, 23), date(2025, 9, 23)),  # Rosh Hashanah
+    (date(2025, 10, 2), date(2025, 10, 3)),  # Yom Kippur + Fall Break
+    (date(2025, 11, 7), date(2025, 11, 7)),  # Prof Development
+    (date(2025, 11, 26), date(2025, 11, 28)),# Thanksgiving
+    (date(2025, 12, 22), date(2026, 1, 2)),  # Winter Break
+    (date(2026, 1, 19), date(2026, 1, 19)),  # MLK Day
+    (date(2026, 2, 16), date(2026, 2, 20)),  # Presidents Day + February Break
+    (date(2026, 3, 20), date(2026, 3, 20)),  # Prof Development
+    (date(2026, 4, 13), date(2026, 4, 17)),  # Teacher Comp + Spring Break
+    (date(2026, 5, 22), date(2026, 5, 22)),  # Make Up Snow Day
+    (date(2026, 5, 25), date(2026, 5, 25)),  # Memorial Day
+]
+NO_SCHOOL_DATES = set()
+for _s, _e in _ns_ranges:
+    _cur = _s
+    while _cur <= _e:
+        NO_SCHOOL_DATES.add(_cur)
+        _cur += timedelta(days=1)
+
+
+def is_school_day(d):
+    """Return True if d is a regular school day (weekday, not holiday, within school year)."""
+    if d < SCHOOL_YEAR_START or d > SCHOOL_YEAR_END:
+        return False
+    if d.weekday() >= 5:  # Saturday/Sunday
+        return False
+    return d not in NO_SCHOOL_DATES
+
+
+def _build_day_type_cache():
+    cache = {}
+    cur = SCHOOL_YEAR_START
+    count = 0
+    while cur <= SCHOOL_YEAR_END:
+        if is_school_day(cur):
+            cache[cur] = "red" if count % 2 == 0 else "white"
+            count += 1
+        else:
+            cache[cur] = None
+        cur += timedelta(days=1)
+    return cache
+
+_DAY_TYPE_CACHE = _build_day_type_cache()
+
+
+def get_day_type(d):
+    """Return 'red', 'white', or None for non-school days. O(1) lookup."""
+    return _DAY_TYPE_CACHE.get(d)
+
+
+def get_school_hours(d):
+    """Return (start_hour, start_min, end_hour, end_min) for school on day d, or None."""
+    dtype = get_day_type(d)
+    if dtype is None:
+        return None
+    dow = d.weekday()  # 0=Mon, 4=Fri
+    if dow == 4:  # Friday
+        return (7, 30, 10, 25) if dtype == "red" else (7, 30, 11, 30)
+    else:  # Mon-Thu
+        return (7, 30, 11, 53) if dtype == "red" else (7, 30, 14, 25)
+
+
+def get_db():
+    url = os.environ.get("DATABASE_URL", "")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return psycopg2.connect(url, cursor_factory=psycopg2.extras.RealDictCursor)
+
+
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS completions (
+    id SERIAL PRIMARY KEY,
+    completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    assignment_title TEXT NOT NULL,
+    class_name TEXT NOT NULL DEFAULT '',
+    duration_minutes REAL NOT NULL DEFAULT 0,
+    estimate_minutes REAL NOT NULL DEFAULT 0,
+    timed BOOLEAN NOT NULL DEFAULT TRUE
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS assignment_estimates (
+    uid TEXT PRIMARY KEY,
+    minutes REAL NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS timer_state (
+    id INT PRIMARY KEY DEFAULT 1,
+    assignment_uid TEXT NOT NULL DEFAULT '',
+    assignment_title TEXT NOT NULL DEFAULT '',
+    class_name TEXT NOT NULL DEFAULT '',
+    estimate_minutes REAL NOT NULL DEFAULT 30,
+    started_at TIMESTAMPTZ,
+    paused_at TIMESTAMPTZ,
+    accumulated_seconds REAL NOT NULL DEFAULT 0,
+    active BOOLEAN NOT NULL DEFAULT FALSE
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS briefing_cache (
+    id INT PRIMARY KEY DEFAULT 1,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    content TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS debrief_cache (
+    id INT PRIMARY KEY DEFAULT 1,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    content TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS tasks (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    title TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    urgency TEXT NOT NULL DEFAULT 'low',
+    completed BOOLEAN NOT NULL DEFAULT FALSE,
+    completed_at TIMESTAMPTZ,
+    due_date DATE
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS projects (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'active',
+    lead TEXT NOT NULL DEFAULT '',
+    members TEXT NOT NULL DEFAULT '',
+    last_checkin TIMESTAMPTZ,
+    checkin_interval_days INT NOT NULL DEFAULT 7,
+    completion_pct INT NOT NULL DEFAULT 0
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS project_notes (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    content TEXT NOT NULL
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS project_tasks (
+    id SERIAL PRIMARY KEY,
+    project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    title TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT '',
+    assignee TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    due_date DATE
+)""")
+
+    defaults = {
+        "name": "Finn",
+        "morning_briefing_time": "07:00",
+        "timer_cutoff_multiplier": "2.0",
+        "anthropic_api_key": "",
+        "weekly_recap_advisor": "Mr. Goldberg",
+        "formal_signoff_name": "Finley Thomas",
     }
-  });
-});
+    for k, v in defaults.items():
+        cur.execute("""
+INSERT INTO config (key, value) VALUES (%s, %s)
+ON CONFLICT (key) DO NOTHING""", (k, v))
 
-function updateHeaderDate() {
-  var now = new Date();
-  var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  document.getElementById('header-date').textContent =
-    days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate();
+    cur.execute("INSERT INTO timer_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+    cur.execute("INSERT INTO briefing_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
+    cur.execute("INSERT INTO debrief_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
+    conn.commit()
+    cur.close()
+    conn.close()
+    log.info("Database initialized.")
+
+
+_config_cache = None
+_config_cache_ts = 0.0
+_config_cache_lock = threading.Lock()
+CONFIG_CACHE_TTL = 30  # seconds
+
+
+def get_config():
+    global _config_cache, _config_cache_ts
+    with _config_cache_lock:
+        if _config_cache is not None and (time.monotonic() - _config_cache_ts) < CONFIG_CACHE_TTL:
+            return _config_cache
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT key, value FROM config")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    result = {r["key"]: r["value"] for r in rows}
+    with _config_cache_lock:
+        _config_cache = result
+        _config_cache_ts = time.monotonic()
+    return result
+
+
+def set_config(updates):
+    global _config_cache
+    conn = get_db()
+    cur = conn.cursor()
+    for k, v in updates.items():
+        cur.execute("""
+INSERT INTO config (key, value) VALUES (%s, %s)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""", (k, str(v)))
+    conn.commit()
+    cur.close()
+    conn.close()
+    with _config_cache_lock:
+        _config_cache = None  # invalidate
+
+
+_ical_cache = {}  # url -> (monotonic_time, Calendar)
+_ical_cache_lock = threading.Lock()
+ICAL_CACHE_TTL = 300  # 5 minutes
+
+
+def fetch_ical(url):
+    if not url:
+        return None
+    if url.startswith("webcal://"):
+        url = "https://" + url[9:]
+    now = time.monotonic()
+    with _ical_cache_lock:
+        if url in _ical_cache:
+            cached_at, cached_cal = _ical_cache[url]
+            if now - cached_at < ICAL_CACHE_TTL:
+                return cached_cal
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        cal = Calendar.from_ical(resp.content)
+        with _ical_cache_lock:
+            _ical_cache[url] = (time.monotonic(), cal)
+        return cal
+    except Exception as e:
+        log.warning("iCal fetch failed for %s: %s", url, e)
+        # Return stale cache on failure rather than None
+        with _ical_cache_lock:
+            if url in _ical_cache:
+                return _ical_cache[url][1]
+        return None
+
+
+def parse_canvas_assignments(cal):
+    assignments = []
+    now_utc = datetime.utcnow().replace(tzinfo=ZoneInfo("UTC"))
+    cutoff = now_utc + timedelta(days=14)
+    for component in cal.walk():
+        if component.name != "VEVENT":
+            continue
+        uid = str(component.get("UID", ""))
+        summary = str(component.get("SUMMARY", "Untitled"))
+        description = str(component.get("DESCRIPTION", ""))
+        teacher = str(component.get("ORGANIZER", ""))
+        due_dt = component.get("DTSTART") or component.get("DUE")
+        if due_dt is None:
+            continue
+        due_val = due_dt.dt
+        if isinstance(due_val, date) and not isinstance(due_val, datetime):
+            due_val = datetime(due_val.year, due_val.month, due_val.day, 23, 59, 0, tzinfo=ZoneInfo("UTC"))
+        if due_val.tzinfo is None:
+            due_val = due_val.replace(tzinfo=ZoneInfo("UTC"))
+        if due_val < now_utc or due_val > cutoff:
+            continue
+        class_name = ""
+        title = summary
+        if " - " in summary:
+            parts = summary.rsplit(" - ", 1)
+            title = parts[0].strip()
+            class_name = parts[1].strip()
+        delta = due_val - now_utc
+        if delta.total_seconds() < 86400:
+            urgency = "high"
+        elif delta.total_seconds() < 259200:
+            urgency = "medium"
+        else:
+            urgency = "low"
+        assignments.append({
+            "uid": uid,
+            "title": title,
+            "class_name": class_name,
+            "description": description[:1000],
+            "teacher": teacher,
+            "due_iso": due_val.astimezone(TZ).isoformat(),
+            "due_display": due_val.astimezone(TZ).strftime("%a %b %-d at %-I:%M %p"),
+            "urgency": urgency
+        })
+    assignments.sort(key=lambda x: x["due_iso"])
+    return assignments
+
+
+def parse_calendar_events(cal, days_ahead=30):
+    events = []
+    now_local = datetime.now(TZ)
+    today_start = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    range_end = today_start + timedelta(days=days_ahead)
+    try:
+        components = recurring_ical_events.of(cal).between(today_start, range_end)
+    except Exception as e:
+        log.warning("recurring_ical_events failed, falling back: %s", e)
+        components = [c for c in cal.walk() if c.name == "VEVENT"]
+    for component in components:
+        if component.name != "VEVENT":
+            continue
+        summary = str(component.get("SUMMARY", "Untitled"))
+        location = str(component.get("LOCATION", ""))
+        description = str(component.get("DESCRIPTION", ""))[:500]
+        start_dt = component.get("DTSTART")
+        end_dt = component.get("DTEND")
+        if start_dt is None:
+            continue
+        start_val = start_dt.dt
+        all_day = isinstance(start_val, date) and not isinstance(start_val, datetime)
+        if all_day:
+            start_val = datetime(start_val.year, start_val.month, start_val.day, 0, 0, 0, tzinfo=TZ)
+        if start_val.tzinfo is None:
+            start_val = start_val.replace(tzinfo=TZ)
+        start_local = start_val.astimezone(TZ)
+        end_local = None
+        if end_dt:
+            end_val = end_dt.dt
+            if isinstance(end_val, date) and not isinstance(end_val, datetime):
+                end_val = datetime(end_val.year, end_val.month, end_val.day, 23, 59, 0, tzinfo=TZ)
+            if end_val.tzinfo is None:
+                end_val = end_val.replace(tzinfo=TZ)
+            end_local = end_val.astimezone(TZ)
+        events.append({
+            "title": summary,
+            "location": location,
+            "notes": description,
+            "start_display": "All Day" if all_day else start_local.strftime("%-I:%M %p"),
+            "end_display": end_local.strftime("%-I:%M %p") if end_local and not all_day else "",
+            "start_iso": start_local.isoformat(),
+            "end_iso": end_local.isoformat() if end_local else "",
+            "date": start_local.strftime("%Y-%m-%d"),
+            "all_day": all_day
+        })
+    events.sort(key=lambda x: x["start_iso"])
+    return events
+
+
+KEYWORD_ESTIMATES = {
+    "essay": 45, "paper": 45, "write": 45, "writing": 45,
+    "worksheet": 30, "problems": 30, "exercises": 30,
+    "reading": 25, "read": 25, "chapter": 25,
+    "vocab": 15, "vocabulary": 15, "flashcard": 15,
+    "quiz": 20, "test": 20
 }
 
-// ══════════════════════════════════════════
-// TABS
-// ══════════════════════════════════════════
-function switchTab(idx) {
-  currentTab = idx;
-  document.getElementById('tabs-wrapper').style.transform = 'translateX(' + (-idx * 20) + '%)';
-  document.querySelectorAll('.tab-item').forEach(function(el, i) { el.classList.toggle('active', i === idx); });
-  if (idx === 1) loadTasks();
-  if (idx === 2) loadProjects();
-  if (idx === 3) loadCalendar();
-  if (idx === 4) loadAvailability();
-}
-
-// ══════════════════════════════════════════
-// CONFIG
-// ══════════════════════════════════════════
-function loadConfig() {
-  fetch('/api/config').then(function(r) { return r.json(); }).then(function(d) {
-    var name = d.name || 'Finn';
-    var hour = new Date().getHours();
-    var greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-    document.getElementById('header-greeting').textContent = greeting + ', ' + name;
-    document.getElementById('setting-name').value = d.name || '';
-    document.getElementById('setting-time').value = d.morning_briefing_time || '07:00';
-    document.getElementById('setting-cutoff').value = d.timer_cutoff_multiplier || '2.0';
-    var adv = document.getElementById('setting-weekly-advisor');
-    if (adv) adv.value = d.weekly_recap_advisor || 'Mr. Goldberg';
-    var fn = document.getElementById('setting-formal-name');
-    if (fn) fn.value = d.formal_signoff_name || 'Finley Thomas';
-  }).catch(function(){});
-}
-
-function openSettings() {
-  document.getElementById('sheet-backdrop').classList.add('open');
-  document.getElementById('settings-sheet').classList.add('open');
-  document.getElementById('save-feedback').textContent = '';
-}
-
-function closeAllSheets() {
-  document.getElementById('sheet-backdrop').classList.remove('open');
-  document.getElementById('settings-sheet').classList.remove('open');
-  document.getElementById('asgn-detail-sheet').classList.remove('open');
-  document.getElementById('project-detail-sheet').classList.remove('open');
-  document.getElementById('cal-event-sheet').classList.remove('open');
-  document.getElementById('debrief-sheet').classList.remove('open');
-}
-
-function saveSettings() {
-  var payload = {
-    name: document.getElementById('setting-name').value.trim(),
-    morning_briefing_time: document.getElementById('setting-time').value,
-    timer_cutoff_multiplier: document.getElementById('setting-cutoff').value
-  };
-  var apikey = document.getElementById('setting-apikey').value.trim();
-  if (apikey) payload.anthropic_api_key = apikey;
-  var wadv = document.getElementById('setting-weekly-advisor');
-  var fname = document.getElementById('setting-formal-name');
-  if (wadv) payload.weekly_recap_advisor = wadv.value.trim().slice(0, 200);
-  if (fname) payload.formal_signoff_name = fname.value.trim().slice(0, 200);
-  fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    .then(function() {
-      document.getElementById('save-feedback').textContent = 'Saved!';
-      setTimeout(function() {
-        closeAllSheets();
-        loadConfig();
-      }, 900);
-    }).catch(function() { document.getElementById('save-feedback').textContent = 'Error saving.'; });
-}
-
-// ══════════════════════════════════════════
-// BRIEFING
-// ══════════════════════════════════════════
-function renderBriefing(content) {
-  return renderMarkdown(content || 'Generating...', true);
-}
-
-function loadBriefing() {
-  fetch('/api/briefing').then(function(r) { return r.json(); }).then(function(d) {
-    document.getElementById('briefing-text').innerHTML = renderBriefing(d.briefing);
-    updateDebriefFromApi(d);
-  }).catch(function(){});
-}
-
-function localDateKey(d) {
-  d = d || new Date();
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-
-function isDebriefFromToday(genIso) {
-  if (!genIso) return false;
-  var g = new Date(genIso);
-  if (isNaN(g.getTime())) return false;
-  return localDateKey(g) === localDateKey(new Date());
-}
-
-function updateDebriefFromApi(d) {
-  var deb = (d && d.debrief) ? String(d.debrief).trim() : '';
-  var gen = d && d.debrief_generated_at ? d.debrief_generated_at : null;
-  cachedDebrief.text = deb;
-  cachedDebrief.generatedAt = gen;
-  renderDebriefPill();
-  maybeBrowserNotifyDebrief(gen, deb);
-}
-
-function renderDebriefPill() {
-  var slot = document.getElementById('debrief-notif-slot');
-  if (!slot) return;
-  slot.innerHTML = '';
-  var deb = cachedDebrief.text;
-  var gen = cachedDebrief.generatedAt;
-  if (!deb || !isDebriefFromToday(gen)) return;
-  try {
-    if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
-  } catch (e) {}
-  var when = gen ? formatRelative(gen) : '';
-  var permHint = '';
-  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    permHint = '<br><span style="font-size:12px;color:var(--text3)">Tip: allow notifications in your browser to get pinged when the debrief is ready.</span>';
-  }
-  slot.innerHTML =
-    '<div class="notif-row debrief-notif" role="button" tabindex="0" onclick="openDebriefSheet()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDebriefSheet();}">' +
-    '<span class="notif-icon">&#127961;</span>' +
-    '<div class="notif-text"><span class="notif-title">Daily debrief</span><br>' +
-    '<span style="color:var(--text3)">Tap to read what happened today' + (when ? ' · ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
-}
-
-function openDebriefSheet() {
-  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
-  var body = document.getElementById('debrief-sheet-body');
-  var sub = document.getElementById('debrief-sheet-sub');
-  if (body) body.innerHTML = cachedDebrief.text ? renderMarkdown(cachedDebrief.text, false) : '<span style="color:var(--text3)">No debrief yet. It is generated around 7:00 PM.</span>';
-  if (sub) sub.textContent = cachedDebrief.generatedAt ? 'Generated ' + formatRelative(cachedDebrief.generatedAt) : '';
-  document.getElementById('sheet-backdrop').classList.add('open');
-  document.getElementById('debrief-sheet').classList.add('open');
-}
-
-function maybeBrowserNotifyDebrief(genIso, debText) {
-  if (!debText || !isDebriefFromToday(genIso)) return;
-  if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  var key = 'debrief_bn_' + String(genIso).replace(/[^\w.-]/g, '_');
-  try {
-    if (sessionStorage.getItem(key)) return;
-  } catch (e) {}
-  try {
-    var n = new Notification('Daily debrief ready', {
-      body: 'Tap to see how today went',
-      tag: 'student-debrief',
-    });
-    n.onclick = function() {
-      window.focus();
-      openDebriefSheet();
-      try { n.close(); } catch (e2) {}
-    };
-    sessionStorage.setItem(key, '1');
-  } catch (e) {}
-}
-
-function calEventReminderId(e) {
-  return String(e.start_iso || '') + '::' + String(e.title || '') + '::' + String(e.source || '');
-}
-
-function getCalReminders() {
-  try {
-    var raw = localStorage.getItem('cal_reminders_v1');
-    if (!raw) return [];
-    var arr = JSON.parse(raw);
-    return Array.isArray(arr) ? arr : [];
-  } catch (err) {
-    return [];
-  }
-}
-
-function setCalReminders(arr) {
-  try {
-    localStorage.setItem('cal_reminders_v1', JSON.stringify(arr));
-  } catch (err) {}
-}
-
-function armCalReminderEntry(entry) {
-  if (!entry || entry.fireAt == null) return;
-  var delay = entry.fireAt - Date.now();
-  if (delay <= 0) return;
-  var id = entry.id;
-  if (window._calReminderTimers[id]) clearTimeout(window._calReminderTimers[id]);
-  window._calReminderTimers[id] = setTimeout(function() {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      var n = new Notification('In 30 min: ' + entry.title, { body: entry.subtitle || 'Event starting soon', tag: 'cal-' + id.slice(0, 80) });
-      n.onclick = function() {
-        window.focus();
-        try { n.close(); } catch (e) {}
-      };
-    }
-    var list = getCalReminders().filter(function(x) { return x.id !== id; });
-    setCalReminders(list);
-    delete window._calReminderTimers[id];
-  }, delay);
-}
-
-function restoreCalReminders() {
-  var now = Date.now();
-  var list = getCalReminders().filter(function(entry) { return entry.fireAt > now; });
-  if (list.length !== getCalReminders().length) setCalReminders(list);
-  list.forEach(armCalReminderEntry);
-}
-
-function scheduleCalEventReminder(e) {
-  if (e.all_day) return { error: '30-minute reminders are not used for all-day events.' };
-  var start = new Date(e.start_iso);
-  if (isNaN(start.getTime())) return { error: 'Could not read this event start time.' };
-  var fireAt = start.getTime() - 30 * 60 * 1000;
-  if (fireAt <= Date.now()) return { error: 'This event is already within 30 minutes or has passed.' };
-  var id = calEventReminderId(e);
-  var list = getCalReminders().filter(function(x) { return x.id !== id; });
-  var subtitle = (e.start_display || '') + (e.location ? ' · ' + e.location : '');
-  list.push({ id: id, fireAt: fireAt, title: e.title, subtitle: subtitle });
-  setCalReminders(list);
-  armCalReminderEntry(list[list.length - 1]);
-  return { ok: true };
-}
-
-function removeCalEventReminder(e) {
-  var id = calEventReminderId(e);
-  var list = getCalReminders().filter(function(x) { return x.id !== id; });
-  setCalReminders(list);
-  if (window._calReminderTimers[id]) {
-    clearTimeout(window._calReminderTimers[id]);
-    delete window._calReminderTimers[id];
-  }
-}
-
-function refreshBriefing() {
-  var icon = document.getElementById('refresh-icon');
-  var text = document.getElementById('briefing-text');
-  icon.classList.add('spinning');
-  text.classList.add('fading');
-  var startedAt = Date.now();
-  fetch('/api/briefing/refresh', { method: 'POST' }).then(function() {
-    function poll() {
-      fetch('/api/briefing').then(function(r) { return r.json(); }).then(function(d) {
-        var genAt = d.generated_at ? new Date(d.generated_at).getTime() : 0;
-        if (genAt > startedAt || Date.now() - startedAt > 30000) {
-          text.innerHTML = renderBriefing(d.briefing);
-          updateDebriefFromApi(d);
-          text.classList.remove('fading');
-          icon.classList.remove('spinning');
-        } else {
-          setTimeout(poll, 2000);
-        }
-      }).catch(function() { icon.classList.remove('spinning'); text.classList.remove('fading'); });
-    }
-    setTimeout(poll, 2000);
-  }).catch(function() { icon.classList.remove('spinning'); text.classList.remove('fading'); });
-}
-
-// ══════════════════════════════════════════
-// HOME ASSIGNMENTS (today + tomorrow only)
-// ══════════════════════════════════════════
-function scorePriority(a) {
-  var now = new Date();
-  var due = new Date(a.due_iso);
-  var hoursUntilDue = (due - now) / 3600000;
-  var estimate = a.estimate_minutes || 30;
-  var logged = a.minutes_logged || 0;
-  var notStarted = logged < 5;
-
-  // Base score: lower hours = higher score
-  var score = 0;
-
-  // Overdue or due very soon: massive boost
-  if (hoursUntilDue < 0) score += 1000;
-  else if (hoursUntilDue < 12) score += 500;
-  else if (hoursUntilDue < 24) score += 200;
-  else if (hoursUntilDue < 48) score += 100;
-  else if (hoursUntilDue < 72) score += 50;
-  else score += Math.max(0, 20 - hoursUntilDue / 24);
-
-  // Big assignment not started: significant boost
-  if (notStarted && estimate >= 40) score += 80;
-  else if (notStarted && estimate >= 25) score += 40;
-
-  // Partially done: small reduction (you've started it)
-  if (logged > 0) score -= 10;
-
-  return score;
-}
-
-function getPriorityLabel(a) {
-  var now = new Date();
-  var due = new Date(a.due_iso);
-  var hoursUntilDue = (due - now) / 3600000;
-  var logged = a.minutes_logged || 0;
-  var estimate = a.estimate_minutes || 30;
-  var notStarted = logged < 5;
-
-  if (hoursUntilDue < 0) return { text: 'Overdue', color: 'var(--red)' };
-  if (hoursUntilDue < 3) return { text: 'Due in ' + Math.round(hoursUntilDue) + 'h', color: 'var(--red)' };
-  if (hoursUntilDue < 12) return { text: 'Due in ' + Math.round(hoursUntilDue) + 'h', color: 'var(--amber)' };
-  if (hoursUntilDue < 24) return { text: 'Due today', color: 'var(--amber)' };
-  if (hoursUntilDue < 48) return { text: 'Due tomorrow', color: 'var(--text2)' };
-  if (notStarted && estimate >= 40) return { text: 'Due ' + due.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}) + ' · ' + estimate + ' min', color: 'var(--accent2)' };
-  if (logged > 0) return { text: Math.round(logged) + ' min logged', color: 'var(--green)' };
-  return { text: 'Due ' + new Date(a.due_iso).toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}), color: 'var(--text3)' };
-}
-
-function loadHomeAssignments() {
-  fetch('/api/assignments', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
-    assignments = d.assignments || [];
-
-    // Score and sort all assignments by priority
-    var scored = assignments.slice().sort(function(a, b) {
-      return scorePriority(b) - scorePriority(a);
-    });
-
-    // Show top 6 most urgent
-    var toShow = scored.slice(0, 6);
-
-    renderHomeAssignments(toShow);
-    renderNotifications(assignments);
-  }).catch(function(err) {
-    document.getElementById('home-assignments-container').innerHTML =
-      '<div class="card"><div style="color:var(--text3);text-align:center;font-size:14px">Could not load assignments: ' + err + '</div></div>';
-  });
-}
-
-function renderNotifications(allAsgn) {
-  var container = document.getElementById('notif-container');
-  var html = '';
-  var now = new Date();
-  var overdue = allAsgn.filter(function(a) { return new Date(a.due_iso) < now; });
-  var dueToday = allAsgn.filter(function(a) {
-    var due = new Date(a.due_iso);
-    var hrs = (due - now) / 3600000;
-    return hrs >= 0 && hrs < 24;
-  });
-  var bigNotStarted = allAsgn.filter(function(a) {
-    var hrs = (new Date(a.due_iso) - now) / 3600000;
-    return (a.minutes_logged || 0) < 5 && (a.estimate_minutes || 0) >= 40 && hrs < 72 && hrs >= 0;
-  });
-  if (overdue.length > 0) {
-    html += '<div class="notif-row"><span class="notif-icon">&#128680;</span><div class="notif-text"><span class="notif-title">' + overdue.length + ' overdue</span><br>' + overdue.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + '</div></div>';
-  }
-  if (dueToday.length > 0) {
-    html += '<div class="notif-row"><span class="notif-icon">&#9888;</span><div class="notif-text"><span class="notif-title">' + dueToday.length + ' due today</span><br>' + dueToday.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + (dueToday.length > 2 ? '...' : '') + '</div></div>';
-  }
-  if (bigNotStarted.length > 0) {
-    html += '<div class="notif-row"><span class="notif-icon">&#128161;</span><div class="notif-text"><span class="notif-title">Not started yet</span><br>' + bigNotStarted.slice(0,2).map(function(a){ return esc(a.title) + ' (' + Math.round(a.estimate_minutes) + ' min)'; }).join(', ') + '</div></div>';
-  }
-  container.innerHTML = html;
-}
-
-function renderHomeAssignments(list) {
-  var container = document.getElementById('home-assignments-container');
-  if (list.length === 0) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-emoji">&#127881;</div><div class="empty-title">All clear!</div><div class="empty-sub">No urgent assignments right now.</div></div>';
-    return;
-  }
-  container.innerHTML = list.map(function(a) {
-    var isActive = activeTimer && activeTimer.assignment_uid === a.uid && activeTimer.active;
-    return buildAsgnCard(a, isActive);
-  }).join('');
-}
-
-function buildAsgnCard(a, isActive) {
-  var activeClass = isActive ? ' active-timer' : '';
-  var label = getPriorityLabel(a);
-  var estVal = a.estimate_minutes ? Math.round(a.estimate_minutes) : 30;
-  var uid = esc(a.uid);
-
-  var timerHTML = '';
-  if (isActive && activeTimer) {
-    var elapsed = Math.floor(activeTimer.elapsed_minutes);
-    var pct = Math.min((activeTimer.elapsed_minutes / (activeTimer.estimate_minutes || 30)) * 100, 100);
-    var over = activeTimer.over_estimate;
-    timerHTML = '<div class="timer-section">' +
-      '<div class="timer-display' + (over ? ' over' : '') + '">' + elapsed + ' min</div>' +
-      '<div class="progress-track"><div class="progress-fill' + (over ? ' over' : '') + '" id="prog-' + uid + '" style="width:' + pct + '%"></div></div>' +
-      '<div class="asgn-actions">' +
-      (activeTimer.paused
-        ? '<button class="btn btn-primary" onclick="resumeTimer(event)">Resume</button>'
-        : '<button class="btn btn-pause" onclick="pauseTimer(event)">Pause</button>') +
-      '<button class="btn btn-done" onclick="stopTimer(event,true,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\')">Done</button>' +
-      '</div></div>';
-  }
-
-  var classLine = a.class_name
-    ? '<div style="font-size:10px;font-weight:700;color:var(--accent2);letter-spacing:0.04em;margin:2px 0 3px;text-transform:uppercase">' + esc(a.class_name) + '</div>'
-    : '';
-
-  var estimateRow =
-    '<div style="display:flex;align-items:center;gap:5px;margin:4px 0 0" onclick="event.stopPropagation()">' +
-    '<input id="est-' + uid + '" type="number" value="' + estVal + '" min="1" max="600" onclick="event.stopPropagation()" ' +
-    'style="width:46px;padding:2px 4px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:12px;font-weight:600;text-align:center">' +
-    '<span style="font-size:11px;color:var(--text3)">min</span>' +
-    '<button onclick="saveEstimateFromCard(event,\'' + uid + '\')" ' +
-    'style="padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--surface3);color:var(--accent2);font-size:11px;font-weight:600;cursor:pointer">Save</button>' +
-    '</div>';
-
-  var sideButtons = isActive ? '' :
-    '<div class="asgn-card-btns" onclick="event.stopPropagation()">' +
-    '<button class="btn btn-primary" onclick="startTimer(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Start</button>' +
-    '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Done</button>' +
-    '</div>';
-
-  return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + uid + '" onclick="openAsgnDetail(\'' + uid + '\')">' +
-    '<div class="asgn-card-layout">' +
-    '<div class="asgn-card-body">' +
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:2px">' +
-    '<div class="asgn-title">' + trunc(a.title, 36) + '</div>' +
-    '<span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:20px;flex-shrink:0;white-space:nowrap;color:' + label.color + ';background:rgba(128,128,128,0.1)">' + esc(label.text) + '</span>' +
-    '</div>' +
-    classLine + estimateRow +
-    '</div>' +
-    sideButtons +
-    '</div>' +
-    timerHTML + '</div>';
-}
-
-function saveEstimateFromCard(e, uid) {
-  e.stopPropagation();
-  var input = document.getElementById('est-' + uid);
-  if (!input) return;
-  var mins = parseFloat(input.value);
-  if (isNaN(mins) || mins < 1) return;
-  var btn = e.target;
-  btn.textContent = '...';
-  fetch('/api/assignments/' + encodeURIComponent(uid) + '/estimate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ minutes: mins })
-  }).then(function(r) { return r.json(); }).then(function() {
-    var a = assignments.find(function(x) { return x.uid === uid; });
-    if (a) { a.estimate_minutes = mins; a.estimate_custom = true; }
-    btn.textContent = 'Saved!';
-    setTimeout(function() { btn.textContent = 'Save'; }, 1500);
-  }).catch(function() { btn.textContent = 'Save'; });
-}
-
-// ══════════════════════════════════════════
-// ASSIGNMENT DETAIL
-// ══════════════════════════════════════════
-function openAsgnDetail(uid) {
-  var a = assignments.find(function(x) { return x.uid === uid; });
-  if (!a) return;
-  currentAsgnDetail = a;
-  var content = document.getElementById('asgn-detail-content');
-  var actions = document.getElementById('asgn-detail-actions');
-  var estVal = a.estimate_minutes ? Math.round(a.estimate_minutes) : 30;
-  var estLabel = a.estimate_custom ? 'your estimate' : 'AI estimate';
-  content.innerHTML =
-    '<div class="sheet-title">' + esc(a.title) + '</div>' +
-    '<div class="sheet-sub">' + esc(a.class_name || '') + (a.class_name && a.teacher ? ' · ' : '') + esc(a.teacher || '') + '</div>' +
-    '<div class="sheet-section">' +
-    '<div class="sheet-section-label">Due</div>' +
-    '<div class="sheet-body">' + esc(a.due_display || '') + '</div>' +
-    '</div>' +
-    '<div class="sheet-section">' +
-    '<div class="sheet-section-label">Time Estimate</div>' +
-    '<div style="display:flex;align-items:center;gap:8px;margin-top:4px">' +
-    '<input type="number" id="estimate-input" value="' + estVal + '" min="1" max="600" style="width:72px;padding:6px 8px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:15px;font-weight:600;text-align:center">' +
-    '<span style="color:var(--text2);font-size:14px">min</span>' +
-    '<span id="estimate-tag" style="font-size:12px;color:var(--text3);margin-left:2px">(' + estLabel + ')</span>' +
-    '</div>' +
-    '</div>' +
-    (a.description ? '<div class="sheet-section"><div class="sheet-section-label">Details</div><div class="sheet-body">' + esc(a.description) + '</div></div>' : '');
-
-  actions.innerHTML =
-    '<button class="btn btn-primary" onclick="startTimerFromDetail()">Start Timer</button>' +
-    '<button class="btn btn-done" onclick="markDoneFromDetail()">Mark Done</button>';
-
-  document.getElementById('sheet-backdrop').classList.add('open');
-  document.getElementById('asgn-detail-sheet').classList.add('open');
-
-  // Save estimate when user changes the input
-  document.getElementById('estimate-input').addEventListener('change', function() {
-    var mins = parseFloat(this.value);
-    if (isNaN(mins) || mins < 1) return;
-    fetch('/api/assignments/' + encodeURIComponent(a.uid) + '/estimate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ minutes: mins })
-    }).then(function() {
-      a.estimate_minutes = mins;
-      a.estimate_custom = true;
-      document.getElementById('estimate-tag').textContent = '(your estimate)';
-    });
-  });
-}
-
-function startTimerFromDetail() {
-  if (!currentAsgnDetail) return;
-  var a = currentAsgnDetail;
-  var inp = document.getElementById('estimate-input');
-  var mins = inp ? (parseFloat(inp.value) || a.estimate_minutes || 30) : (a.estimate_minutes || 30);
-  closeAllSheets();
-  startTimer(null, a.uid, a.title, a.class_name, mins);
-}
-
-function markDoneFromDetail() {
-  if (!currentAsgnDetail) return;
-  var a = currentAsgnDetail;
-  var inp = document.getElementById('estimate-input');
-  var mins = inp ? (parseFloat(inp.value) || a.estimate_minutes || 30) : (a.estimate_minutes || 30);
-  closeAllSheets();
-  markDone(null, a.uid, a.title, a.class_name, mins);
-}
-
-// ══════════════════════════════════════════
-// TIMER
-// ══════════════════════════════════════════
-function getSmoothElapsedMinutes() {
-  if (!activeTimer || !activeTimer.active) return 0;
-  if (activeTimer.paused) return activeTimer.elapsed_minutes || 0;
-  if (!timerSyncAtMs) return activeTimer.elapsed_minutes || 0;
-  return (activeTimer.elapsed_minutes || 0) + (Date.now() - timerSyncAtMs) / 60000;
-}
-
-function formatClockFromMinutes(mins) {
-  var totalSec = Math.max(0, Math.floor(mins * 60));
-  var m = Math.floor(totalSec / 60);
-  var s = totalSec % 60;
-  return m + ':' + (s < 10 ? '0' : '') + s;
-}
-
-function toggleTimerFocusExpand() {
-  var panel = document.getElementById('timer-focus-panel');
-  if (!panel || panel.classList.contains('hidden')) return;
-  timerFocusExpanded = !timerFocusExpanded;
-  panel.classList.toggle('collapsed', !timerFocusExpanded);
-  updateTimerFocusDisplay();
-}
-
-function syncTimerFocusPanel() {
-  var panel = document.getElementById('timer-focus-panel');
-  if (!panel) return;
-  if (!activeTimer || !activeTimer.active) {
-    panel.classList.add('hidden');
-    panel.classList.remove('collapsed');
-    if (timerTickHandle) { clearInterval(timerTickHandle); timerTickHandle = null; }
-    timerFocusPausedUi = null;
-    return;
-  }
-  panel.classList.remove('hidden');
-  panel.classList.toggle('collapsed', !timerFocusExpanded);
-  if (!timerTickHandle) {
-    timerTickHandle = setInterval(updateTimerFocusDisplay, 1000);
-  }
-  updateTimerFocusDisplay();
-}
-
-function updateTimerFocusDisplay() {
-  if (!activeTimer || !activeTimer.active) return;
-  var titleEl = document.getElementById('timer-focus-title');
-  var subEl = document.getElementById('timer-focus-sub');
-  var clockEl = document.getElementById('timer-focus-clock');
-  var metaEl = document.getElementById('timer-focus-meta');
-  var fillEl = document.getElementById('timer-focus-fill');
-  var actionsEl = document.getElementById('timer-focus-actions');
-  if (!clockEl) return;
-
-  var elapsedMin = getSmoothElapsedMinutes();
-  var est = activeTimer.estimate_minutes || 30;
-  var pct = Math.min((elapsedMin / est) * 100, 100);
-  var overEst = elapsedMin > est;
-  var paused = !!activeTimer.paused;
-
-  if (titleEl) titleEl.textContent = activeTimer.assignment_title || 'Working';
-  if (subEl) {
-    var line = timerFocusExpanded ? 'Tap header to minimize' : formatClockFromMinutes(elapsedMin) + ' · tap to expand';
-    if (activeTimer.class_name) line += ' · ' + activeTimer.class_name;
-    subEl.textContent = line;
-  }
-  clockEl.textContent = formatClockFromMinutes(elapsedMin);
-  clockEl.className = 'timer-focus-clock' + (overEst ? ' over' : '');
-  if (metaEl) {
-    metaEl.textContent = Math.floor(elapsedMin) + ' min elapsed · goal ' + Math.round(est) + ' min' + (paused ? ' · paused' : '');
-  }
-  if (fillEl) {
-    fillEl.style.width = pct + '%';
-    fillEl.className = 'timer-focus-fill' + (overEst ? ' over' : '');
-  }
-  if (actionsEl && timerFocusPausedUi !== paused) {
-    timerFocusPausedUi = paused;
-    var uq = escq(activeTimer.assignment_uid || '');
-    var tq = escq(activeTimer.assignment_title || '');
-    var cq = escq(activeTimer.class_name || '');
-    actionsEl.innerHTML =
-      (paused
-        ? '<button type="button" class="btn btn-primary" onclick="resumeTimerFromFocus(event)">Resume</button>'
-        : '<button type="button" class="btn btn-pause" onclick="pauseTimerFromFocus(event)">Pause</button>') +
-      '<button type="button" class="btn btn-done" onclick="stopTimerFromFocus(event,true,\'' + uq + '\',\'' + tq + '\',\'' + cq + '\')">Done</button>' +
-      '<button type="button" class="btn btn-outline" onclick="stopTimerFromFocus(event,false,\'' + uq + '\',\'' + tq + '\',\'' + cq + '\')">Discard</button>';
-  }
-}
-
-function pauseTimerFromFocus(e) {
-  if (e) e.stopPropagation();
-  pauseTimer(e);
-}
-
-function resumeTimerFromFocus(e) {
-  if (e) e.stopPropagation();
-  resumeTimer(e);
-}
-
-function stopTimerFromFocus(e, save, uid, title, className) {
-  if (e) e.stopPropagation();
-  stopTimer(e, save, uid, title, className);
-}
-
-function startTimer(e, uid, title, className, estimate) {
-  if (e) e.stopPropagation();
-  fetch('/api/timer/start', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uid: uid, title: title, class_name: className, estimate_minutes: estimate }) })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      activeTimer = d;
-      cutoffShown = false;
-      timerSyncAtMs = Date.now();
-      timerFocusUserStarted = true;
-      timerFocusHydrated = true;
-      timerFocusExpanded = true;
-      timerFocusPausedUi = null;
-      loadHomeAssignments();
-      syncTimerFocusPanel();
-    });
-}
-
-function pauseTimer(e) { if (e) e.stopPropagation();
-  fetch('/api/timer/pause', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) {
-    activeTimer = d;
-    timerSyncAtMs = Date.now();
-    loadHomeAssignments();
-    syncTimerFocusPanel();
-  }); }
-
-function resumeTimer(e) { if (e) e.stopPropagation();
-  fetch('/api/timer/resume', { method: 'POST' }).then(function(r) { return r.json(); }).then(function(d) {
-    activeTimer = d;
-    timerSyncAtMs = Date.now();
-    loadHomeAssignments();
-    syncTimerFocusPanel();
-  }); }
-
-function stopTimer(e, save, uid, title, className) {
-  if (e) e.stopPropagation();
-  fetch('/api/timer/stop', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ save: save }) })
-    .then(function() {
-      if (timerTickHandle) { clearInterval(timerTickHandle); timerTickHandle = null; }
-      timerFocusUserStarted = false;
-      timerFocusHydrated = false;
-      timerFocusPausedUi = null;
-      if (save) {
-        var card = document.getElementById('asgn-' + uid);
-        if (card) {
-          card.classList.add('completing');
-          setTimeout(function() {
-            assignments = assignments.filter(function(a) { return a.uid !== uid; });
-            activeTimer = null;
-            syncTimerFocusPanel();
-            loadHomeAssignments();
-            loadCompletedToday();
-          }, 550);
-        } else {
-          activeTimer = null;
-          syncTimerFocusPanel();
-          loadHomeAssignments();
-          loadCompletedToday();
-        }
-      } else {
-        activeTimer = null;
-        cutoffShown = false;
-        syncTimerFocusPanel();
-        loadHomeAssignments();
-      }
-    });
-}
-
-function markDone(e, uid, title, className, estimate) {
-  if (e) e.stopPropagation();
-  fetch('/api/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: title, class_name: className, estimate_minutes: estimate }) })
-    .then(function() {
-      var card = document.getElementById('asgn-' + uid);
-      if (card) {
-        card.classList.add('completing');
-        setTimeout(function() {
-          assignments = assignments.filter(function(a) { return a.uid !== uid; });
-          loadHomeAssignments();
-          loadCompletedToday();
-        }, 550);
-      }
-    });
-}
-
-function startTimerPoller() {
-  setInterval(pollTimer, 60000);
-  pollTimer();
-}
-
-function pollTimer() {
-  fetch('/api/timer').then(function(r) { return r.json(); }).then(function(d) {
-    activeTimer = d;
-    if (d.active) {
-      timerSyncAtMs = Date.now();
-      if (!timerFocusHydrated) {
-        timerFocusHydrated = true;
-        if (!timerFocusUserStarted) timerFocusExpanded = false;
-      }
-      syncTimerFocusPanel();
-      if (d.over_cutoff && !cutoffShown) { cutoffShown = true; showCutoffDialog(d); }
-      var uid = d.assignment_uid;
-      var card = document.getElementById('asgn-' + uid);
-      if (card) {
-        var elapsed = Math.floor(d.elapsed_minutes);
-        var pct = Math.min((d.elapsed_minutes / (d.estimate_minutes || 30)) * 100, 100);
-        var over = d.over_estimate;
-        var timerDisp = card.querySelector('.timer-display');
-        var progFill = card.querySelector('.progress-fill');
-        if (timerDisp) { timerDisp.textContent = elapsed + ' min'; timerDisp.className = 'timer-display' + (over ? ' over' : ''); }
-        if (progFill) { progFill.style.width = pct + '%'; progFill.className = 'progress-fill' + (over ? ' over' : ''); }
-      }
-    } else {
-      timerSyncAtMs = 0;
-      timerFocusHydrated = false;
-      syncTimerFocusPanel();
-    }
-  }).catch(function(){});
-}
-
-function showCutoffDialog(d) {
-  document.getElementById('cutoff-dialog-sub').textContent = 'You\'ve been working for ' + Math.round(d.elapsed_minutes) + ' min, past the cutoff. Are you done?';
-  document.getElementById('cutoff-dialog').classList.add('open');
-}
-
-function handleCutoff(save) {
-  document.getElementById('cutoff-dialog').classList.remove('open');
-  if (activeTimer) stopTimer(null, save, activeTimer.assignment_uid, activeTimer.assignment_title, activeTimer.class_name);
-}
-
-// ══════════════════════════════════════════
-// COMPLETED TODAY
-// ══════════════════════════════════════════
-function loadCompletedToday() {
-  fetch('/api/completions/today').then(function(r) { return r.json(); }).then(function(d) {
-    completedToday = d.completions || [];
-    var section = document.getElementById('completed-section');
-    var badge = document.getElementById('completed-badge');
-    var list = document.getElementById('completed-today-list');
-    if (completedToday.length === 0) { section.style.display = 'none'; return; }
-    section.style.display = 'block';
-    badge.textContent = completedToday.length;
-    list.innerHTML = completedToday.map(function(c) {
-      var dur = c.timed && c.duration_minutes > 0 ? Math.round(c.duration_minutes) + ' min' : 'Done';
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--border);font-size:13px">' +
-        '<span style="font-weight:500;color:var(--text2)">' + esc(c.assignment_title) + '</span>' +
-        '<span style="color:var(--green);font-weight:600">' + dur + '</span></div>';
-    }).join('');
-  }).catch(function(){});
-}
-
-function toggleCompletedToday() {
-  var list = document.getElementById('completed-today-list');
-  list.style.maxHeight = list.style.maxHeight === '0px' || !list.style.maxHeight ? '600px' : '0px';
-}
-
-// ══════════════════════════════════════════
-// TASKS
-// ══════════════════════════════════════════
-function toggleTaskForm() {
-  document.getElementById('task-form').classList.toggle('open');
-  if (document.getElementById('task-form').classList.contains('open')) {
-    document.getElementById('task-input-title').focus();
-  }
-}
-
-function selectUrgency(btn) {
-  document.querySelectorAll('[data-urgency]').forEach(function(b) { b.classList.remove('selected'); });
-  btn.classList.add('selected');
-  selectedUrgency = btn.dataset.urgency;
-}
-
-function submitTask() {
-  var title = document.getElementById('task-input-title').value.trim();
-  if (!title) return;
-  var payload = {
-    title: title,
-    urgency: selectedUrgency,
-    notes: document.getElementById('task-input-notes').value.trim(),
-    due_date: document.getElementById('task-input-due').value || null
-  };
-  fetch('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    .then(function() {
-      document.getElementById('task-input-title').value = '';
-      document.getElementById('task-input-notes').value = '';
-      document.getElementById('task-input-due').value = '';
-      toggleTaskForm();
-      loadTasks();
-    });
-}
-
-function loadTasks() {
-  fetch('/api/tasks').then(function(r) { return r.json(); }).then(function(d) {
-    var tasks = d.tasks || [];
-    var container = document.getElementById('tasks-container');
-    if (tasks.length === 0) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-emoji">📝</div><div class="empty-title">No tasks</div><div class="empty-sub">Add your first task above.</div></div>';
-      return;
-    }
-    var pending = tasks.filter(function(t) { return !t.completed; });
-    var done = tasks.filter(function(t) { return t.completed; });
-    var html = '';
-    if (pending.length > 0) {
-      html += pending.map(buildTaskItem).join('');
-    } else {
-      html += '<div style="font-size:13px;color:var(--text3);padding:16px 0 8px;text-align:center">No pending tasks</div>';
-    }
-    if (done.length > 0) {
-      html += '<div style="margin-top:12px">' +
-        '<div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'" ' +
-        'style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);cursor:pointer">' +
-        '<span style="font-size:13px;font-weight:600;color:var(--text2)">✓ Completed Archive</span>' +
-        '<span style="background:var(--green);color:#fff;border-radius:20px;font-size:11px;font-weight:700;padding:2px 8px">' + done.length + '</span>' +
-        '</div>' +
-        '<div style="display:none;background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 var(--r) var(--r);overflow:hidden">' +
-        done.map(buildTaskItem).join('') +
-        '</div></div>';
-    }
-    container.innerHTML = html;
-  }).catch(function(){});
-}
-
-function buildTaskItem(t) {
-  var today = new Date(); today.setHours(0,0,0,0);
-  var isOverdue = !t.completed && t.due_date && new Date(t.due_date + 'T00:00:00') < today;
-  var dueStr = t.due_date ? ' · Due ' + formatDateShort(t.due_date) : '';
-  var notesStr = t.notes ? '<div style="font-size:11px;color:var(--text3);margin-top:3px">' + esc(t.notes.substring(0, 60)) + (t.notes.length > 60 ? '...' : '') + '</div>' : '';
-  var isProjectTask = t.source === 'project_task';
-  var projLink = isProjectTask && t.project_title
-    ? '<div style="font-size:10px;color:var(--accent2);margin-top:2px;cursor:pointer" onclick="switchTab(2)">→ Project: ' + esc(t.project_title) + '</div>'
-    : '';
-  var toggleFn = isProjectTask
-    ? 'toggleProjectTaskStatus(' + t.id + ',' + t.project_id + ',\'' + (t.completed ? 'pending' : 'done') + '\')'
-    : 'toggleTask(' + t.id + ',' + !t.completed + ')';
-  return '<div class="task-item">' +
-    '<div class="task-check' + (t.completed ? ' checked' : '') + '" onclick="' + toggleFn + '"></div>' +
-    '<div class="task-content">' +
-    '<div class="task-title' + (t.completed ? ' done' : '') + '">' + esc(t.title) +
-      (isOverdue ? '<span class="overdue-badge">Overdue</span>' : '') + '</div>' +
-    notesStr + projLink +
-    (dueStr ? '<div class="task-sub">' + esc(dueStr.trim()) + '</div>' : '') +
-    '</div>' +
-    '<div class="task-urgency ' + esc(t.urgency || 'medium') + '"></div>' +
-    '</div>';
-}
-
-function toggleTask(id, completed) {
-  fetch('/api/tasks/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ completed: completed }) })
-    .then(function() { loadTasks(); });
-}
-
-// ══════════════════════════════════════════
-// PROJECTS
-// ══════════════════════════════════════════
-function toggleProjectForm() {
-  document.getElementById('project-form').classList.toggle('open');
-}
-
-function submitProject() {
-  var title = document.getElementById('proj-input-title').value.trim();
-  if (!title) return;
-  var payload = {
-    title: title,
-    description: document.getElementById('proj-input-desc').value.trim(),
-    lead: document.getElementById('proj-input-lead').value.trim(),
-    members: document.getElementById('proj-input-members').value.trim(),
-    checkin_interval_days: parseInt(document.getElementById('proj-input-interval').value) || 7
-  };
-  fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    .then(function() {
-      document.getElementById('proj-input-title').value = '';
-      document.getElementById('proj-input-desc').value = '';
-      document.getElementById('proj-input-lead').value = '';
-      document.getElementById('proj-input-members').value = '';
-      toggleProjectForm();
-      loadProjects();
-    });
-}
-
-function loadProjects() {
-  fetch('/api/projects').then(function(r) { return r.json(); }).then(function(d) {
-    allProjects = d.projects || [];
-    var container = document.getElementById('projects-container');
-    if (allProjects.length === 0) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-emoji">📁</div><div class="empty-title">No projects</div><div class="empty-sub">Create your first project above.</div></div>';
-      return;
+
+def get_class_average(class_name):
+    if not class_name:
+        return None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+SELECT AVG(duration_minutes) as avg FROM (
+    SELECT duration_minutes FROM completions
+    WHERE class_name = %s AND timed = TRUE AND duration_minutes > 0
+    ORDER BY completed_at DESC LIMIT 20
+) sub""", (class_name,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if row and row["avg"] is not None:
+        return round(float(row["avg"]), 1)
+    return None
+
+
+def estimate_assignment(title, class_name):
+    avg = get_class_average(class_name)
+    if avg:
+        return avg
+    title_lower = title.lower()
+    for kw, mins in KEYWORD_ESTIMATES.items():
+        if kw in title_lower:
+            return float(mins)
+    return 30.0
+
+
+def _assignment_due_date_local(a):
+    di = a.get("due_iso") or ""
+    if di.endswith("Z"):
+        di = di[:-1] + "+00:00"
+    return datetime.fromisoformat(di).astimezone(TZ).date()
+
+
+def _is_quiz_or_test_title(title):
+    t = (title or "").lower()
+    return "quiz" in t or "test" in t
+
+
+def _is_big_work_assignment(a):
+    est = estimate_assignment(a.get("title", ""), a.get("class_name", ""))
+    if est >= 45:
+        return True
+    blob = ((a.get("title") or "") + " " + (a.get("class_name") or "")).lower()
+    for kw in ("paper", "essay", "project", "presentation", "research", "portfolio"):
+        if kw in blob:
+            return True
+    return False
+
+
+def generate_briefing(force=False):
+    with _briefing_lock:
+        cfg = get_config()
+        api_key = cfg.get("anthropic_api_key", "")
+        if not api_key:
+            return
+        name = cfg.get("name", "Finn")
+        if not force:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT generated_at FROM briefing_cache WHERE id = 1")
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row and row["generated_at"]:
+                age = datetime.now(TZ) - row["generated_at"].astimezone(TZ)
+                if age.total_seconds() < 3600:
+                    return
+
+        assignments = []
+        cal = fetch_ical(CANVAS_ICAL_URL)
+        if cal:
+            assignments = parse_canvas_assignments(cal)
+
+        events = []
+        cal2 = fetch_ical(PERSONAL_ICAL_URL)
+        if cal2:
+            events = list(parse_calendar_events(cal2, days_ahead=1))
+        cal_sports = fetch_ical(SPORTS_ICAL_URL)
+        if cal_sports:
+            for e in parse_calendar_events(cal_sports, days_ahead=1):
+                e["source"] = "sports"
+                events.append(e)
+
+        # Get completed assignment titles (ever) so we don't flag them
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT assignment_title FROM completions")
+        completed_titles = set(r["assignment_title"] for r in cur.fetchall())
+        assignments = [a for a in assignments if a["title"] not in completed_titles]
+
+        # Get tasks
+        cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC, created_at ASC LIMIT 5")
+        tasks = [dict(r) for r in cur.fetchall()]
+
+        # Get stale projects
+        cur.execute("""
+SELECT title, last_checkin, checkin_interval_days FROM projects
+WHERE status = 'active' AND (last_checkin IS NULL OR
+    NOW() - last_checkin > make_interval(days => checkin_interval_days))
+LIMIT 3""")
+        stale_projects = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+
+        now_local = datetime.now(TZ)
+        now_str = now_local.strftime("%A, %B %-d, %Y at %-I:%M %p")
+        today = now_local.date()
+
+        asgn_sorted = sorted(assignments, key=lambda a: a.get("due_iso", ""))
+
+        def _fmt_asgn(a):
+            est = int(estimate_assignment(a["title"], a["class_name"]))
+            return "%s (%s) due %s, ~%d min, urgency %s" % (
+                a["title"], a["class_name"], a["due_display"], est, a.get("urgency", "medium"))
+
+        overdue = [a for a in asgn_sorted if _assignment_due_date_local(a) < today]
+        due_today = [a for a in asgn_sorted if _assignment_due_date_local(a) == today]
+        due_tmr = [a for a in asgn_sorted if _assignment_due_date_local(a) == today + timedelta(days=1)]
+        due_2d = [a for a in asgn_sorted if _assignment_due_date_local(a) == today + timedelta(days=2)]
+
+        overdue_work = [_fmt_asgn(a) for a in overdue if not _is_quiz_or_test_title(a["title"])]
+        today_work = [_fmt_asgn(a) for a in due_today if not _is_quiz_or_test_title(a["title"])]
+        today_qt = [a for a in due_today if _is_quiz_or_test_title(a["title"])]
+        overdue_qt = [a for a in overdue if _is_quiz_or_test_title(a["title"])]
+
+        good_time_lines = [_fmt_asgn(a) for a in due_tmr]
+        for a in due_2d:
+            if a.get("urgency") == "high":
+                good_time_lines.append(_fmt_asgn(a))
+
+        listed_titles = set()
+        for group in (overdue, due_today, due_tmr):
+            for a in group:
+                listed_titles.add(a["title"])
+        big_longterm = [
+            _fmt_asgn(a) for a in asgn_sorted
+            if _is_big_work_assignment(a) and _assignment_due_date_local(a) > today
+            and a["title"] not in listed_titles
+        ][:6]
+
+        lines_overdue_work = "\n".join("- " + x for x in overdue_work) or "- None."
+        lines_today_work = "\n".join("- " + x for x in today_work) or "- None."
+        lines_good_time = "\n".join("- " + x for x in good_time_lines) or "- None."
+        lines_big = "\n".join("- " + x for x in big_longterm) or "- None."
+
+        qt_for_schedule = []
+        for a in today_qt:
+            c = (a.get("class_name") or "").strip() or "class"
+            qt_for_schedule.append("⚠️ Quiz/test today in %s: %s" % (c, a["title"]))
+        for a in overdue_qt:
+            c = (a.get("class_name") or "").strip() or "class"
+            qt_for_schedule.append("⚠️ Quiz/test overdue in %s: %s" % (c, a["title"]))
+        quiz_test_block = "\n".join("- " + x for x in qt_for_schedule) or "- None (no quizzes/tests due today in the list)."
+
+        week_end = today + timedelta(days=7)
+        upcoming_qt_study = [
+            a for a in asgn_sorted
+            if _is_quiz_or_test_title(a["title"]) and today <= _assignment_due_date_local(a) <= week_end
+        ]
+        upcoming_qt_study.sort(key=lambda x: x.get("due_iso", ""))
+        lines_qt_study = "\n".join(
+            "- %s (%s) — due %s" % (a["title"], (a.get("class_name") or "").strip() or "class", a["due_display"])
+            for a in upcoming_qt_study
+        ) or "- None."
+
+        events_text = "\n".join([
+            "- %s%s at %s" % (e["title"], " [SPORTS]" if e.get("source") == "sports" else "", e["start_display"])
+            for e in events
+        ]) or "- No calendar events today."
+        tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "- No pending tasks."
+        stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or "- None."
+
+        # Get school schedule for today to recommend homework time
+        school_hrs = get_school_hours(today)
+        dtype = get_day_type(today)
+        if school_hrs:
+            _, _, eh, em = school_hrs
+            end_ampm = "AM" if eh < 12 else "PM"
+            school_end_str = "%d:%02d %s" % (eh % 12 or 12, em, end_ampm)
+            schedule_note = "Today is a %s day. School ends at %s." % (dtype.title(), school_end_str)
+        elif datetime.now(TZ).weekday() >= 5:
+            schedule_note = "Today is a weekend — no school."
+        else:
+            schedule_note = "No school today."
+
+        prompt = (
+            "You are a sharp personal assistant for %s, a high school student and student leader in Park City, Utah.\n"
+            "Current time: %s\n"
+            "School schedule note: %s\n\n"
+            "REFERENCE — Overdue work (NOT quiz/test — never put quizzes/tests in Needs section):\n%s\n\n"
+            "REFERENCE — Due today work (NOT quiz/test):\n%s\n\n"
+            "REFERENCE — Quizzes/tests (for Schedule section ONLY, use EXACT warning lines below as bullets):\n%s\n\n"
+            "REFERENCE — Quizzes/tests in the next 7 days including today (for study/review suggestions ONLY under "
+            "\"If you have time\"; not as homework to turn in):\n%s\n\n"
+            "REFERENCE — Good to do if time (due tomorrow or high-urgency in 2 days):\n%s\n\n"
+            "REFERENCE — Larger / longer homework (papers, projects, big estimates, not already listed above):\n%s\n\n"
+            "Today's calendar events:\n%s\n\n"
+            "Pending tasks:\n%s\n\n"
+            "Projects needing check-in:\n%s\n\n"
+            "Write TODAY'S PLAN using EXACTLY these four markdown sections with ## headings (spell each heading exactly):\n\n"
+            "## Needs to get done today:\n"
+            "• Use bullets. Combine OVERDUE WORK and DUE-TODAY WORK from the reference (not quiz/test).\n"
+            "• If both reference lists are None/empty for work, write one bullet: Nothing critical listed — you're caught up on due-today work.\n"
+            "• You may mention urgent tasks from Pending tasks if relevant.\n\n"
+            "## If you have time it would be good to get this done today:\n"
+            "• Bullets from the 'Good to do if time' reference; optional prep or lighter work.\n"
+            "• **If the upcoming-quizzes reference is not \"- None.\":** add a bullet for each listed quiz/test "
+            "recommending **studying or reviewing** for it today (e.g. \"Review notes / practice problems for the "
+            "**Class** quiz\"). Sooner due dates deserve more urgency. For a quiz **today**, suggest a short focused "
+            "review if there is time before it — still keep the ⚠️ line under Schedule.\n"
+            "• If the only items would be study bullets and you added those, you may omit \"Nothing extra queued.\" "
+            "If there are no good-time items and no upcoming quizzes, one bullet: Nothing extra queued.\n\n"
+            "## Schedule:\n"
+            "• First bullets: today's calendar events (paraphrase from Today's calendar events).\n"
+            "• Then add EVERY line from REFERENCE Quizzes/tests exactly as given (each ⚠️ line is its own bullet).\n"
+            "• If no events and no quiz lines, one bullet: No calendar entries or quizzes/tests flagged.\n\n"
+            "## Upcoming projects and longer homework's:\n"
+            "• Bullets from REFERENCE Larger/longer; English papers, big assignments not already covered above.\n"
+            "• If none, one bullet: Nothing extra flagged.\n\n"
+            "Rules: NEVER list a quiz/test as regular homework under ## Needs to get done today. "
+            "Quizzes/tests **due today or overdue** appear only under ## Schedule as the provided ⚠️ lines. "
+            "Under ## If you have time, you **may** (and should, when the reference lists any) add **study/review** "
+            "bullets for quizzes/tests in the next 7 days — never imply turning in the quiz as an assignment there. "
+            "Use **bold** for assignment names where helpful. No intro paragraph. Only these four sections."
+        ) % (
+            name, now_str, schedule_note,
+            lines_overdue_work, lines_today_work, quiz_test_block,
+            lines_qt_study,
+            lines_good_time, lines_big,
+            events_text, tasks_text, stale_text,
+        )
+
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=900,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            content = message.content[0].text if message.content else "Have a great day!"
+        except Exception as e:
+            log.error("Anthropic API error: %s", e)
+            content = "Could not generate briefing. Check your API key in Settings."
+
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+INSERT INTO briefing_cache (id, generated_at, content) VALUES (1, NOW(), %s)
+ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content""", (content,))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+
+scheduler = BackgroundScheduler(timezone=TZ)
+
+
+def generate_evening_debrief():
+    """Generate a 7 PM evening debrief summarizing the day."""
+    with _briefing_lock:
+        cfg = get_config()
+        api_key = cfg.get("anthropic_api_key", "")
+        if not api_key:
+            return
+        name = cfg.get("name", "Finn")
+        conn = get_db()
+        cur = conn.cursor()
+        today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        cur.execute("""
+SELECT assignment_title, class_name, duration_minutes, timed
+FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_start,))
+        done_today = [dict(r) for r in cur.fetchall()]
+        cur.execute("SELECT title, urgency FROM tasks WHERE completed = FALSE ORDER BY urgency DESC LIMIT 10")
+        pending_tasks = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        cal = fetch_ical(CANVAS_ICAL_URL)
+        remaining_asgn = []
+        if cal:
+            all_asgn = parse_canvas_assignments(cal)
+            done_titles = {d["assignment_title"] for d in done_today}
+            remaining_asgn = [a for a in all_asgn if a["title"] not in done_titles]
+        done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
+        remaining_text = "\n".join(["- %s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"]) for a in remaining_asgn[:6]]) or "None."
+        tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in pending_tasks]) or "None."
+        now_str = datetime.now(TZ).strftime("%A, %B %-d at %-I:%M %p")
+        prompt = (
+            "You are a sharp personal assistant for %s, a high school student in Park City, Utah.\n"
+            "Current time: %s (evening debrief)\n\n"
+            "Completed Today:\n%s\n\n"
+            "Still Due (not completed):\n%s\n\n"
+            "Pending Tasks:\n%s\n\n"
+            "Write a concise evening debrief using ONLY bullet points (start each with •). "
+            "Include: what was accomplished today, what was missed/still needs doing, and a 'Tomorrow's Outlook' section. "
+            "Be direct and encouraging. No intro sentence."
+        ) % (name, now_str, done_text, remaining_text, tasks_text)
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            message = client.messages.create(model="claude-sonnet-4-6", max_tokens=600,
+                                             messages=[{"role": "user", "content": prompt}])
+            content = message.content[0].text if message.content else "Good evening!"
+        except Exception as e:
+            log.error("Evening debrief API error: %s", e)
+            return
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+INSERT INTO debrief_cache (id, generated_at, content) VALUES (1, NOW(), %s)
+ON CONFLICT (id) DO UPDATE SET generated_at = NOW(), content = EXCLUDED.content""", (content,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        log.info("Evening debrief generated.")
+
+
+def schedule_briefing():
+    cfg = get_config()
+    t = cfg.get("morning_briefing_time", "07:00")
+    try:
+        hour, minute = int(t.split(":")[0]), int(t.split(":")[1])
+    except Exception:
+        hour, minute = 7, 0
+    scheduler.remove_all_jobs()
+    scheduler.add_job(generate_briefing, "cron", hour=hour, minute=minute,
+                      id="morning_briefing", replace_existing=True)
+    # Evening debrief at 7:00 PM
+    scheduler.add_job(generate_evening_debrief, "cron", hour=19, minute=0,
+                      id="evening_debrief", replace_existing=True)
+    log.info("Briefing scheduled for %02d:%02d Mountain", hour, minute)
+    log.info("Evening debrief scheduled for 19:00 Mountain")
+
+
+def get_timer_state_row():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM timer_state WHERE id = 1")
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else {}
+
+
+def get_timer_elapsed(row):
+    accumulated = float(row.get("accumulated_seconds") or 0)
+    if row.get("active") and row.get("started_at") and not row.get("paused_at"):
+        started = row["started_at"]
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=ZoneInfo("UTC"))
+        delta = datetime.now(ZoneInfo("UTC")) - started
+        accumulated += delta.total_seconds()
+    return accumulated
+
+
+def timer_response(row):
+    elapsed = get_timer_elapsed(row)
+    elapsed_min = elapsed / 60.0
+    estimate = float(row.get("estimate_minutes") or 30)
+    cfg = get_config()
+    try:
+        multiplier = float(cfg.get("timer_cutoff_multiplier", "2.0"))
+    except Exception:
+        multiplier = 2.0
+    cutoff_min = estimate * multiplier
+    return {
+        "active": bool(row.get("active")),
+        "paused": bool(row.get("paused_at")),
+        "assignment_uid": row.get("assignment_uid", ""),
+        "assignment_title": row.get("assignment_title", ""),
+        "class_name": row.get("class_name", ""),
+        "estimate_minutes": estimate,
+        "elapsed_minutes": round(elapsed_min, 2),
+        "cutoff_minutes": round(cutoff_min, 2),
+        "over_estimate": elapsed_min > estimate,
+        "over_cutoff": elapsed_min > cutoff_min
     }
 
-    // Push stale nudges to home
-    var stale = allProjects.filter(function(p) { return p.needs_checkin && p.status === 'active'; });
-    var notif = document.getElementById('notif-container');
-    if (notif) {
-      notif.querySelectorAll('.notif-row.stale-proj').forEach(function(el) { el.remove(); });
-      stale.forEach(function(p) {
-        var lastStr = p.last_checkin ? 'Last check-in: ' + formatDateShort(p.last_checkin.substring(0,10)) : 'No check-in yet';
-        var pill = document.createElement('div');
-        pill.className = 'notif-row stale-proj';
-        pill.innerHTML = '<span class="notif-icon">⏰</span><div class="notif-text"><span class="notif-title">Check in on: ' + esc(p.title) + '</span><br>' + esc(lastStr) + '</div>';
-        notif.appendChild(pill);
-      });
+
+# ── Routes ───────────────────────────────────────────────────────────────────
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        if session.get("authenticated"):
+            return redirect("/")
+        return render_template("login.html")
+    data = request.get_json(force=True) or {}
+    if data.get("password") == APP_PASSWORD:
+        session.permanent = True
+        session["authenticated"] = True
+        return jsonify({"status": "ok"})
+    return jsonify({"error": "Wrong password"}), 401
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
+@app.route("/api/assignments")
+def api_assignments():
+    try:
+        cal = fetch_ical(CANVAS_ICAL_URL)
+        if cal is None:
+            return jsonify({"assignments": [], "error": "Failed to fetch Canvas calendar."})
+        conn = get_db()
+        cur = conn.cursor()
+        today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        cur.execute("SELECT assignment_title FROM completions WHERE completed_at >= %s", (today_start,))
+        completed_titles = set(r["assignment_title"] for r in cur.fetchall())
+        cur.execute("SELECT uid, minutes FROM assignment_estimates")
+        custom_estimates = {r["uid"]: r["minutes"] for r in cur.fetchall()}
+        cur.close()
+        conn.close()
+        assignments = parse_canvas_assignments(cal)
+        result = []
+        for a in assignments:
+            if a["title"] in completed_titles:
+                continue
+            uid = a.get("uid", "")
+            if uid in custom_estimates:
+                a["estimate_minutes"] = custom_estimates[uid]
+                a["estimate_custom"] = True
+            else:
+                a["estimate_minutes"] = estimate_assignment(a["title"], a["class_name"])
+                a["estimate_custom"] = False
+            result.append(a)
+        return jsonify({"assignments": result})
+    except Exception:
+        log.exception("/api/assignments failed")
+        return jsonify({"assignments": [], "error": "Internal server error fetching assignments."}), 500
+
+
+@app.route("/api/assignments/<uid>/estimate", methods=["POST"])
+def api_set_estimate(uid):
+    data = request.get_json(force=True) or {}
+    try:
+        minutes = float(data.get("minutes", 30))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid minutes value"}), 400
+    minutes = max(1.0, min(minutes, 600.0))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+INSERT INTO assignment_estimates (uid, minutes, updated_at)
+VALUES (%s, %s, NOW())
+ON CONFLICT (uid) DO UPDATE SET minutes = EXCLUDED.minutes, updated_at = NOW()
+""", (uid, minutes))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok", "minutes": minutes})
+
+
+@app.route("/api/calendar")
+def api_calendar():
+    days = int(request.args.get("days", 30))
+    events = []
+    # Personal calendar
+    cal = fetch_ical(PERSONAL_ICAL_URL)
+    if cal:
+        for e in parse_calendar_events(cal, days_ahead=days):
+            e["source"] = "personal"
+            events.append(e)
+    # Canvas assignments as calendar events
+    cal2 = fetch_ical(CANVAS_ICAL_URL)
+    if cal2:
+        for a in parse_canvas_assignments(cal2):
+            events.append({
+                "title": a["title"],
+                "start_display": a["due_display"],
+                "end_display": "",
+                "start_iso": a["due_iso"],
+                "date": a["due_iso"][:10],
+                "all_day": False,
+                "source": "canvas",
+                "urgency": a["urgency"],
+                "class_name": a["class_name"]
+            })
+    # Sports calendar
+    cal3 = fetch_ical(SPORTS_ICAL_URL)
+    if cal3:
+        for e in parse_calendar_events(cal3, days_ahead=days):
+            e["source"] = "sports"
+            events.append(e)
+    events.sort(key=lambda x: x["start_iso"])
+    return jsonify({"events": events})
+
+
+@app.route("/api/briefing")
+def api_briefing():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT content, generated_at FROM briefing_cache WHERE id = 1")
+    row = cur.fetchone()
+    cur.execute("SELECT content, generated_at FROM debrief_cache WHERE id = 1")
+    row_d = cur.fetchone()
+    cur.close()
+    conn.close()
+    debrief = ""
+    debrief_at = None
+    if row_d:
+        debrief = row_d["content"] or ""
+        if row_d["generated_at"]:
+            debrief_at = row_d["generated_at"].isoformat()
+    if row and row["content"]:
+        return jsonify({
+            "briefing": row["content"],
+            "generated_at": row["generated_at"].isoformat() if row["generated_at"] else None,
+            "debrief": debrief,
+            "debrief_generated_at": debrief_at,
+        })
+    return jsonify({
+        "briefing": "Generating your briefing...",
+        "generated_at": None,
+        "debrief": debrief,
+        "debrief_generated_at": debrief_at,
+    })
+
+
+@app.route("/api/briefing/refresh", methods=["POST"])
+def api_briefing_refresh():
+    threading.Thread(target=generate_briefing, kwargs={"force": True}, daemon=True).start()
+    return jsonify({"status": "refreshing"})
+
+
+@app.route("/api/timer", methods=["GET"])
+def api_timer_get():
+    return jsonify(timer_response(get_timer_state_row()))
+
+
+@app.route("/api/timer/start", methods=["POST"])
+def api_timer_start():
+    data = request.get_json(force=True) or {}
+    uid = str(data.get("uid", ""))
+    title = str(data.get("title", ""))
+    class_name = str(data.get("class_name", ""))
+    estimate = float(data.get("estimate_minutes", 30))
+    with _timer_lock:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+UPDATE timer_state SET assignment_uid=%s, assignment_title=%s, class_name=%s,
+estimate_minutes=%s, started_at=NOW(), paused_at=NULL, accumulated_seconds=0, active=TRUE WHERE id=1""",
+                    (uid, title, class_name, estimate))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return jsonify(timer_response(get_timer_state_row()))
+
+
+@app.route("/api/timer/pause", methods=["POST"])
+def api_timer_pause():
+    with _timer_lock:
+        row = get_timer_state_row()
+        if not row.get("active") or row.get("paused_at"):
+            return jsonify(timer_response(row))
+        elapsed = get_timer_elapsed(row)
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE timer_state SET paused_at=NOW(), accumulated_seconds=%s WHERE id=1", (elapsed,))
+        conn.commit()
+        cur.close()
+        conn.close()
+    return jsonify(timer_response(get_timer_state_row()))
+
+
+@app.route("/api/timer/resume", methods=["POST"])
+def api_timer_resume():
+    with _timer_lock:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE timer_state SET started_at=NOW(), paused_at=NULL WHERE id=1")
+        conn.commit()
+        cur.close()
+        conn.close()
+    return jsonify(timer_response(get_timer_state_row()))
+
+
+@app.route("/api/timer/stop", methods=["POST"])
+def api_timer_stop():
+    data = request.get_json(force=True) or {}
+    save = bool(data.get("save", True))
+    with _timer_lock:
+        row = get_timer_state_row()
+        elapsed = get_timer_elapsed(row)
+        elapsed_min = elapsed / 60.0
+        if save and row.get("assignment_title") and elapsed_min > 0.5:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("""
+INSERT INTO completions (assignment_title, class_name, duration_minutes, estimate_minutes, timed)
+VALUES (%s, %s, %s, %s, TRUE)""",
+                        (row["assignment_title"], row.get("class_name", ""),
+                         round(elapsed_min, 2), float(row.get("estimate_minutes") or 30)))
+            conn.commit()
+            cur.close()
+            conn.close()
+        conn2 = get_db()
+        cur2 = conn2.cursor()
+        cur2.execute("""
+UPDATE timer_state SET active=FALSE, paused_at=NULL, started_at=NULL,
+accumulated_seconds=0, assignment_uid='', assignment_title='', class_name='' WHERE id=1""")
+        conn2.commit()
+        cur2.close()
+        conn2.close()
+    return jsonify({"saved": save, "elapsed_minutes": round(elapsed_min, 2)})
+
+
+@app.route("/api/complete", methods=["POST"])
+def api_complete():
+    data = request.get_json(force=True) or {}
+    title = str(data.get("title", ""))[:300]
+    class_name = str(data.get("class_name", ""))[:100]
+    estimate = float(data.get("estimate_minutes", 30))
+    if not title:
+        return jsonify({"error": "title required"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+INSERT INTO completions (assignment_title, class_name, duration_minutes, estimate_minutes, timed)
+VALUES (%s, %s, 0, %s, FALSE)""", (title, class_name, estimate))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/completions/today")
+def api_completions_today():
+    today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+SELECT assignment_title, class_name, duration_minutes, estimate_minutes, timed, completed_at
+FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_start,))
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    for r in rows:
+        r["completed_at"] = r["completed_at"].isoformat()
+    return jsonify({"completions": rows})
+
+
+@app.route("/api/availability")
+def api_availability():
+    """Return today's school schedule and free time windows."""
+    today = datetime.now(TZ).date()
+    now_local = datetime.now(TZ)
+    dtype = get_day_type(today)
+    school_hours = get_school_hours(today)
+
+    # Build busy blocks for today (school + personal events)
+    busy = []
+    if school_hours:
+        sh, sm, eh, em = school_hours
+        busy.append({
+            "start": now_local.replace(hour=sh, minute=sm, second=0, microsecond=0),
+            "end": now_local.replace(hour=eh, minute=em, second=0, microsecond=0),
+            "label": "School (%s day)" % dtype.title()
+        })
+
+    # Personal calendar events today
+    try:
+        cal = fetch_ical(PERSONAL_ICAL_URL)
+        if cal:
+            for e in parse_calendar_events(cal, days_ahead=1):
+                if e["date"] == today.isoformat() and not e.get("all_day"):
+                    try:
+                        es = datetime.fromisoformat(e["start_iso"])
+                        ee_str = e.get("end_iso") or e["start_iso"]
+                        ee = datetime.fromisoformat(ee_str)
+                        if es.tzinfo is None:
+                            es = es.replace(tzinfo=TZ)
+                        if ee.tzinfo is None:
+                            ee = ee.replace(tzinfo=TZ)
+                        busy.append({"start": es, "end": ee, "label": e["title"]})
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # Sort and merge busy blocks
+    busy.sort(key=lambda x: x["start"])
+    merged = []
+    for b in busy:
+        if merged and b["start"] <= merged[-1]["end"]:
+            merged[-1]["end"] = max(merged[-1]["end"], b["end"])
+            merged[-1]["label"] += " + " + b["label"]
+        else:
+            merged.append(dict(b))
+
+    # Find free windows from now until 10 PM
+    day_end = now_local.replace(hour=22, minute=0, second=0, microsecond=0)
+    free = []
+    cursor = now_local.replace(second=0, microsecond=0)
+    for b in merged:
+        if b["end"] <= cursor:
+            continue
+        if b["start"] > cursor:
+            mins = int((b["start"] - cursor).total_seconds() / 60)
+            if mins >= 15:
+                free.append({
+                    "start": cursor.strftime("%-I:%M %p"),
+                    "end": b["start"].strftime("%-I:%M %p"),
+                    "minutes": mins
+                })
+        cursor = max(cursor, b["end"])
+    if cursor < day_end:
+        mins = int((day_end - cursor).total_seconds() / 60)
+        if mins >= 15:
+            free.append({
+                "start": cursor.strftime("%-I:%M %p"),
+                "end": "10:00 PM",
+                "minutes": mins
+            })
+
+    # School hours display
+    school_display = None
+    if school_hours:
+        sh, sm, eh, em = school_hours
+        school_display = "%d:%02d AM – %d:%02d %s" % (
+            sh % 12 or 12, sm,
+            eh % 12 or 12, em,
+            "AM" if eh < 12 else "PM"
+        )
+
+    # Pick recommended homework window: first free window ≥ 45 min after school/3pm
+    min_start_hour = 14  # don't recommend before 2 PM
+    if school_hours:
+        _, _, eh, em = school_hours
+        min_start_hour = max(eh, 14)
+    recommended = None
+    for w in free:
+        # parse start time to compare hour
+        try:
+            win_start = merged[0]["end"] if merged else now_local
+            # Use the cursor logic: compare to min_start_hour
+            # Re-derive the window start as a datetime for comparison
+            parts = w["start"].replace(" AM", "").replace(" PM", "").split(":")
+            h, m = int(parts[0]), int(parts[1])
+            if "PM" in w["start"] and h != 12:
+                h += 12
+            elif "AM" in w["start"] and h == 12:
+                h = 0
+            if h >= min_start_hour and w["minutes"] >= 45:
+                recommended = w
+                break
+        except Exception:
+            pass
+    if recommended is None:
+        # Fall back to any window ≥ 30 min
+        for w in free:
+            if w["minutes"] >= 30:
+                recommended = w
+                break
+
+    return jsonify({
+        "date": today.isoformat(),
+        "day_type": dtype,
+        "school_hours": school_display,
+        "is_school_day": dtype is not None,
+        "free_windows": free,
+        "total_free_minutes": sum(w["minutes"] for w in free),
+        "recommended_homework_time": recommended
+    })
+
+
+@app.route("/api/stats")
+def api_stats():
+    conn = get_db()
+    cur = conn.cursor()
+    week_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start -= timedelta(days=week_start.weekday())
+    cur.execute("SELECT SUM(duration_minutes) as total FROM completions WHERE completed_at >= %s AND timed=TRUE", (week_start,))
+    week_row = cur.fetchone()
+    weekly_minutes = float(week_row["total"] or 0)
+    cur.execute("""
+SELECT class_name, AVG(duration_minutes) as avg, COUNT(*) as cnt
+FROM completions WHERE timed=TRUE AND duration_minutes>0 AND class_name!=''
+GROUP BY class_name ORDER BY avg DESC LIMIT 10""")
+    by_class = [{"class_name": r["class_name"], "avg_minutes": round(float(r["avg"]), 1), "count": r["cnt"]} for r in cur.fetchall()]
+    cur.execute("""
+SELECT AVG(ABS(duration_minutes - estimate_minutes) / NULLIF(estimate_minutes, 0)) as err
+FROM completions WHERE timed=TRUE AND estimate_minutes>0 AND duration_minutes>0""")
+    acc_row = cur.fetchone()
+    accuracy_pct = None
+    if acc_row and acc_row["err"] is not None:
+        accuracy_pct = round((1.0 - min(float(acc_row["err"]), 1.0)) * 100, 1)
+    cur.execute("""
+SELECT DISTINCT DATE(completed_at AT TIME ZONE 'America/Denver') as day
+FROM completions ORDER BY day DESC LIMIT 30""")
+    streak_days = [r["day"] for r in cur.fetchall()]
+    streak = 0
+    check = date.today()
+    for d in streak_days:
+        if d == check:
+            streak += 1
+            check -= timedelta(days=1)
+        elif d == check - timedelta(days=1):
+            check -= timedelta(days=1)
+        else:
+            break
+    cur.close()
+    conn.close()
+    return jsonify({"weekly_minutes": round(weekly_minutes, 1), "by_class": by_class,
+                    "estimate_accuracy_pct": accuracy_pct, "streak_days": streak})
+
+
+# ── Tasks ────────────────────────────────────────────────────────────────────
+
+@app.route("/api/tasks", methods=["GET"])
+def api_tasks_get():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+SELECT id, title, notes, urgency, completed, completed_at, due_date, created_at,
+       NULL as project_id, NULL as project_title
+FROM tasks ORDER BY completed ASC,
+    CASE urgency WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END ASC,
+    created_at ASC""")
+    rows = [dict(r) for r in cur.fetchall()]
+    # Also include project tasks assigned to "Me"
+    cur.execute("""
+SELECT pt.id, pt.title, pt.notes, 'medium' as urgency,
+       (pt.status = 'done') as completed, NULL as completed_at, pt.due_date,
+       pt.created_at, pt.project_id, p.title as project_title
+FROM project_tasks pt
+JOIN projects p ON p.id = pt.project_id
+WHERE p.status = 'active' AND LOWER(pt.assignee) IN ('me', 'finn')
+ORDER BY pt.created_at ASC""")
+    proj_rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    for r in rows:
+        if r["completed_at"]:
+            r["completed_at"] = r["completed_at"].isoformat()
+        if r["due_date"]:
+            r["due_date"] = str(r["due_date"])
+        r["created_at"] = r["created_at"].isoformat()
+        r["source"] = "task"
+    for r in proj_rows:
+        if r["due_date"]:
+            r["due_date"] = str(r["due_date"])
+        r["created_at"] = r["created_at"].isoformat()
+        r["source"] = "project_task"
+    return jsonify({"tasks": rows + proj_rows})
+
+
+@app.route("/api/tasks", methods=["POST"])
+def api_tasks_create():
+    data = request.get_json(force=True) or {}
+    title = str(data.get("title", "")).strip()[:300]
+    if not title:
+        return jsonify({"error": "title required"}), 400
+    notes = str(data.get("notes", ""))[:2000]
+    urgency = str(data.get("urgency", "low"))
+    due_date = data.get("due_date") or None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+INSERT INTO tasks (title, notes, urgency, due_date) VALUES (%s, %s, %s, %s) RETURNING id""",
+                (title, notes, urgency, due_date))
+    new_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"id": new_id, "status": "ok"})
+
+
+@app.route("/api/tasks/<int:task_id>", methods=["PATCH"])
+def api_tasks_update(task_id):
+    data = request.get_json(force=True) or {}
+    conn = get_db()
+    cur = conn.cursor()
+    if "completed" in data:
+        completed = bool(data["completed"])
+        cur.execute("""
+UPDATE tasks SET completed=%s, completed_at=%s WHERE id=%s""",
+                    (completed, datetime.now(TZ) if completed else None, task_id))
+    if "title" in data:
+        cur.execute("UPDATE tasks SET title=%s WHERE id=%s", (str(data["title"])[:300], task_id))
+    if "urgency" in data:
+        cur.execute("UPDATE tasks SET urgency=%s WHERE id=%s", (str(data["urgency"]), task_id))
+    if "notes" in data:
+        cur.execute("UPDATE tasks SET notes=%s WHERE id=%s", (str(data["notes"])[:2000], task_id))
+    if "due_date" in data:
+        cur.execute("UPDATE tasks SET due_date=%s WHERE id=%s", (data["due_date"] or None, task_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
+def api_tasks_delete(task_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM tasks WHERE id=%s", (task_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ── Projects ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/projects", methods=["GET"])
+def api_projects_get():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+SELECT id, title, description, status, lead, members, last_checkin,
+       checkin_interval_days, completion_pct, created_at,
+       CASE WHEN last_checkin IS NULL OR
+           NOW() - last_checkin > make_interval(days => checkin_interval_days)
+       THEN TRUE ELSE FALSE END as needs_checkin
+FROM projects
+ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
+         created_at DESC""")
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    for r in rows:
+        if r["last_checkin"]:
+            r["last_checkin"] = r["last_checkin"].isoformat()
+        r["created_at"] = r["created_at"].isoformat()
+    return jsonify({"projects": rows})
+
+
+@app.route("/api/projects", methods=["POST"])
+def api_projects_create():
+    data = request.get_json(force=True) or {}
+    title = str(data.get("title", "")).strip()[:300]
+    if not title:
+        return jsonify({"error": "title required"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+INSERT INTO projects (title, description, status, lead, members, checkin_interval_days, completion_pct)
+VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (title, str(data.get("description", ""))[:2000],
+                 str(data.get("status", "active")),
+                 str(data.get("lead", ""))[:200],
+                 str(data.get("members", ""))[:500],
+                 int(data.get("checkin_interval_days", 7)),
+                 int(data.get("completion_pct", 0))))
+    new_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"id": new_id, "status": "ok"})
+
+
+@app.route("/api/projects/<int:project_id>", methods=["PATCH"])
+def api_projects_update(project_id):
+    data = request.get_json(force=True) or {}
+    conn = get_db()
+    cur = conn.cursor()
+    if "status" in data:
+        st = str(data["status"]).strip().lower()
+        if st not in ("active", "paused", "done"):
+            cur.close()
+            conn.close()
+            return jsonify({"error": "status must be active, paused, or done"}), 400
+        cur.execute("UPDATE projects SET status=%s WHERE id=%s", (st, project_id))
+    fields = ["title", "description", "lead", "members",
+              "checkin_interval_days", "completion_pct"]
+    for f in fields:
+        if f not in data:
+            continue
+        val = data[f]
+        if f == "checkin_interval_days":
+            try:
+                val = max(1, min(90, int(val)))
+            except (TypeError, ValueError):
+                val = 7
+        elif f == "completion_pct":
+            try:
+                val = max(0, min(100, int(val)))
+            except (TypeError, ValueError):
+                val = 0
+        elif f == "description":
+            val = str(val)[:2000]
+        elif f == "title":
+            val = str(val)[:300]
+        elif f == "lead":
+            val = str(val)[:200]
+        elif f == "members":
+            val = str(val)[:500]
+        else:
+            val = str(val)[:500]
+        cur.execute(
+            pgsql.SQL("UPDATE projects SET {}=%s WHERE id=%s").format(pgsql.Identifier(f)),
+            (val, project_id)
+        )
+    if data.get("checkin_now"):
+        cur.execute("UPDATE projects SET last_checkin=NOW() WHERE id=%s", (project_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/projects/<int:project_id>", methods=["DELETE"])
+def api_projects_delete(project_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM projects WHERE id=%s", (project_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/projects/<int:project_id>/notes", methods=["GET"])
+def api_project_notes_get(project_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, content, created_at FROM project_notes WHERE project_id=%s ORDER BY created_at DESC", (project_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    for r in rows:
+        r["created_at"] = r["created_at"].isoformat()
+    return jsonify({"notes": rows})
+
+
+@app.route("/api/projects/<int:project_id>/notes", methods=["POST"])
+def api_project_notes_create(project_id):
+    data = request.get_json(force=True) or {}
+    content = str(data.get("content", "")).strip()
+    if not content:
+        return jsonify({"error": "content required"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO project_notes (project_id, content) VALUES (%s, %s) RETURNING id",
+                (project_id, content))
+    new_id = cur.fetchone()["id"]
+    # Also update last_checkin
+    cur.execute("UPDATE projects SET last_checkin=NOW() WHERE id=%s", (project_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"id": new_id, "status": "ok"})
+
+
+@app.route("/api/projects/<int:project_id>/notes/<int:note_id>", methods=["DELETE"])
+def api_project_notes_delete(project_id, note_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM project_notes WHERE id=%s AND project_id=%s", (note_id, project_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+# ── Project Tasks ─────────────────────────────────────────────────────────────
+
+@app.route("/api/projects/<int:project_id>/tasks", methods=["GET"])
+def api_project_tasks_get(project_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+SELECT id, title, notes, assignee, status, due_date, created_at
+FROM project_tasks WHERE project_id=%s ORDER BY created_at ASC""", (project_id,))
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    for r in rows:
+        if r["due_date"]:
+            r["due_date"] = str(r["due_date"])
+        r["created_at"] = r["created_at"].isoformat()
+    return jsonify({"tasks": rows})
+
+
+@app.route("/api/projects/<int:project_id>/tasks", methods=["POST"])
+def api_project_tasks_create(project_id):
+    data = request.get_json(force=True) or {}
+    title = str(data.get("title", "")).strip()[:300]
+    if not title:
+        return jsonify({"error": "title required"}), 400
+    notes = str(data.get("notes", ""))[:2000]
+    assignee = str(data.get("assignee", ""))[:100]
+    status = str(data.get("status", "pending"))
+    due_date = data.get("due_date") or None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+INSERT INTO project_tasks (project_id, title, notes, assignee, status, due_date)
+VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                (project_id, title, notes, assignee, status, due_date))
+    new_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"id": new_id, "status": "ok"})
+
+
+@app.route("/api/projects/<int:project_id>/tasks/<int:task_id>", methods=["PATCH"])
+def api_project_tasks_update(project_id, task_id):
+    data = request.get_json(force=True) or {}
+    conn = get_db()
+    cur = conn.cursor()
+    allowed = {"title": str, "notes": str, "assignee": str, "status": str, "due_date": None}
+    for field, cast in allowed.items():
+        if field in data:
+            val = str(data[field])[:300] if cast else (data[field] or None)
+            cur.execute(
+                pgsql.SQL("UPDATE project_tasks SET {} = %s WHERE id = %s AND project_id = %s").format(
+                    pgsql.Identifier(field)
+                ),
+                (val, task_id, project_id)
+            )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/projects/<int:project_id>/tasks/<int:task_id>", methods=["DELETE"])
+def api_project_tasks_delete(project_id, task_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM project_tasks WHERE id=%s AND project_id=%s", (task_id, project_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/config", methods=["GET"])
+def api_config_get():
+    cfg = get_config()
+    return jsonify({
+        "name": cfg.get("name", "Finn"),
+        "morning_briefing_time": cfg.get("morning_briefing_time", "07:00"),
+        "timer_cutoff_multiplier": cfg.get("timer_cutoff_multiplier", "2.0"),
+        "has_api_key": bool(cfg.get("anthropic_api_key", "")),
+        "weekly_recap_advisor": cfg.get("weekly_recap_advisor", "Mr. Goldberg"),
+        "formal_signoff_name": cfg.get("formal_signoff_name", "Finley Thomas"),
+    })
+
+
+@app.route("/api/config", methods=["POST"])
+def api_config_post():
+    data = request.get_json(force=True) or {}
+    allowed = {
+        "name", "morning_briefing_time", "timer_cutoff_multiplier", "anthropic_api_key",
+        "weekly_recap_advisor", "formal_signoff_name",
     }
+    updates = {k: str(v)[:2000] for k, v in data.items() if k in allowed}
+    if updates:
+        set_config(updates)
+        if "morning_briefing_time" in updates:
+            schedule_briefing()
+    return jsonify({"status": "ok"})
 
-    // Fetch tasks for all projects then render cards
-    var fetches = allProjects.map(function(p) {
-      return fetch('/api/projects/' + p.id + '/tasks')
-        .then(function(r) { return r.json(); })
-        .then(function(td) { p.tasks = td.tasks || []; })
-        .catch(function() { p.tasks = []; });
-    });
-    Promise.all(fetches).then(function() {
-      container.innerHTML = allProjects.map(buildProjectCard).join('');
-    });
-  }).catch(function(){});
-}
 
-function buildProjectCard(p) {
-  var lastCheckin = p.last_checkin ? 'Last check-in ' + formatRelative(p.last_checkin) : 'No check-in yet';
-  var membersStr = [p.lead ? '👑 ' + p.lead : '', p.members].filter(Boolean).join(' · ');
-  var underwayTasks = (p.tasks || []).filter(function(t) { return t.status === 'underway'; });
-  var underwayHtml = '';
-  if (underwayTasks.length > 0) {
-    underwayHtml = '<div class="project-underway" id="proj-underway-' + p.id + '" style="display:none;margin-top:8px;border-top:1px solid var(--border);padding-top:8px">' +
-      underwayTasks.map(function(t) {
-        return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:12px">' +
-          '<div style="width:6px;height:6px;border-radius:50%;background:var(--amber);flex-shrink:0"></div>' +
-          '<span style="flex:1">' + esc(t.title) + '</span>' +
-          (t.assignee ? '<span style="font-size:10px;color:var(--text3)">' + esc(t.assignee) + '</span>' : '') +
-          '</div>';
-      }).join('') + '</div>';
-  }
-  var underwayToggle = underwayTasks.length > 0
-    ? '<div onclick="event.stopPropagation();toggleUnderwayTasks(' + p.id + ')" style="font-size:11px;color:var(--accent2);cursor:pointer;margin-top:6px">▸ ' + underwayTasks.length + ' underway</div>'
-    : '';
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    data = request.get_json(force=True) or {}
+    system_prompt = data.get("system", "")
+    messages = data.get("messages", [])
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    if not api_key:
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured. Add it in Settings."}), 500
+    try:
+        now_chat = datetime.now(TZ)
+        system_prompt = (
+            "Today's date (authoritative for this conversation—use it whenever the student says 'today' or 'tomorrow' "
+            "and when comparing to due dates): %s. Current local time (Utah): %s. "
+        ) % (now_chat.strftime("%A, %B %d, %Y"), now_chat.strftime("%-I:%M %p %Z")) + system_prompt
 
-  return '<div class="project-card' + (p.needs_checkin && p.status === 'active' ? ' stale' : '') + '" onclick="openProjectDetail(' + p.id + ')">' +
-    '<div class="project-header">' +
-    '<div class="project-title">' + esc(p.title) + '</div>' +
-    '<span class="project-status ' + esc(p.status) + '">' + esc(projectStatusLabel(p.status)) + '</span>' +
-    '</div>' +
-    '<div class="project-meta">' + esc(lastCheckin) + (membersStr ? '<br>' + esc(membersStr) : '') + '</div>' +
-    (p.needs_checkin && p.status === 'active' ? '<span class="stale-pill" style="display:inline-block;margin-top:4px">Check-in due</span>' : '') +
-    underwayToggle + underwayHtml +
-    '</div>';
-}
+        # Inject school schedule context
+        try:
+            today = datetime.now(TZ).date()
+            dtype = get_day_type(today)
+            school_hours = get_school_hours(today)
+            if school_hours:
+                sh, sm, eh, em = school_hours
+                system_prompt += (
+                    " Today is a %s day at Park City High School. "
+                    "School runs 7:%02d AM – %d:%02d %s. "
+                    "Finn is NOT available during school hours. "
+                    "Mon-Thu Red: 7:30–11:53 AM, Mon-Thu White: 7:30–2:25 PM, "
+                    "Fri Red: 7:30–10:25 AM, Fri White: 7:30–11:30 AM."
+                ) % (dtype.title(), sm, eh % 12 or 12, em, "AM" if eh < 12 else "PM")
+            else:
+                dow = today.weekday()
+                if dow >= 5:
+                    system_prompt += " Today is a weekend — no school."
+                else:
+                    system_prompt += " Today is a no-school day (holiday or break)."
+        except Exception:
+            pass
 
-function toggleUnderwayTasks(id) {
-  var el = document.getElementById('proj-underway-' + id);
-  if (!el) return;
-  el.style.display = el.style.display === 'none' ? '' : 'none';
-}
+        # Inject live assignments into the system prompt
+        try:
+            cal = fetch_ical(CANVAS_ICAL_URL)
+            if cal:
+                asgn_list = parse_canvas_assignments(cal)
+                # Filter out already-completed assignments
+                try:
+                    _conn = get_db()
+                    _cur = _conn.cursor()
+                    _cur.execute("SELECT DISTINCT assignment_title FROM completions")
+                    _done = set(r["assignment_title"] for r in _cur.fetchall())
+                    _cur.close()
+                    _conn.close()
+                    asgn_list = [a for a in asgn_list if a["title"] not in _done]
+                except Exception:
+                    pass
+                if asgn_list:
+                    asgn_text = "; ".join(
+                        "%s (%s, due %s, due_date=%s)" % (
+                            a["title"],
+                            a["class_name"],
+                            a["due_display"],
+                            (a.get("due_iso") or "")[:10],
+                        )
+                        for a in asgn_list
+                    )
+                    system_prompt += (
+                        " Upcoming assignments (not yet completed; due_date is YYYY-MM-DD in your timezone, "
+                        "aligned with the authoritative 'today' above): " + asgn_text + "."
+                    )
+                else:
+                    system_prompt += " All assignments are completed."
+        except Exception:
+            log.warning("/api/chat could not fetch assignments for context")
 
-function projectStatusLabel(status) {
-  if (status === 'done') return 'complete';
-  return status || 'active';
-}
+        # Inject pending tasks (with notes) and project context into the system prompt
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT title, urgency, notes FROM tasks WHERE completed = FALSE "
+                "ORDER BY urgency DESC, created_at ASC LIMIT 10"
+            )
+            tasks = [dict(r) for r in cur.fetchall()]
+            cur.execute("""
+SELECT p.title as project, pt.title as task, pt.assignee, pt.status, pt.notes
+FROM project_tasks pt JOIN projects p ON p.id = pt.project_id
+WHERE p.status = 'active' AND pt.status != 'done' ORDER BY pt.created_at ASC LIMIT 10""")
+            proj_tasks = [dict(r) for r in cur.fetchall()]
+            cur.execute("""
+SELECT p.title as project, pn.content as note
+FROM project_notes pn JOIN projects p ON p.id = pn.project_id
+WHERE p.status = 'active'
+ORDER BY pn.created_at DESC LIMIT 6""")
+            proj_notes = [dict(r) for r in cur.fetchall()]
+            cur.close()
+            conn.close()
+            if tasks:
+                tasks_text = "; ".join(
+                    "[%s] %s%s" % (t["urgency"], t["title"], (" — " + t["notes"][:80]) if t["notes"] else "")
+                    for t in tasks
+                )
+                system_prompt += " Pending tasks: " + tasks_text + "."
+            if proj_tasks:
+                pt_text = "; ".join(
+                    "%s (project: %s, assigned: %s, status: %s)" % (t["task"], t["project"], t["assignee"] or "unassigned", t["status"])
+                    for t in proj_tasks
+                )
+                system_prompt += " Project tasks: " + pt_text + "."
+            if proj_notes:
+                pn_text = "; ".join("%s: %s" % (n["project"], n["note"][:100]) for n in proj_notes)
+                system_prompt += " Recent project notes: " + pn_text + "."
+        except Exception:
+            log.warning("/api/chat could not fetch tasks for context")
 
-function markProjectComplete(projectId) {
-  fetch('/api/projects/' + projectId, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'done', completion_pct: 100 })
-  }).then(function() {
-    loadProjects();
-    closeAllSheets();
-  }).catch(function(){});
-}
+        client = anthropic.Anthropic(api_key=api_key)
+        kwargs = {"model": "claude-sonnet-4-6", "max_tokens": 1024, "messages": messages}
+        if system_prompt:
+            kwargs["system"] = system_prompt
+        message = client.messages.create(**kwargs)
+        content = message.content[0].text if message.content else ""
+        return jsonify({"content": content})
+    except Exception:
+        log.exception("/api/chat failed")
+        return jsonify({"error": "Failed to reach AI. Check server logs."}), 500
 
-function markProjectActiveAgain(projectId) {
-  fetch('/api/projects/' + projectId, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'active' })
-  }).then(function() {
-    loadProjects();
-    closeAllSheets();
-  }).catch(function(){});
-}
 
-function deleteProjectPermanently(projectId) {
-  if (!confirm('Delete this project permanently? All notes and tasks will be removed. This cannot be undone. (Marking complete keeps history — use that if you only want to show it as finished.)')) return;
-  fetch('/api/projects/' + projectId, { method: 'DELETE' })
-    .then(function() {
-      if (currentProjectId === projectId) currentProjectId = null;
-      loadProjects();
-      closeAllSheets();
-    }).catch(function(){});
-}
+init_db()
 
-function openProjectDetail(id) {
-  currentProjectId = id;
-  var p = allProjects.find(function(x) { return x.id === id; });
-  if (!p) return;
+# Seed API key from env var into DB so it persists across deploys
+_env_api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+if _env_api_key and not get_config().get("anthropic_api_key", ""):
+    set_config({"anthropic_api_key": _env_api_key})
+    log.info("Seeded ANTHROPIC_API_KEY from environment into DB config")
 
-  var membersStr = [p.lead ? '👑 ' + p.lead : '', p.members].filter(Boolean).join(', ');
+# Guard: only start scheduler and background briefing in the first/main worker.
+# With gunicorn --workers 1 this always runs. With multiple workers it only runs
+# in the first gunicorn worker (SERVER_SOFTWARE is set before fork).
+_worker_id = os.environ.get("GUNICORN_WORKER_ID", "0")
+if _worker_id in ("", "0", "1"):
+    schedule_briefing()
+    scheduler.start()
+    threading.Thread(target=generate_briefing, daemon=True).start()
 
-  var content = '<div class="sheet-title">' + esc(p.title) + '</div>' +
-    '<div class="sheet-sub">' + esc(p.description || '') + '</div>' +
-    '<div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">' +
-    '<span class="project-status ' + esc(p.status) + '">' + esc(projectStatusLabel(p.status)) + '</span>' +
-    (p.needs_checkin && p.status === 'active' ? '<span class="stale-pill">Check-in overdue</span>' : '') +
-    (p.status === 'done' ? '<span style="font-size:12px;color:var(--text3)">Marked complete — still here until you delete it.</span>' : '') +
-    '</div>' +
-
-    '<div class="sheet-section"><div class="sheet-section-label">Team</div>' +
-    '<div class="sheet-body">' + esc(membersStr || 'Not set') + '</div></div>' +
-
-    '<div class="sheet-section">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
-    '<div class="sheet-section-label" style="margin-bottom:0">Tasks</div>' +
-    '<button onclick="showAddProjectTask(' + id + ')" style="font-size:11px;padding:3px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--accent2);cursor:pointer">+ Add Task</button>' +
-    '</div>' +
-    '<div id="proj-tasks-list-' + id + '"><div class="shimmer"></div></div>' +
-    '<div id="proj-task-form-' + id + '" style="display:none;margin-top:8px;background:var(--surface2);border-radius:10px;padding:10px">' +
-    '<input class="field-input" id="ptf-title-' + id + '" type="text" placeholder="Task title" style="margin-bottom:6px">' +
-    '<input class="field-input" id="ptf-assignee-' + id + '" type="text" placeholder="Assignee (Me, John...)" style="margin-bottom:6px">' +
-    '<div style="display:flex;gap:6px">' +
-    '<button class="btn btn-outline" onclick="document.getElementById(\'proj-task-form-' + id + '\').style.display=\'none\'" style="font-size:12px;padding:6px 10px">Cancel</button>' +
-    '<button class="btn btn-primary" onclick="submitProjectTask(' + id + ')" style="font-size:12px;padding:6px 10px">Add</button>' +
-    '</div></div></div>' +
-
-    '<div class="sheet-section">' +
-    '<div class="sheet-section-label" style="margin-bottom:8px">Notes / Updates</div>' +
-    '<textarea class="field-input" id="new-note-input" rows="2" placeholder="Add a note or update..."></textarea>' +
-    '<button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="addProjectNote()">Add Note</button>' +
-    '</div>' +
-
-    '<div class="sheet-section">' +
-    '<div class="sheet-section-label">History</div>' +
-    '<div id="project-notes-list"><div class="shimmer"></div><div class="shimmer" style="width:70%"></div></div>' +
-    '</div>' +
-
-    '<div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-    '<button type="button" class="btn btn-outline" onclick="event.stopPropagation();closeAllSheets()" style="flex:1;min-width:100px">Close</button>' +
-    (p.status === 'active' || p.status === 'paused'
-      ? '<button type="button" class="btn btn-gold" onclick="event.stopPropagation();checkinProject(' + id + ')">Log Check-in</button>'
-      : '') +
-    '</div>' +
-    '<div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-top:4px">Project status</div>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-    (p.status !== 'done'
-      ? '<button type="button" class="btn btn-primary" onclick="event.stopPropagation();markProjectComplete(' + id + ')" style="flex:1;min-width:140px">Mark complete</button>'
-      : '<button type="button" class="btn btn-outline" onclick="event.stopPropagation();markProjectActiveAgain(' + id + ')" style="flex:1;min-width:140px">Mark active again</button>') +
-    '<button type="button" class="btn btn-outline" onclick="event.stopPropagation();deleteProjectPermanently(' + id + ')" style="border-color:rgba(240,92,92,0.45);color:var(--red)">Delete project</button>' +
-    '</div>' +
-    '<div style="font-size:11px;color:var(--text3);line-height:1.45">Mark complete keeps the project on your list as finished. Delete removes it and all notes/tasks forever.</div>' +
-    '</div>';
-
-  document.getElementById('project-detail-content').innerHTML = content;
-  document.getElementById('sheet-backdrop').classList.add('open');
-  document.getElementById('project-detail-sheet').classList.add('open');
-  loadProjectNotes(id);
-  loadProjectTasks(id);
-}
-
-function loadProjectTasks(projectId) {
-  fetch('/api/projects/' + projectId + '/tasks')
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      var tasks = d.tasks || [];
-      var el = document.getElementById('proj-tasks-list-' + projectId);
-      if (!el) return;
-      if (tasks.length === 0) {
-        el.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:4px 0">No tasks yet. Add one above.</div>';
-        return;
-      }
-      var statusColors = { pending: 'var(--text3)', underway: 'var(--amber)', done: 'var(--green)' };
-      el.innerHTML = tasks.map(function(t) {
-        var col = statusColors[t.status] || 'var(--text3)';
-        return '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">' +
-          '<div style="width:8px;height:8px;border-radius:50%;background:' + col + ';flex-shrink:0;margin-top:5px"></div>' +
-          '<div style="flex:1">' +
-          '<div style="font-size:13px;font-weight:500' + (t.status === 'done' ? ';text-decoration:line-through;color:var(--text3)' : '') + '">' + esc(t.title) + '</div>' +
-          (t.assignee ? '<div style="font-size:11px;color:var(--text3)">' + esc(t.assignee) + '</div>' : '') +
-          (t.notes ? '<div style="font-size:11px;color:var(--text3)">' + esc(t.notes.substring(0, 60)) + '</div>' : '') +
-          '</div>' +
-          '<select onchange="updateProjectTaskStatus(' + projectId + ',' + t.id + ',this.value)" style="font-size:11px;background:var(--surface3);color:var(--text2);border:1px solid var(--border2);border-radius:6px;padding:2px 4px">' +
-          ['pending','underway','done'].map(function(s) { return '<option value="' + s + '"' + (t.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
-          '</select>' +
-          '</div>';
-      }).join('');
-    }).catch(function(){});
-}
-
-function showAddProjectTask(projectId) {
-  var form = document.getElementById('proj-task-form-' + projectId);
-  if (form) form.style.display = '';
-}
-
-function submitProjectTask(projectId) {
-  var titleEl = document.getElementById('ptf-title-' + projectId);
-  var assigneeEl = document.getElementById('ptf-assignee-' + projectId);
-  var title = titleEl ? titleEl.value.trim() : '';
-  if (!title) return;
-  var assignee = assigneeEl ? assigneeEl.value.trim() : '';
-  fetch('/api/projects/' + projectId + '/tasks', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: title, assignee: assignee, status: 'pending' })
-  }).then(function() {
-    if (titleEl) titleEl.value = '';
-    if (assigneeEl) assigneeEl.value = '';
-    var form = document.getElementById('proj-task-form-' + projectId);
-    if (form) form.style.display = 'none';
-    loadProjectTasks(projectId);
-    loadProjects();
-  }).catch(function(){});
-}
-
-function updateProjectTaskStatus(projectId, taskId, status) {
-  fetch('/api/projects/' + projectId + '/tasks/' + taskId, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: status })
-  }).then(function() {
-    loadProjectTasks(projectId);
-    loadProjects();
-  }).catch(function(){});
-}
-
-function loadProjectNotes(id) {
-fetch('/api/projects/' + id + '/notes').then(function(r) { return r.json(); }).then(function(d) {
-var list = document.getElementById('project-notes-list');
-if (!list) return;
-var notes = d.notes || [];
-if (notes.length === 0) {
-list.innerHTML = '<div style="font-size:13px;color:var(--text3);padding:8px 0">No notes yet.</div>';
-return;
-}
-list.innerHTML = notes.map(function(n) {
-return '<div class="note-item">' +
-'<div class="note-content">' + esc(n.content) + '</div>' +
-'<div class="note-date">' + formatRelative(n.created_at) + '</div>' +
-'<button class="note-del" onclick="deleteProjectNote(' + n.id + ')">×</button>' +
-'</div>';
-}).join('');
-}).catch(function(){});
-}
-
-function addProjectNote() {
-var content = document.getElementById('new-note-input').value.trim();
-if (!content || !currentProjectId) return;
-fetch('/api/projects/' + currentProjectId + '/notes', {
-method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: content })
-}).then(function() {
-document.getElementById('new-note-input').value = '';
-loadProjectNotes(currentProjectId);
-// refresh stale status
-loadProjects();
-});
-}
-
-function deleteProjectNote(noteId) {
-if (!currentProjectId) return;
-fetch('/api/projects/' + currentProjectId + '/notes/' + noteId, { method: 'DELETE' })
-.then(function() { loadProjectNotes(currentProjectId); });
-}
-
-function checkinProject(id) {
-fetch('/api/projects/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checkin_now: true }) })
-.then(function() { loadProjects(); closeAllSheets(); });
-}
-
-function updateProjectPct(val) {
-// visual only during drag
-var fills = document.querySelectorAll('#project-detail-content .project-progress-fill');
-fills.forEach(function(f) { f.style.width = val + '%'; });
-var span = document.querySelector('#project-detail-content .accent2');
-if (span) span.textContent = val + '%';
-}
-
-function saveProjectPct(val) {
-if (!currentProjectId) return;
-fetch('/api/projects/' + currentProjectId, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ completion_pct: parseInt(val) }) })
-.then(function() { loadProjects(); });
-}
-
-// ══════════════════════════════════════════
-// CALENDAR
-// ══════════════════════════════════════════
-function loadHomeSchedule() {
-  fetch('/api/calendar?days=1', { credentials: 'same-origin' }).then(function(r) { return r.json(); }).then(function(d) {
-    var events = (d.events || []).filter(function(e) { return e.source === 'personal' || e.source === 'sports'; });
-    var el = document.getElementById('home-schedule-list');
-    var label = document.getElementById('schedule-label');
-    if (!el) return;
-    if (events.length === 0) {
-      if (label) label.style.display = 'none';
-      return;
-    }
-    if (label) label.style.display = '';
-    el.innerHTML = events.map(function(e) {
-      var dot = e.source === 'sports' ? 'var(--accent)' : 'var(--blue)';
-      return '<div style="display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)">' +
-        '<div style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;margin-top:5px"></div>' +
-        '<div style="font-size:12px;color:var(--text3);min-width:65px;padding-top:1px">' + esc(e.start_display) + '</div>' +
-        '<div style="font-size:14px;font-weight:500">' + esc(e.title) + '</div></div>';
-    }).join('');
-  }).catch(function(){});
-}
-
-function loadStats() {
-  fetch('/api/stats').then(function(r) { return r.json(); }).then(function(d) {
-    var row = document.getElementById('stats-row');
-    if (row) row.style.display = 'flex';
-    var streak = d.streak_days || 0;
-    var hrs = d.weekly_minutes ? (d.weekly_minutes / 60).toFixed(1) : '0';
-    var acc = d.estimate_accuracy_pct ? Math.round(d.estimate_accuracy_pct) + '%' : 'N/A';
-    document.getElementById('stat-streak').textContent = streak + (streak === 1 ? ' day' : ' days');
-    document.getElementById('stat-hours').textContent = hrs + 'h';
-    document.getElementById('stat-accuracy').textContent = acc;
-  }).catch(function(){});
-}
-
-function loadCalendar() {
-  fetch('/api/calendar?days=7').then(function(r) { return r.json(); }).then(function(d) {
-    var events = d.events || [];
-    var container = document.getElementById('calendar-container');
-
-    // Build a map of date string → events
-    var byDate = {};
-    events.forEach(function(e) {
-      if (!byDate[e.date]) byDate[e.date] = [];
-      byDate[e.date].push(e);
-    });
-
-    // Generate the next 7 days
-    var today = new Date();
-    today.setHours(0, 0, 0, 0);
-    var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    var html = '';
-
-    for (var i = 0; i < 7; i++) {
-      var d2 = new Date(today);
-      d2.setDate(today.getDate() + i);
-      var yyyy = d2.getFullYear();
-      var mm = String(d2.getMonth() + 1).padStart(2, '0');
-      var dd = String(d2.getDate()).padStart(2, '0');
-      var dateKey = yyyy + '-' + mm + '-' + dd;
-      var isToday = i === 0;
-      var dayEvts = byDate[dateKey] || [];
-
-      // Sort: personal first, then sports, then canvas
-      var sourceOrder = { personal: 0, sports: 1, canvas: 2 };
-      dayEvts.sort(function(a, b) {
-        return (sourceOrder[a.source] || 2) - (sourceOrder[b.source] || 2);
-      });
-
-      html += '<div class="week-day' + (isToday ? ' is-today' : '') + '">';
-      html += '<div class="week-day-hdr">';
-      html += '<span class="week-day-name">' + days[d2.getDay()] + '</span>';
-      html += '<span class="week-day-num">' + d2.getDate() + '</span>';
-      html += '<span style="font-size:12px;color:var(--text3);margin-left:2px">' + months[d2.getMonth()] + '</span>';
-      if (isToday) html += '<span class="week-today-pill">TODAY</span>';
-      html += '</div>';
-
-      if (dayEvts.length === 0) {
-        html += '<div class="week-empty">No events or assignments</div>';
-      } else {
-        dayEvts.forEach(function(e) {
-          var dotClass = e.source === 'canvas'
-            ? 'canvas' + (e.urgency === 'high' ? ' high' : e.urgency === 'medium' ? ' medium' : '')
-            : e.source === 'sports' ? 'sports' : 'personal';
-          var sub = '';
-          if ((e.source === 'personal' || e.source === 'sports') && e.start_display) sub = e.start_display + (e.end_display ? ' – ' + e.end_display : '');
-          else if (e.source === 'canvas' && e.class_name) sub = e.class_name + ' · due ' + e.start_display;
-          var isClickable = e.source === 'personal' || e.source === 'sports';
-          var evtData = isClickable ? encodeURIComponent(JSON.stringify({
-            title: e.title, source: e.source, all_day: e.all_day,
-            start_display: e.start_display, end_display: e.end_display,
-            location: e.location || '', notes: e.notes || ''
-          })) : '';
-          html += '<div class="week-event' + (isClickable ? '" onclick="openCalEventDetail(\'' + evtData + '\')" style="cursor:pointer' : '') + '">' +
-            '<div class="week-event-dot ' + dotClass + '"></div>' +
-            '<div>' +
-            '<div class="week-event-title">' + trunc(e.title, 40) + '</div>' +
-            (sub ? '<div class="week-event-sub">' + esc(sub) + '</div>' : '') +
-            '</div></div>';
-        });
-      }
-      html += '</div>';
-    }
-    container.innerHTML = html;
-  }).catch(function() {
-    document.getElementById('calendar-container').innerHTML = '<div class="empty-state"><div class="empty-emoji">⚠</div><div class="empty-title">Could not load calendar</div></div>';
-  });
-}
-
-// ══════════════════════════════════════════
-// AVAILABILITY
-// ══════════════════════════════════════════
-function fmtMins(m) {
-  if (m >= 60) {
-    var h = Math.floor(m / 60), rem = m % 60;
-    return h + 'h' + (rem ? ' ' + rem + 'm' : '');
-  }
-  return m + 'm';
-}
-
-function loadAvailability() {
-  var el = document.getElementById('avail-content');
-  if (!el) return;
-  fetch('/api/availability').then(function(r) { return r.json(); }).then(function(d) {
-    var dayTypeColors = { red: 'var(--red)', white: 'var(--blue)' };
-    var html = '';
-
-    // Header row: day type badge + school hours
-    if (d.is_school_day) {
-      var col = dayTypeColors[d.day_type] || 'var(--text2)';
-      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">' +
-        '<span style="font-size:12px;font-weight:700;padding:2px 9px;border-radius:20px;background:rgba(128,128,128,0.1);color:' + col + '">' +
-        esc((d.day_type || '').toUpperCase()) + ' DAY</span>' +
-        '<span style="font-size:12px;color:var(--text3)">School: ' + esc(d.school_hours || '') + '</span>' +
-        '</div>';
-    } else {
-      html += '<div style="font-size:12px;color:var(--green);font-weight:600;margin-bottom:10px">No School Today</div>';
-    }
-
-    // Recommended homework time — prominent callout
-    if (d.recommended_homework_time) {
-      var rw = d.recommended_homework_time;
-      html += '<div style="background:rgba(76,175,130,0.12);border:1px solid rgba(76,175,130,0.3);border-radius:10px;padding:10px 12px;margin-bottom:10px">' +
-        '<div style="font-size:10px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:3px">Recommended Homework Time</div>' +
-        '<div style="font-size:16px;font-weight:700;color:var(--text)">' + esc(rw.start) + ' – ' + esc(rw.end) + '</div>' +
-        '<div style="font-size:11px;color:var(--text3);margin-top:2px">' + fmtMins(rw.minutes) + ' available</div>' +
-        '</div>';
-    }
-
-    // All free windows
-    if (d.free_windows && d.free_windows.length > 0) {
-      html += '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:5px">All Free Windows</div>';
-      d.free_windows.forEach(function(w) {
-        var isRec = d.recommended_homework_time && w.start === d.recommended_homework_time.start;
-        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)' + (isRec ? ';opacity:0.5' : '') + '">' +
-          '<span style="font-size:13px;font-weight:' + (isRec ? '400' : '500') + '">' + esc(w.start) + ' – ' + esc(w.end) + '</span>' +
-          '<span style="font-size:11px;color:var(--green);font-weight:600">' + fmtMins(w.minutes) + '</span>' +
-          '</div>';
-      });
-      html += '<div style="font-size:11px;color:var(--text3);margin-top:6px;text-align:right">' + fmtMins(d.total_free_minutes) + ' free today</div>';
-    } else {
-      html += '<div style="font-size:13px;color:var(--text3)">No more free time today</div>';
-    }
-    el.innerHTML = html;
-  }).catch(function() {
-    if (el) el.innerHTML = '<div style="font-size:13px;color:var(--text3)">Could not load schedule</div>';
-  });
-}
-
-// ══════════════════════════════════════════
-// AI ASSISTANT
-// ══════════════════════════════════════════
-function sendAiMessage() {
-var input = document.getElementById('ai-input');
-var msg = input.value.trim();
-if (!msg) return;
-input.value = '';
-
-// Add user bubble
-var thread = document.getElementById('ai-thread');
-thread.innerHTML += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px 14px 4px 14px;padding:12px 14px;margin-bottom:8px;font-size:14px;line-height:1.5;max-width:88%;margin-left:auto;color:var(--text)">' + esc(msg) + '</div>';
-
-// Loading bubble
-var loadId = 'ai-loading-' + Date.now();
-thread.innerHTML += '<div id="' + loadId + '" style="background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;padding:12px 14px;margin-bottom:8px;font-size:14px;color:var(--text3)">Thinking…</div>';
-thread.scrollTop = thread.scrollHeight;
-
-aiHistory.push({ role: 'user', content: msg });
-
-// Server injects authoritative date, Canvas/synced assignments, tasks, projects, and school schedule.
-var context = 'You are a smart personal assistant for Finn, a high school student and student leader in Park City, Utah. Be helpful, direct and concise. Use **bold** for key terms, section headings, and important items. Use bullet points for lists. Vary sentence length for clarity. Treat the server-provided today\'s date and assignment list as source of truth for deadlines. If the user asks about something not in that context, say you do not have it and ask them to paste details. ';
-
-fetch('/api/chat', {
-method: 'POST',
-headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({ system: context, messages: aiHistory })
-}).then(function(r) { return r.json(); })
-.then(function(d) {
-var reply = d.content || d.error || 'Something went wrong.';
-aiHistory.push({ role: 'assistant', content: reply });
-var loadEl = document.getElementById(loadId);
-if (loadEl) {
-loadEl.style.color = 'var(--text2)';
-loadEl.innerHTML = renderMarkdown(reply);
-}
-thread.scrollTop = thread.scrollHeight;
-}).catch(function() {
-var loadEl = document.getElementById(loadId);
-if (loadEl) loadEl.textContent = 'Connection error.';
-});
-}
-
-// allow Enter key
-document.addEventListener('keydown', function(e) {
-if (e.key === 'Enter' && e.target.id === 'ai-input' && !e.shiftKey) {
-e.preventDefault();
-sendAiMessage();
-}
-});
-
-function clearChat() {
-  aiHistory = [];
-  document.getElementById('ai-thread').innerHTML = '';
-}
-
-function sendWeeklyRecap() {
-  var thread = document.getElementById('ai-thread');
-  var loadId = 'ai-loading-' + Date.now();
-  thread.innerHTML += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:14px 14px 4px 14px;padding:12px 14px;margin-bottom:8px;font-size:14px;max-width:88%;margin-left:auto;color:var(--text)">Generate Friday weekly email</div>';
-  thread.innerHTML += '<div id="' + loadId + '" style="background:var(--surface2);border:1px solid var(--border);border-radius:14px 14px 14px 4px;padding:12px 14px;margin-bottom:8px;font-size:14px;color:var(--text3)">Drafting email…</div>';
-  thread.scrollTop = thread.scrollHeight;
-  var advEl = document.getElementById('setting-weekly-advisor');
-  var nameEl = document.getElementById('setting-formal-name');
-  var advisor = (advEl && advEl.value.trim()) ? advEl.value.trim() : 'Mr. Goldberg';
-  var signoff = (nameEl && nameEl.value.trim()) ? nameEl.value.trim() : 'Finley Thomas';
-  var context = 'You draft polished, professional emails for a high school student in Park City, Utah. Output must read as a real email: plain paragraphs only — no markdown, no ## headings, no bullet lists unless a short list is truly natural in a letter (prefer prose). Tone: warm, respectful, concise, confident without bragging. ';
-  var userPrompt =
-    'Write a Friday weekly check-in email to my teacher/advisor. Use this exact salutation on its own line: Dear ' + advisor + ',\n\n' +
-    'Then the body: open hoping they have had a good week; mention my commitment to staying on top of classes; weave in anything relevant from the week the system knows about (assignments completed, organization habits, check-ins) without inventing specific grades or events not implied by context; express confidence and momentum; thank them for their support.\n\n' +
-    'Close with a line that says only: Best regards,\n' +
-    'Then a new line with exactly this signature: ' + signoff + '\n\n' +
-    'Keep the full email reasonably brief (roughly 120–220 words) unless the supplied context clearly needs more. Do not add a subject line unless I ask; if you add one, put it on the first line as Subject: ... then a blank line.';
-  var msgs = [{ role: 'user', content: userPrompt }];
-  fetch('/api/chat', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ system: context, messages: msgs })
-  }).then(function(r) { return r.json(); }).then(function(d) {
-    var reply = d.content || d.error || 'Something went wrong.';
-    aiHistory.push({ role: 'user', content: msgs[0].content });
-    aiHistory.push({ role: 'assistant', content: reply });
-    var loadEl = document.getElementById(loadId);
-    if (loadEl) { loadEl.style.color = 'var(--text2)'; loadEl.innerHTML = renderMarkdown(reply); }
-    thread.scrollTop = thread.scrollHeight;
-  }).catch(function() {
-    var loadEl = document.getElementById(loadId);
-    if (loadEl) loadEl.textContent = 'Connection error.';
-  });
-}
-
-function openCalEventDetail(evtJson) {
-  var e = JSON.parse(decodeURIComponent(evtJson));
-  var timeStr = e.all_day ? 'All Day' : (e.start_display + (e.end_display ? ' – ' + e.end_display : ''));
-  var sourceLabel = e.source === 'sports' ? 'Sports' : 'Personal';
-  var dotColor = e.source === 'sports' ? 'var(--accent)' : 'var(--blue)';
-  var html =
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
-    '<div style="width:10px;height:10px;border-radius:50%;background:' + dotColor + ';flex-shrink:0"></div>' +
-    '<span style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em">' + sourceLabel + '</span>' +
-    '</div>' +
-    '<div class="sheet-title">' + esc(e.title) + '</div>' +
-    '<div class="sheet-sub">' + esc(timeStr) + '</div>';
-  if (e.location) {
-    html += '<div class="sheet-section"><div class="sheet-section-label">Location</div><div class="sheet-body">' + esc(e.location) + '</div></div>';
-  }
-  if (e.notes) {
-    html += '<div class="sheet-section"><div class="sheet-section-label">Notes</div><div class="sheet-body" style="white-space:pre-line;font-size:13px">' + esc(e.notes.substring(0,300)) + '</div></div>';
-  }
-  var rid = calEventReminderId(e);
-  var hasRem = getCalReminders().some(function(x) { return x.id === rid; });
-  html += '<div class="sheet-section" style="margin-top:12px">' +
-    '<label style="display:flex;align-items:flex-start;gap:10px;cursor:' + (e.all_day ? 'default' : 'pointer') + '">' +
-    '<input type="checkbox" id="notif-toggle" style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px"' + (hasRem ? ' checked' : '') + (e.all_day ? ' disabled' : '') + '>' +
-    '<span style="font-size:14px;line-height:1.45">Remind me <strong>30 minutes before</strong> this event (browser notification). Keeps working if you leave this tab open.</span></label>' +
-    '<div id="notif-toggle-hint" style="font-size:11px;color:var(--text3);margin-top:8px;margin-left:28px;line-height:1.4"></div></div>';
-  document.getElementById('cal-event-content').innerHTML = html;
-  document.getElementById('sheet-backdrop').classList.add('open');
-  document.getElementById('cal-event-sheet').classList.add('open');
-  var notifToggle = document.getElementById('notif-toggle');
-  var hintEl = document.getElementById('notif-toggle-hint');
-  if (e.all_day && hintEl) {
-    hintEl.textContent = 'All-day events: use your calendar app for alerts.';
-  }
-  if (notifToggle) {
-    notifToggle.addEventListener('change', function() {
-      var hint = document.getElementById('notif-toggle-hint');
-      if (this.checked) {
-        if (!('Notification' in window)) {
-          if (hint) hint.textContent = 'Notifications are not supported in this browser.';
-          this.checked = false;
-          return;
-        }
-        Notification.requestPermission().then(function(perm) {
-          if (perm !== 'granted') {
-            if (hint) hint.textContent = 'Permission denied — enable notifications in browser settings.';
-            notifToggle.checked = false;
-            return;
-          }
-          var res = scheduleCalEventReminder(e);
-          if (res.error) {
-            if (hint) hint.textContent = res.error;
-            notifToggle.checked = false;
-          } else if (hint) {
-            hint.textContent = 'You will get a notification 30 minutes before the start time (keep a tab open or return before then).';
-          }
-        });
-      } else {
-        removeCalEventReminder(e);
-        if (hint) hint.textContent = '';
-      }
-    });
-  }
-}
-
-function toggleProjectTaskStatus(taskId, projectId, newStatus) {
-  fetch('/api/projects/' + projectId + '/tasks/' + taskId, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: newStatus })
-  }).then(function() { loadTasks(); }).catch(function(){});
-}
-
-// ── Swipe-to-dismiss/snooze for notification pills ──
-(function() {
-  var startX = 0, startY = 0, el = null, snoozeTimers = {};
-  document.addEventListener('touchstart', function(e) {
-    var t = e.target.closest('.notif-row');
-    if (!t) return;
-    el = t; startX = e.touches[0].clientX; startY = e.touches[0].clientY;
-  }, { passive: true });
-  document.addEventListener('touchmove', function(e) {
-    if (!el) return;
-    var dx = e.touches[0].clientX - startX;
-    var dy = Math.abs(e.touches[0].clientY - startY);
-    if (dy > 20) { el = null; return; }
-    el.style.transform = 'translateX(' + dx + 'px)';
-    el.style.opacity = 1 - Math.abs(dx) / 200;
-  }, { passive: true });
-  document.addEventListener('touchend', function(e) {
-    if (!el) return;
-    var dx = e.changedTouches[0].clientX - startX;
-    var row = el; el = null;
-    if (dx < -60) {
-      // Swipe left → dismiss
-      if (row.classList.contains('debrief-notif')) {
-        try { sessionStorage.setItem('debrief_hide_' + localDateKey(), '1'); } catch (err) {}
-      }
-      row.style.transition = 'transform 0.25s,opacity 0.25s';
-      row.style.transform = 'translateX(-110%)'; row.style.opacity = '0';
-      setTimeout(function() { if (row.parentNode) row.parentNode.removeChild(row); }, 260);
-    } else if (dx > 60) {
-      // Swipe right → snooze 10 min
-      row.style.transition = 'transform 0.25s,opacity 0.25s';
-      row.style.transform = 'translateX(0)'; row.style.opacity = '1';
-      var clone = row.cloneNode(true);
-      var debriefSlot = document.getElementById('debrief-notif-slot');
-      row.parentNode.removeChild(row);
-      setTimeout(function() {
-        var target = clone.classList.contains('debrief-notif') && debriefSlot ? debriefSlot : document.getElementById('notif-container');
-        if (target) target.appendChild(clone);
-      }, 10 * 60 * 1000);
-    } else {
-      row.style.transition = 'transform 0.2s,opacity 0.2s';
-      row.style.transform = 'translateX(0)'; row.style.opacity = '1';
-    }
-  });
-})();
-
-// ══════════════════════════════════════════
-// HELPERS
-// ══════════════════════════════════════════
-function renderMarkdown(s, isBriefing) {
-  return s.split('\n').map(function(line) {
-    // ## Section headers
-    if (/^##\s+/.test(line)) {
-      var heading = esc(line.replace(/^##\s+/, ''));
-      if (isBriefing) {
-        return '<div class="briefing-section-title">' + heading + '</div>';
-      }
-      return '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin:14px 0 5px">' + heading + '</div>';
-    }
-    // Escape HTML then apply inline bold
-    var out = esc(line)
-      .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text);font-weight:700">$1</strong>');
-    // Color — CONCERN and — OK
-    out = out.replace(/—\s*CONCERN/g, '<span style="color:var(--red);font-weight:700">— CONCERN</span>');
-    out = out.replace(/—\s*OK/g, '<span style="color:var(--green);font-weight:700">— OK</span>');
-    return out;
-  }).join('<br>');
-}
-
-function esc(s) {
-return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-}
-function trunc(s, n) {
-  n = n || 38;
-  if (!s || s.length <= n) return s;
-  var t = s.slice(0, n);
-  var last = t.lastIndexOf(' ');
-  return esc(last > n * 0.6 ? t.slice(0, last) : t) + '&hellip;';
-}
-function escq(s) {
-return String(s || '').replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/'/g,"\\'");
-}
-
-function formatDateShort(iso) {
-var parts = iso.substring(0,10).split('-');
-var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-return months[parseInt(parts[1])-1] + ' ' + parseInt(parts[2]);
-}
-
-function formatDayFull(isoDate) {
-var parts = isoDate.split('-');
-var d = new Date(parseInt(parts[0]), parseInt(parts[1])-1, parseInt(parts[2]));
-var today = new Date();
-var tomorrow = new Date(); tomorrow.setDate(today.getDate()+1);
-var days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-if (d.toDateString() === today.toDateString()) return 'Today';
-if (d.toDateString() === tomorrow.toDateString()) return 'Tomorrow';
-return days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate();
-}
-
-function formatRelative(isoStr) {
-var then = new Date(isoStr);
-var now = new Date();
-var diffMs = now - then;
-var diffMin = Math.floor(diffMs / 60000);
-var diffHr = Math.floor(diffMin / 60);
-var diffDay = Math.floor(diffHr / 24);
-if (diffMin < 2) return 'just now';
-if (diffMin < 60) return diffMin + 'm ago';
-if (diffHr < 24) return diffHr + 'h ago';
-if (diffDay < 7) return diffDay + 'd ago';
-return formatDateShort(isoStr.substring(0,10));
-}
-</script>
-
-</body>
-</html>
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
