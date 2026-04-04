@@ -571,6 +571,17 @@ LIMIT 3""")
             qt_for_schedule.append("⚠️ Quiz/test overdue in %s: %s" % (c, a["title"]))
         quiz_test_block = "\n".join("- " + x for x in qt_for_schedule) or "- None (no quizzes/tests due today in the list)."
 
+        week_end = today + timedelta(days=7)
+        upcoming_qt_study = [
+            a for a in asgn_sorted
+            if _is_quiz_or_test_title(a["title"]) and today <= _assignment_due_date_local(a) <= week_end
+        ]
+        upcoming_qt_study.sort(key=lambda x: x.get("due_iso", ""))
+        lines_qt_study = "\n".join(
+            "- %s (%s) — due %s" % (a["title"], (a.get("class_name") or "").strip() or "class", a["due_display"])
+            for a in upcoming_qt_study
+        ) or "- None."
+
         events_text = "\n".join([
             "- %s%s at %s" % (e["title"], " [SPORTS]" if e.get("source") == "sports" else "", e["start_display"])
             for e in events
@@ -598,6 +609,8 @@ LIMIT 3""")
             "REFERENCE — Overdue work (NOT quiz/test — never put quizzes/tests in Needs section):\n%s\n\n"
             "REFERENCE — Due today work (NOT quiz/test):\n%s\n\n"
             "REFERENCE — Quizzes/tests (for Schedule section ONLY, use EXACT warning lines below as bullets):\n%s\n\n"
+            "REFERENCE — Quizzes/tests in the next 7 days including today (for study/review suggestions ONLY under "
+            "\"If you have time\"; not as homework to turn in):\n%s\n\n"
             "REFERENCE — Good to do if time (due tomorrow or high-urgency in 2 days):\n%s\n\n"
             "REFERENCE — Larger / longer homework (papers, projects, big estimates, not already listed above):\n%s\n\n"
             "Today's calendar events:\n%s\n\n"
@@ -610,7 +623,12 @@ LIMIT 3""")
             "• You may mention urgent tasks from Pending tasks if relevant.\n\n"
             "## If you have time it would be good to get this done today:\n"
             "• Bullets from the 'Good to do if time' reference; optional prep or lighter work.\n"
-            "• If none, one bullet: Nothing extra queued.\n\n"
+            "• **If the upcoming-quizzes reference is not \"- None.\":** add a bullet for each listed quiz/test "
+            "recommending **studying or reviewing** for it today (e.g. \"Review notes / practice problems for the "
+            "**Class** quiz\"). Sooner due dates deserve more urgency. For a quiz **today**, suggest a short focused "
+            "review if there is time before it — still keep the ⚠️ line under Schedule.\n"
+            "• If the only items would be study bullets and you added those, you may omit \"Nothing extra queued.\" "
+            "If there are no good-time items and no upcoming quizzes, one bullet: Nothing extra queued.\n\n"
             "## Schedule:\n"
             "• First bullets: today's calendar events (paraphrase from Today's calendar events).\n"
             "• Then add EVERY line from REFERENCE Quizzes/tests exactly as given (each ⚠️ line is its own bullet).\n"
@@ -618,12 +636,15 @@ LIMIT 3""")
             "## Upcoming projects and longer homework's:\n"
             "• Bullets from REFERENCE Larger/longer; English papers, big assignments not already covered above.\n"
             "• If none, one bullet: Nothing extra flagged.\n\n"
-            "Rules: NEVER put an assignment whose title contains 'quiz' or 'test' under ## Needs to get done today or under "
-            "## If you have time — only under ## Schedule using the provided ⚠️ lines. "
+            "Rules: NEVER list a quiz/test as regular homework under ## Needs to get done today. "
+            "Quizzes/tests **due today or overdue** appear only under ## Schedule as the provided ⚠️ lines. "
+            "Under ## If you have time, you **may** (and should, when the reference lists any) add **study/review** "
+            "bullets for quizzes/tests in the next 7 days — never imply turning in the quiz as an assignment there. "
             "Use **bold** for assignment names where helpful. No intro paragraph. Only these four sections."
         ) % (
             name, now_str, schedule_note,
             lines_overdue_work, lines_today_work, quiz_test_block,
+            lines_qt_study,
             lines_good_time, lines_big,
             events_text, tasks_text, stale_text,
         )
