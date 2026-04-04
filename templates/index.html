@@ -1124,7 +1124,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }, 30000); // Check every 30s, but only fetch if 2+ minutes have passed
 
-  document.addEventListener('visibilitychange', function() {
+  // Remove old listener if it exists, then add new one to prevent duplication
+  window._briefingVisibilityHandler = window._briefingVisibilityHandler || function() {
     if (document.visibilityState === 'visible') {
       // When app becomes visible, fetch immediately if cache is stale
       if (Date.now() - lastBriefingFetch > 60000) {
@@ -1132,7 +1133,9 @@ document.addEventListener('DOMContentLoaded', function() {
         lastBriefingFetch = Date.now();
       }
     }
-  });
+  };
+  document.removeEventListener('visibilitychange', window._briefingVisibilityHandler);
+  document.addEventListener('visibilitychange', window._briefingVisibilityHandler);
 });
 
 function updateHeaderDate() {
@@ -1869,25 +1872,30 @@ function markDone(e, uid, title, className, estimate) {
 var timerPollerInterval = null;
 var briefingPollerInterval = null;
 
+// Named handler to allow removal of old listeners
+window._timerVisibilityHandler = function() {
+  if (document.visibilityState === 'visible' && activeTimer && activeTimer.active) {
+    // App just became visible and timer is running - poll immediately
+    pollTimer();
+    // Switch to fast polling (10s) while timer is active
+    clearInterval(timerPollerInterval);
+    timerPollerInterval = setInterval(pollTimer, 10000);
+  } else if (document.visibilityState === 'hidden') {
+    // App is backgrounded - switch to slow polling to save battery/bandwidth
+    clearInterval(timerPollerInterval);
+    timerPollerInterval = setInterval(pollTimer, 60000);
+  }
+};
+
 function startTimerPoller() {
   pollTimer();
   // Smart polling: fast when timer active, slow otherwise
   timerPollerInterval = setInterval(pollTimer, 60000);
 
+  // Remove any existing listener to prevent accumulation
+  document.removeEventListener('visibilitychange', window._timerVisibilityHandler);
   // When visibility changes, adjust polling
-  document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'visible' && activeTimer && activeTimer.active) {
-      // App just became visible and timer is running - poll immediately
-      pollTimer();
-      // Switch to fast polling (10s) while timer is active
-      clearInterval(timerPollerInterval);
-      timerPollerInterval = setInterval(pollTimer, 10000);
-    } else if (document.visibilityState === 'hidden') {
-      // App is backgrounded - switch to slow polling to save battery/bandwidth
-      clearInterval(timerPollerInterval);
-      timerPollerInterval = setInterval(pollTimer, 60000);
-    }
-  });
+  document.addEventListener('visibilitychange', window._timerVisibilityHandler);
 }
 
 function pollTimer() {
