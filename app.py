@@ -61,10 +61,10 @@ WORKOUT_FOCUS_CYCLE = [
     ("shoulders", "Shoulders"),
 ]
 
-# ── Hardcoded calendar URLs ──────────────────────────────────────────────────
-PERSONAL_ICAL_URL = "https://p107-caldav.icloud.com/published/2/OTg1NzQ4NTY5ODU3NDg1NhsR_oH4Uc5HZPs6egZwYCgNaNoVdbGZnhTJRBFIsovYYGFTxg1u1ClSf4dPKWfDbUirJMtTPpJPtm_Zct60PgM"
-CANVAS_ICAL_URL = "https://pcsd.instructure.com/feeds/calendars/user_wC7Sn9BAtT2VtytLikpkf7f2hC8Pz90mqGLPXR9F.ics"
-SPORTS_ICAL_URL = "https://api.olliesports.com/ical/team-NgstTqqq97a7sBEoUbq1Ig89P0mFplM1.ics?accountId=rxwb8YV8yIfpjwKHxxndqXcQ3ss2"
+# ── Calendar URLs from environment variables ──────────────────────────────────
+PERSONAL_ICAL_URL = os.environ.get("PERSONAL_ICAL_URL", "")
+CANVAS_ICAL_URL = os.environ.get("CANVAS_ICAL_URL", "")
+SPORTS_ICAL_URL = os.environ.get("SPORTS_ICAL_URL", "")
 
 # ── Park City School District 2025-2026 Bell Schedule ────────────────────────
 # Red Day = shorter (A-block), White Day = longer (B-block), alternating each school day
