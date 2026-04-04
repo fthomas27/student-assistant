@@ -1997,9 +1997,13 @@ def _get_next_monthly_occurrence(position, day_of_week, start_after=None):
                 days_with_weekday.append(d)
 
         if not days_with_weekday:
-            check_date = date(year, month + 1 if month < 12 else year + 1, 1 if month < 12 else 1)
+            # Move to next month
             if month == 12:
                 year += 1
+                month = 1
+            else:
+                month += 1
+            check_date = date(year, month, 1)
             continue
 
         # Select based on position
@@ -2020,7 +2024,12 @@ def _get_next_monthly_occurrence(position, day_of_week, start_after=None):
             return result
 
         # Move to next month
-        check_date = date(year, month + 1 if month < 12 else year + 1, 1)
+        if month == 12:
+            year += 1
+            month = 1
+        else:
+            month += 1
+        check_date = date(year, month, 1)
 
     return start_after + timedelta(days=30)
 
