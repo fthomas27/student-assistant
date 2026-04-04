@@ -1990,7 +1990,7 @@ function buildTaskItem(t) {
   var toggleFn = isProjectTask
     ? 'toggleProjectTaskStatus(' + t.id + ',' + t.project_id + ',\'' + (t.completed ? 'pending' : 'done') + '\')'
     : 'toggleTask(' + t.id + ',' + !t.completed + ')';
-  var editBtn = isProjectTask ? '' : '<button style="position:absolute;right:8px;bottom:8px;background:none;border:none;color:var(--text2);font-size:14px;cursor:pointer;padding:2px;line-height:1" onclick="editTask(' + t.id + ')">✏</button>';
+  var urgencyClick = isProjectTask ? '' : 'onclick="editTask(' + t.id + ')"';
   return '<div class="task-item" style="position:relative">' +
     '<div class="task-check' + (t.completed ? ' checked' : '') + '" onclick="' + toggleFn + '"></div>' +
     '<div class="task-content">' +
@@ -1999,8 +1999,7 @@ function buildTaskItem(t) {
     notesStr + projLink +
     (dueStr ? '<div class="task-sub">' + esc(dueStr.trim()) + '</div>' : '') +
     '</div>' +
-    '<div class="task-urgency ' + esc(t.urgency || 'medium') + '"></div>' +
-    editBtn +
+    '<div class="task-urgency ' + esc(t.urgency || 'medium') + '" style="cursor:pointer" ' + urgencyClick + '></div>' +
     '</div>';
 }
 
