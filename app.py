@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS config (
     value TEXT NOT NULL DEFAULT ''
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS completions (
     id SERIAL PRIMARY KEY,
     completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -249,14 +249,14 @@ CREATE TABLE IF NOT EXISTS completions (
     timed BOOLEAN NOT NULL DEFAULT TRUE
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS assignment_estimates (
     uid TEXT PRIMARY KEY,
     minutes REAL NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS timer_state (
     id INT PRIMARY KEY DEFAULT 1,
     assignment_uid TEXT NOT NULL DEFAULT '',
@@ -269,21 +269,21 @@ CREATE TABLE IF NOT EXISTS timer_state (
     active BOOLEAN NOT NULL DEFAULT FALSE
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS briefing_cache (
     id INT PRIMARY KEY DEFAULT 1,
     generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     content TEXT NOT NULL DEFAULT ''
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS debrief_cache (
     id INT PRIMARY KEY DEFAULT 1,
     generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     content TEXT NOT NULL DEFAULT ''
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS tasks (
     id SERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -295,7 +295,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     due_date DATE
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS projects (
     id SERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -309,7 +309,7 @@ CREATE TABLE IF NOT EXISTS projects (
     completion_pct INT NOT NULL DEFAULT 0
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS project_notes (
     id SERIAL PRIMARY KEY,
     project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -317,7 +317,7 @@ CREATE TABLE IF NOT EXISTS project_notes (
     content TEXT NOT NULL
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS project_tasks (
     id SERIAL PRIMARY KEY,
     project_id INT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -329,7 +329,7 @@ CREATE TABLE IF NOT EXISTS project_tasks (
     due_date DATE
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS recurring_tasks (
     id SERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -341,13 +341,13 @@ CREATE TABLE IF NOT EXISTS recurring_tasks (
     active BOOLEAN NOT NULL DEFAULT TRUE
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS workout_state (
     id INT PRIMARY KEY DEFAULT 1,
     last_focus_index INT NOT NULL DEFAULT -1
 )""")
 
-    cur.execute("""
+        cur.execute("""
 CREATE TABLE IF NOT EXISTS workout_logs (
     id SERIAL PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -360,30 +360,30 @@ CREATE TABLE IF NOT EXISTS workout_logs (
     perceived_difficulty INT
 )""")
 
-    defaults = {
-        "name": "Finn",
-        "morning_briefing_time": "07:00",
-        "timer_cutoff_multiplier": "2.0",
-        "weekly_recap_advisor": "Mr. Goldberg",
-        "formal_signoff_name": "Finley Thomas",
-    }
-    for k, v in defaults.items():
-        cur.execute("""
+        defaults = {
+            "name": "Finn",
+            "morning_briefing_time": "07:00",
+            "timer_cutoff_multiplier": "2.0",
+            "weekly_recap_advisor": "Mr. Goldberg",
+            "formal_signoff_name": "Finley Thomas",
+        }
+        for k, v in defaults.items():
+            cur.execute("""
 INSERT INTO config (key, value) VALUES (%s, %s)
 ON CONFLICT (key) DO NOTHING""", (k, v))
 
-    cur.execute("INSERT INTO timer_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
-    cur.execute("INSERT INTO briefing_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
-    cur.execute("INSERT INTO debrief_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
-    cur.execute("INSERT INTO workout_state (id, last_focus_index) VALUES (1, -1) ON CONFLICT (id) DO NOTHING")
+        cur.execute("INSERT INTO timer_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
+        cur.execute("INSERT INTO briefing_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
+        cur.execute("INSERT INTO debrief_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
+        cur.execute("INSERT INTO workout_state (id, last_focus_index) VALUES (1, -1) ON CONFLICT (id) DO NOTHING")
 
-    # Create indexes for frequently queried columns
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_assignment_title ON completions(assignment_title)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed, created_at DESC)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_project_tasks_assignee_status ON project_tasks(assignee, status)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_completed_at ON completions(completed_at DESC)")
+        # Create indexes for frequently queried columns
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_assignment_title ON completions(assignment_title)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(completed, created_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_project_tasks_assignee_status ON project_tasks(assignee, status)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_completed_at ON completions(completed_at DESC)")
 
         conn.commit()
         cur.close()
