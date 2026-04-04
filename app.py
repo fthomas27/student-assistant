@@ -2647,6 +2647,7 @@ def api_config_get():
 
 @app.route("/api/config", methods=["POST"])
 def api_config_post():
+    global TZ
     try:
         data = request.get_json(force=True) or {}
         allowed = {
@@ -2667,6 +2668,12 @@ def api_config_post():
                 except Exception:
                     return jsonify({"status": "error", "message": "Invalid timezone"}), 400
             set_config(updates)
+            # Update global TZ if timezone changed
+            if "timezone" in updates:
+                try:
+                    TZ = ZoneInfo(updates["timezone"])
+                except Exception:
+                    log.warning("Failed to update TZ to %s", updates["timezone"])
             if "morning_briefing_time" in updates:
                 schedule_briefing()
         return jsonify({"status": "ok"})
