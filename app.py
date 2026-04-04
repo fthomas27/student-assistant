@@ -443,6 +443,29 @@ def estimate_assignment(title, class_name):
     return 30.0
 
 
+def _assignment_due_date_local(a):
+    di = a.get("due_iso") or ""
+    if di.endswith("Z"):
+        di = di[:-1] + "+00:00"
+    return datetime.fromisoformat(di).astimezone(TZ).date()
+
+
+def _is_quiz_or_test_title(title):
+    t = (title or "").lower()
+    return "quiz" in t or "test" in t
+
+
+def _is_big_work_assignment(a):
+    est = estimate_assignment(a.get("title", ""), a.get("class_name", ""))
+    if est >= 45:
+        return True
+    blob = ((a.get("title") or "") + " " + (a.get("class_name") or "")).lower()
+    for kw in ("paper", "essay", "project", "presentation", "research", "portfolio"):
+        if kw in blob:
+            return True
+    return False
+
+
 def generate_briefing(force=False):
     with _briefing_lock:
         cfg = get_config()
@@ -498,24 +521,64 @@ LIMIT 3""")
         cur.close()
         conn.close()
 
-        now_str = datetime.now(TZ).strftime("%A, %B %-d, %Y at %-I:%M %p")
+        now_local = datetime.now(TZ)
+        now_str = now_local.strftime("%A, %B %-d, %Y at %-I:%M %p")
+        today = now_local.date()
 
-        upcoming_asgn = sorted(assignments, key=lambda a: a.get("due_iso", ""))[:8]
-        asgn_text = "\n".join(["- %s (%s) due %s, est. %d min, urgency: %s" % (
-            a["title"], a["class_name"], a["due_display"],
-            estimate_assignment(a["title"], a["class_name"]),
-            a.get("urgency", "medium")
-        ) for a in upcoming_asgn]) or "No upcoming assignments."
+        asgn_sorted = sorted(assignments, key=lambda a: a.get("due_iso", ""))
+
+        def _fmt_asgn(a):
+            est = int(estimate_assignment(a["title"], a["class_name"]))
+            return "%s (%s) due %s, ~%d min, urgency %s" % (
+                a["title"], a["class_name"], a["due_display"], est, a.get("urgency", "medium"))
+
+        overdue = [a for a in asgn_sorted if _assignment_due_date_local(a) < today]
+        due_today = [a for a in asgn_sorted if _assignment_due_date_local(a) == today]
+        due_tmr = [a for a in asgn_sorted if _assignment_due_date_local(a) == today + timedelta(days=1)]
+        due_2d = [a for a in asgn_sorted if _assignment_due_date_local(a) == today + timedelta(days=2)]
+
+        overdue_work = [_fmt_asgn(a) for a in overdue if not _is_quiz_or_test_title(a["title"])]
+        today_work = [_fmt_asgn(a) for a in due_today if not _is_quiz_or_test_title(a["title"])]
+        today_qt = [a for a in due_today if _is_quiz_or_test_title(a["title"])]
+        overdue_qt = [a for a in overdue if _is_quiz_or_test_title(a["title"])]
+
+        good_time_lines = [_fmt_asgn(a) for a in due_tmr]
+        for a in due_2d:
+            if a.get("urgency") == "high":
+                good_time_lines.append(_fmt_asgn(a))
+
+        listed_titles = set()
+        for group in (overdue, due_today, due_tmr):
+            for a in group:
+                listed_titles.add(a["title"])
+        big_longterm = [
+            _fmt_asgn(a) for a in asgn_sorted
+            if _is_big_work_assignment(a) and _assignment_due_date_local(a) > today
+            and a["title"] not in listed_titles
+        ][:6]
+
+        lines_overdue_work = "\n".join("- " + x for x in overdue_work) or "- None."
+        lines_today_work = "\n".join("- " + x for x in today_work) or "- None."
+        lines_good_time = "\n".join("- " + x for x in good_time_lines) or "- None."
+        lines_big = "\n".join("- " + x for x in big_longterm) or "- None."
+
+        qt_for_schedule = []
+        for a in today_qt:
+            c = (a.get("class_name") or "").strip() or "class"
+            qt_for_schedule.append("⚠️ Quiz/test today in %s: %s" % (c, a["title"]))
+        for a in overdue_qt:
+            c = (a.get("class_name") or "").strip() or "class"
+            qt_for_schedule.append("⚠️ Quiz/test overdue in %s: %s" % (c, a["title"]))
+        quiz_test_block = "\n".join("- " + x for x in qt_for_schedule) or "- None (no quizzes/tests due today in the list)."
 
         events_text = "\n".join([
             "- %s%s at %s" % (e["title"], " [SPORTS]" if e.get("source") == "sports" else "", e["start_display"])
             for e in events
-        ]) or "No events today."
-        tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "No pending tasks."
-        stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or "None."
+        ]) or "- No calendar events today."
+        tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in tasks]) or "- No pending tasks."
+        stale_text = "\n".join(["- %s (overdue check-in)" % p["title"] for p in stale_projects]) or "- None."
 
         # Get school schedule for today to recommend homework time
-        today = datetime.now(TZ).date()
         school_hrs = get_school_hours(today)
         dtype = get_day_type(today)
         if school_hrs:
@@ -532,27 +595,44 @@ LIMIT 3""")
             "You are a sharp personal assistant for %s, a high school student and student leader in Park City, Utah.\n"
             "Current time: %s\n"
             "School schedule note: %s\n\n"
-            "Upcoming Assignments:\n%s\n\n"
-            "Today's Schedule:\n%s\n\n"
-            "Pending Tasks:\n%s\n\n"
+            "REFERENCE — Overdue work (NOT quiz/test — never put quizzes/tests in Needs section):\n%s\n\n"
+            "REFERENCE — Due today work (NOT quiz/test):\n%s\n\n"
+            "REFERENCE — Quizzes/tests (for Schedule section ONLY, use EXACT warning lines below as bullets):\n%s\n\n"
+            "REFERENCE — Good to do if time (due tomorrow or high-urgency in 2 days):\n%s\n\n"
+            "REFERENCE — Larger / longer homework (papers, projects, big estimates, not already listed above):\n%s\n\n"
+            "Today's calendar events:\n%s\n\n"
+            "Pending tasks:\n%s\n\n"
             "Projects needing check-in:\n%s\n\n"
-            "Write a daily briefing using this EXACT format:\n\n"
-            "## Assignments\n"
-            "One bullet per assignment: • **Assignment Name** (Class) due DATE — CONCERN or — OK\n"
-            "Mark CONCERN if due within 2 days, high urgency, or large estimate. Otherwise OK.\n\n"
-            "## Schedule\n"
-            "One bullet per event or task today. If none, write: • Nothing scheduled.\n\n"
-            "## Homework Time\n"
-            "• **Recommended:** STATE THE SPECIFIC TIME WINDOW to do homework today.\n\n"
-            "Rules: Use **bold** for assignment names, recommended time, and section items. "
-            "Keep each bullet to one line. No intro sentence. No paragraph text. Only the sections above."
-        ) % (name, now_str, schedule_note, asgn_text, events_text, tasks_text, stale_text)
+            "Write TODAY'S PLAN using EXACTLY these four markdown sections with ## headings (spell each heading exactly):\n\n"
+            "## Needs to get done today:\n"
+            "• Use bullets. Combine OVERDUE WORK and DUE-TODAY WORK from the reference (not quiz/test).\n"
+            "• If both reference lists are None/empty for work, write one bullet: Nothing critical listed — you're caught up on due-today work.\n"
+            "• You may mention urgent tasks from Pending tasks if relevant.\n\n"
+            "## If you have time it would be good to get this done today:\n"
+            "• Bullets from the 'Good to do if time' reference; optional prep or lighter work.\n"
+            "• If none, one bullet: Nothing extra queued.\n\n"
+            "## Schedule:\n"
+            "• First bullets: today's calendar events (paraphrase from Today's calendar events).\n"
+            "• Then add EVERY line from REFERENCE Quizzes/tests exactly as given (each ⚠️ line is its own bullet).\n"
+            "• If no events and no quiz lines, one bullet: No calendar entries or quizzes/tests flagged.\n\n"
+            "## Upcoming projects and longer homework's:\n"
+            "• Bullets from REFERENCE Larger/longer; English papers, big assignments not already covered above.\n"
+            "• If none, one bullet: Nothing extra flagged.\n\n"
+            "Rules: NEVER put an assignment whose title contains 'quiz' or 'test' under ## Needs to get done today or under "
+            "## If you have time — only under ## Schedule using the provided ⚠️ lines. "
+            "Use **bold** for assignment names where helpful. No intro paragraph. Only these four sections."
+        ) % (
+            name, now_str, schedule_note,
+            lines_overdue_work, lines_today_work, quiz_test_block,
+            lines_good_time, lines_big,
+            events_text, tasks_text, stale_text,
+        )
 
         try:
             client = anthropic.Anthropic(api_key=api_key)
             message = client.messages.create(
                 model="claude-sonnet-4-6",
-                max_tokens=600,
+                max_tokens=900,
                 messages=[{"role": "user", "content": prompt}]
             )
             content = message.content[0].text if message.content else "Have a great day!"
@@ -1439,6 +1519,12 @@ def api_chat():
     if not api_key:
         return jsonify({"error": "ANTHROPIC_API_KEY not configured. Add it in Settings."}), 500
     try:
+        now_chat = datetime.now(TZ)
+        system_prompt = (
+            "Today's date (authoritative for this conversation—use it whenever the student says 'today' or 'tomorrow' "
+            "and when comparing to due dates): %s. Current local time (Utah): %s. "
+        ) % (now_chat.strftime("%A, %B %d, %Y"), now_chat.strftime("%-I:%M %p %Z")) + system_prompt
+
         # Inject school schedule context
         try:
             today = datetime.now(TZ).date()
@@ -1480,10 +1566,18 @@ def api_chat():
                     pass
                 if asgn_list:
                     asgn_text = "; ".join(
-                        "%s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"])
+                        "%s (%s, due %s, due_date=%s)" % (
+                            a["title"],
+                            a["class_name"],
+                            a["due_display"],
+                            (a.get("due_iso") or "")[:10],
+                        )
                         for a in asgn_list
                     )
-                    system_prompt += " Upcoming assignments (not yet completed): " + asgn_text + "."
+                    system_prompt += (
+                        " Upcoming assignments (not yet completed; due_date is YYYY-MM-DD in your timezone, "
+                        "aligned with the authoritative 'today' above): " + asgn_text + "."
+                    )
                 else:
                     system_prompt += " All assignments are completed."
         except Exception:
