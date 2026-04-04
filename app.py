@@ -869,8 +869,7 @@ def api_assignments():
             return jsonify({"assignments": [], "error": "Failed to fetch Canvas calendar."})
         conn = get_db()
         cur = conn.cursor()
-        today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-        cur.execute("SELECT assignment_title FROM completions WHERE completed_at >= %s", (today_start,))
+        cur.execute("SELECT assignment_title FROM completions")
         completed_titles = set(r["assignment_title"] for r in cur.fetchall())
         cur.execute("SELECT uid, minutes FROM assignment_estimates")
         custom_estimates = {r["uid"]: r["minutes"] for r in cur.fetchall()}
@@ -1188,6 +1187,172 @@ def api_workout_log_patch(log_id):
     cur.close()
     conn.close()
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/workout/log-custom", methods=["POST"])
+def api_workout_log_custom():
+    data = request.get_json(force=True) or {}
+    user_description = str(data.get("description", "")).strip()
+    if not user_description:
+        return jsonify({"error": "Workout description required"}), 400
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    if not api_key:
+        return jsonify({"error": "Add your Anthropic API key in Settings to log workouts."}), 500
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        categorize_prompt = (
+            "The user describes a workout they just completed:\n\n"
+            '"%s"\n\n'
+            "Categorize this workout and format it nicely. Your response should be structured markdown with:\n"
+            "1. A brief summary of the workout (1-2 lines)\n"
+            "2. Exercises performed (list them with sets/reps/details if mentioned)\n"
+            "3. Estimated difficulty (1-10 scale based on description)\n"
+            "4. Primary focus area (e.g., Back, Legs, Biceps & Triceps, Core / Cardio, Shoulders, or Other)\n\n"
+            "Format as markdown sections with ## headers. Be supportive and encouraging."
+        ) % user_description
+
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1000,
+            messages=[{"role": "user", "content": categorize_prompt}],
+        )
+        formatted_content = message.content[0].text if message.content else ""
+    except Exception as e:
+        log.error("Workout log custom API error: %s", e)
+        return jsonify({"error": "Could not categorize workout. Try again."}), 500
+
+    # Extract focus from the formatted response (simple heuristic)
+    response_lower = formatted_content.lower()
+    focus_key = "other"
+    focus_label = "Other"
+    if "back" in response_lower:
+        focus_key, focus_label = "back", "Back"
+    elif "biceps" in response_lower or "triceps" in response_lower:
+        focus_key, focus_label = "biceps_triceps", "Biceps & Triceps"
+    elif "core" in response_lower or "cardio" in response_lower:
+        focus_key, focus_label = "core_cardio", "Core / Cardio"
+    elif "leg" in response_lower:
+        focus_key, focus_label = "legs", "Legs"
+    elif "shoulder" in response_lower:
+        focus_key, focus_label = "shoulders", "Shoulders"
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+INSERT INTO workout_logs (focus_key, focus_label, intensity, location, plan_content, user_notes)
+VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
+                ("custom", focus_label, 5, "custom", formatted_content, user_description))
+    log_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({
+        "plan": formatted_content,
+        "log_id": log_id,
+        "focus_label": focus_label,
+        "status": "logged"
+    })
+
+
+@app.route("/api/workout/regenerate", methods=["POST"])
+def api_workout_regenerate():
+    data = request.get_json(force=True) or {}
+    log_id = int(data.get("log_id", 0))
+    if log_id <= 0:
+        return jsonify({"error": "log_id required"}), 400
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    if not api_key:
+        return jsonify({"error": "Add your Anthropic API key in Settings to regenerate workouts."}), 500
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT focus_key, focus_label, intensity, location, user_notes FROM workout_logs WHERE id=%s", (log_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Workout not found"}), 404
+
+    focus_key, focus_label, intensity, location, user_notes = row["focus_key"], row["focus_label"], row["intensity"], row["location"], row["user_notes"]
+
+    # Get history for context
+    history_text = _workout_history_block(cur)
+
+    # Generate new workout with same focus but different exercises
+    now_local = datetime.now(TZ)
+    name = get_config().get("name", "Finn")
+
+    if location == "home":
+        equip = (
+            "HOME GYM: dumbbells only up to 35 lb each, plus bodyweight. "
+            "No barbell rack, no heavy machines, no cable stack unless you describe a bodyweight or DB substitute. "
+            "Be creative with unilateral work, tempo, and density."
+        )
+    else:
+        equip = (
+            "REC GYM (full gym): barbells, squat rack, cables, machines, dumbbells beyond 35 lb, all standard equipment."
+        )
+
+    user_prompt = (
+        "Athlete name: %s.\n"
+        "Today: %s.\n"
+        "Today's rotation focus (must be the primary emphasis of this session): **%s**.\n"
+        "Target difficulty: **%d / 10** (1 = very easy recovery, 5 = moderate, 8–10 = very demanding).\n"
+        "Training location: **%s**.\n\n"
+        "Equipment rules: %s\n\n"
+        "Recent history — learn from these (honor notes, vary exercises if they repeat complaints, match intensity trends):\n%s\n\n"
+        "Write ONE complete workout for today. Include warm-up, main lifts/accessories appropriate to the focus, "
+        "optional finisher if intensity ≥ 6, and cool-down. Use **bold** for exercise names. "
+        "Give sets, reps or time, rest, and one short form cue per main movement. "
+        "Do not skip the rotation focus — secondary work should support it. "
+        "Make this DIFFERENT from the previous attempt — use different exercises, rep ranges, or exercise order."
+    ) % (
+        name,
+        now_local.strftime("%A, %B %-d, %Y"),
+        focus_label,
+        intensity,
+        "Home gym (≤35 lb dumbbells + bodyweight)" if location == "home" else "Rec / full gym",
+        equip,
+        history_text,
+    )
+
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": user_prompt}],
+            system=(
+                "You are an experienced, safety-conscious strength and conditioning coach for a high school student. "
+                "Programs must be realistic for the equipment listed. Never recommend reckless loading. "
+                "If history shows an injury concern or 'too hard', scale down proactively."
+            ),
+        )
+        content = message.content[0].text if message.content else ""
+    except Exception as e:
+        log.error("Workout regenerate API error: %s", e)
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Could not regenerate workout. Check API key and try again."}), 500
+
+    # Update the workout log with new content
+    cur.execute(
+        "UPDATE workout_logs SET plan_content=%s WHERE id=%s",
+        (content, log_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return jsonify({
+        "plan": content,
+        "log_id": log_id,
+        "status": "regenerated"
+    })
 
 
 @app.route("/api/timer", methods=["GET"])
