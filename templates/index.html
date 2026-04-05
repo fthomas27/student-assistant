@@ -1257,6 +1257,7 @@ function updateDebriefFromApi(d) {
   cachedDebrief.generatedAt = gen;
   renderDebriefPill();
   maybeBrowserNotifyDebrief(gen, deb);
+  scheduleDebriefReminder();
 }
 
 function renderDebriefPill() {
@@ -1265,20 +1266,40 @@ function renderDebriefPill() {
   slot.innerHTML = '';
   var deb = cachedDebrief.text;
   var gen = cachedDebrief.generatedAt;
-  if (!deb || !isDebriefFromToday(gen)) return;
-  try {
-    if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
-  } catch (e) {}
-  var when = gen ? formatRelative(gen) : '';
-  var permHint = '';
-  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    permHint = '<br><span style="font-size:12px;color:var(--text3)">Tip: allow notifications in your browser to get pinged when the debrief is ready.</span>';
+
+  // Show existing debrief
+  if (deb && isDebriefFromToday(gen)) {
+    try {
+      if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
+    } catch (e) {}
+    var when = gen ? formatRelative(gen) : '';
+    var permHint = '';
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      permHint = '<br><span style="font-size:12px;color:var(--text3)">Tip: allow notifications in your browser to get pinged when the debrief is ready.</span>';
+    }
+    slot.innerHTML =
+      '<div class="notif-row debrief-notif" role="button" tabindex="0" onclick="openDebriefSheet()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDebriefSheet();}">' +
+      '<span class="notif-icon">&#127961;</span>' +
+      '<div class="notif-text"><span class="notif-title">Daily debrief ready · Submit now!</span><br>' +
+      '<span style="color:var(--text3)">Tap to read and review today' + (when ? ' · Generated ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
+  } else {
+    // Show upcoming debrief reminder
+    var now = new Date();
+    var debriefTime = new Date(now);
+    debriefTime.setHours(19, 0, 0, 0); // 7:00 PM
+    if (now > debriefTime) return; // Already past debrief time today
+
+    var msUntil = debriefTime.getTime() - now.getTime();
+    var hoursUntil = Math.floor(msUntil / (60 * 60 * 1000));
+    var minsUntil = Math.floor((msUntil % (60 * 60 * 1000)) / (60 * 1000));
+    var timeStr = hoursUntil > 0 ? hoursUntil + 'h ' + minsUntil + 'm' : minsUntil + 'm';
+
+    slot.innerHTML =
+      '<div class="notif-row debrief-notif" style="opacity:0.7">' +
+      '<span class="notif-icon">⏰</span>' +
+      '<div class="notif-text"><span class="notif-title">Debrief coming soon</span><br>' +
+      '<span style="color:var(--text3)">In ' + timeStr + ' · you\'ll get a notification 30 min before</span></div></div>';
   }
-  slot.innerHTML =
-    '<div class="notif-row debrief-notif" role="button" tabindex="0" onclick="openDebriefSheet()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDebriefSheet();}">' +
-    '<span class="notif-icon">&#127961;</span>' +
-    '<div class="notif-text"><span class="notif-title">Daily debrief</span><br>' +
-    '<span style="color:var(--text3)">Tap to read what happened today' + (when ? ' · ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
 }
 
 function openDebriefSheet() {
@@ -1312,6 +1333,38 @@ function maybeBrowserNotifyDebrief(genIso, debText) {
     };
     sessionStorage.setItem(key, '1');
   } catch (e) {}
+}
+
+function scheduleDebriefReminder() {
+  // Debrief is generated at 7:00 PM, so remind 30 minutes before (6:30 PM)
+  var now = new Date();
+  var debriefTime = new Date(now);
+  debriefTime.setHours(18, 30, 0, 0); // 6:30 PM
+
+  // If we're past 6:30 PM today, schedule for tomorrow
+  if (now > debriefTime) {
+    debriefTime.setDate(debriefTime.getDate() + 1);
+  }
+
+  var msUntilReminder = debriefTime.getTime() - now.getTime();
+
+  // Clear any existing reminder timeout
+  if (window._debriefReminderTimeout) {
+    clearTimeout(window._debriefReminderTimeout);
+  }
+
+  // Schedule the reminder
+  window._debriefReminderTimeout = setTimeout(function() {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      try {
+        new Notification('Daily debrief reminder', {
+          body: 'Your daily debrief will be ready at 7:00 PM. Get ready to submit it!',
+          tag: 'debrief-reminder',
+          requireInteraction: true
+        });
+      } catch (e) {}
+    }
+  }, msUntilReminder);
 }
 
 function calEventReminderId(e) {
