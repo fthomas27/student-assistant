@@ -594,10 +594,11 @@ def _is_big_work_assignment(a):
 
 def generate_briefing(force=False):
     with _briefing_lock:
-        cfg = get_config()
-        api_key = cfg.get("anthropic_api_key", "")
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
+            log.warning("Morning briefing: ANTHROPIC_API_KEY not set")
             return
+        cfg = get_config()
         name = cfg.get("name", "Finn")
         if not force:
             conn = get_db()
@@ -807,10 +808,11 @@ scheduler = BackgroundScheduler(timezone=TZ)
 def generate_evening_debrief():
     """Generate a 7 PM evening debrief summarizing the day."""
     with _briefing_lock:
-        cfg = get_config()
-        api_key = cfg.get("anthropic_api_key", "")
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
+            log.warning("Evening debrief: ANTHROPIC_API_KEY not set")
             return
+        cfg = get_config()
         name = cfg.get("name", "Finn")
         conn = get_db()
         cur = conn.cursor()
