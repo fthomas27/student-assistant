@@ -1253,8 +1253,10 @@ function isDebriefFromToday(genIso) {
 function updateDebriefFromApi(d) {
   var deb = (d && d.debrief) ? String(d.debrief).trim() : '';
   var gen = d && d.debrief_generated_at ? d.debrief_generated_at : null;
-  cachedDebrief.text = deb;
-  cachedDebrief.generatedAt = gen;
+  if (deb) {
+    cachedDebrief.text = deb;
+    cachedDebrief.generatedAt = gen;
+  }
   renderDebriefPill();
   maybeBrowserNotifyDebrief(gen, deb);
 }
@@ -1266,29 +1268,38 @@ function renderDebriefPill() {
   var deb = cachedDebrief.text;
   var gen = cachedDebrief.generatedAt;
 
-  // Only show debrief if it exists and is from today
-  if (!deb || !isDebriefFromToday(gen)) return;
-
-  // Hide debrief after 7:30 PM
+  // Check if we're in the debrief window (6:30 PM - 7:30 PM)
   var now = new Date();
+  var debriefStartTime = new Date(now);
+  debriefStartTime.setHours(18, 30, 0, 0); // 6:30 PM
   var debriefEndTime = new Date(now);
   debriefEndTime.setHours(19, 30, 0, 0); // 7:30 PM
-  if (now > debriefEndTime) return;
+  var inDebriefWindow = now >= debriefStartTime && now < debriefEndTime;
 
-  try {
-    if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
-  } catch (e) {}
+  // If we have today's debrief and are in window, show it
+  if (deb && isDebriefFromToday(gen) && inDebriefWindow) {
+    try {
+      if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
+    } catch (e) {}
 
-  var when = gen ? formatRelative(gen) : '';
-  var permHint = '';
-  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    permHint = '<br><span style="font-size:12px;color:var(--text3)">Tip: allow notifications in your browser to get pinged when the debrief is ready.</span>';
+    var when = gen ? formatRelative(gen) : '';
+    var permHint = '';
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      permHint = '<br><span style="font-size:12px;color:var(--text3)">Tip: allow notifications in your browser to get pinged when the debrief is ready.</span>';
+    }
+    slot.innerHTML =
+      '<div class="notif-row debrief-notif" role="button" tabindex="0" onclick="openDebriefSheet()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDebriefSheet();}">' +
+      '<span class="notif-icon">&#127961;</span>' +
+      '<div class="notif-text"><span class="notif-title">Daily debrief ready · Submit now!</span><br>' +
+      '<span style="color:var(--text3)">Tap to read and review today' + (when ? ' · Generated ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
+  } else if (inDebriefWindow && !deb) {
+    // In debrief window but no debrief yet - show loading/waiting state
+    slot.innerHTML =
+      '<div class="notif-row debrief-notif" style="opacity:0.7">' +
+      '<span class="notif-icon">⏳</span>' +
+      '<div class="notif-text"><span class="notif-title">Daily debrief loading...</span><br>' +
+      '<span style="color:var(--text3)">Fetching your debrief summary</span></div></div>';
   }
-  slot.innerHTML =
-    '<div class="notif-row debrief-notif" role="button" tabindex="0" onclick="openDebriefSheet()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDebriefSheet();}">' +
-    '<span class="notif-icon">&#127961;</span>' +
-    '<div class="notif-text"><span class="notif-title">Daily debrief ready · Submit now!</span><br>' +
-    '<span style="color:var(--text3)">Tap to read and review today' + (when ? ' · Generated ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
 }
 
 function openDebriefSheet() {
