@@ -2186,8 +2186,8 @@ def api_projects_create():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-INSERT INTO projects (title, description, status, lead, members, checkin_interval_days, completion_pct)
-VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+INSERT INTO projects (title, description, status, lead, members, checkin_interval_days, completion_pct, last_checkin)
+VALUES (%s, %s, %s, %s, %s, %s, %s, NOW()) RETURNING id""",
                 (title, str(data.get("description", ""))[:2000],
                  str(data.get("status", "active")),
                  str(data.get("lead", ""))[:200],
