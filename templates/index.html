@@ -256,23 +256,28 @@ display: flex; align-items: flex-start; gap: 10px;
 /* ── ASSIGNMENT CARDS ── */
 .asgn-card {
 background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r);
-padding: 14px 16px;
-margin-bottom: 10px;
-transition: transform 0.2s, border-color 0.2s;
+border: 1px solid rgba(0,0,0,0.06);
+border-radius: 14px;
+padding: 16px 18px;
+margin-bottom: 12px;
+transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 position: relative; overflow: hidden;
 cursor: pointer;
+box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.asgn-card:active {
+transform: scale(0.99);
+box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 .asgn-card::before {
 content: '';
-position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-border-radius: 3px 0 0 3px;
+position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+border-radius: 4px 0 0 4px;
 }
 .asgn-card.urgency-high::before { background: var(--red); }
 .asgn-card.urgency-medium::before { background: var(--amber); }
 .asgn-card.urgency-low::before { background: var(--green); }
-.asgn-card.active-timer { border-color: rgba(0,82,204,0.4); background: rgba(0,82,204,0.06); }
+.asgn-card.active-timer { border-color: rgba(0,82,204,0.3); background: rgba(0,82,204,0.08); }
 .asgn-card.completing { animation: fadeSlide 0.5s ease forwards; }
 @keyframes fadeSlide {
 0% { opacity: 1; transform: scale(1); }
@@ -555,24 +560,27 @@ background: none; border: none; color: var(--text3); font-size: 16px; cursor: po
 
 /* ── DIALOG ── */
 .dialog-overlay {
-position: fixed; inset: 0; background: rgba(0,0,0,0.3);
+position: fixed; inset: 0; background: rgba(0,0,0,0.4);
 z-index: 200; display: flex; align-items: center; justify-content: center;
 padding: 24px; opacity: 0; pointer-events: none;
-transition: opacity 0.2s; backdrop-filter: blur(6px);
+transition: opacity 0.2s; backdrop-filter: blur(10px);
 }
 .dialog-overlay.open { opacity: 1; pointer-events: all; }
 .dialog-box {
-background: var(--surface); border: 1px solid var(--border2);
-border-radius: 20px; padding: 26px 22px 20px;
+background: var(--bg); border: 1px solid rgba(0,0,0,0.06);
+border-radius: 24px; padding: 28px 24px 22px;
 width: 100%; max-width: 320px; text-align: center;
-transform: scale(0.92); transition: transform 0.2s;
+transform: scale(0.92); transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+box-shadow: 0 20px 60px rgba(0,0,0,0.15);
 }
 .dialog-overlay.open .dialog-box { transform: scale(1); }
-.dialog-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--text); margin-bottom: 8px; }
-.dialog-sub { font-size: 15px; color: var(--text); margin-bottom: 22px; line-height: 1.5; }
-.dialog-actions { display: flex; gap: 10px; }
-.btn-dialog-cancel { flex: 1; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 12px; border: 1px solid var(--border2); background: var(--surface2); color: var(--text); cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
-.btn-dialog-confirm { flex: 1; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+.dialog-title { font-family: 'DM Serif Display', serif; font-size: 24px; color: var(--text); margin-bottom: 10px; letter-spacing: -0.01em; }
+.dialog-sub { font-size: 15px; color: var(--text2); margin-bottom: 24px; line-height: 1.5; }
+.dialog-actions { display: flex; gap: 12px; }
+.btn-dialog-cancel { flex: 1; padding: 14px; font-size: 15px; font-weight: 600; border-radius: 12px; border: 1px solid rgba(0,0,0,0.08); background: var(--surface); color: var(--text); cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; transition: all 0.2s; }
+.btn-dialog-cancel:active { background: var(--surface2); }
+.btn-dialog-confirm { flex: 1; padding: 14px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,82,204,0.2); }
+.btn-dialog-confirm:active { box-shadow: 0 4px 12px rgba(0,82,204,0.3); }
 
 /* ── EMPTY STATE ── */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; text-align: center; gap: 8px; }
