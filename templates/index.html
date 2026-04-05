@@ -2849,6 +2849,7 @@ function loadCalendar() {
           var evtData = isClickable ? encodeURIComponent(JSON.stringify({
             title: e.title, source: e.source, all_day: e.all_day,
             start_display: e.start_display, end_display: e.end_display,
+            start_iso: e.start_iso || '',
             location: e.location || '', notes: e.notes || ''
           })) : '';
           html += '<div class="week-event' + (isClickable ? '" onclick="openCalEventDetail(\'' + evtData + '\')" style="cursor:pointer' : '') + '">' +
