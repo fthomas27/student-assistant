@@ -44,22 +44,26 @@ height: 100dvh;
 overflow: hidden;
 display: flex;
 flex-direction: column;
+font-weight: 400;
+letter-spacing: -0.003em;
+-webkit-font-smoothing: antialiased;
 }
 
 /* ── HEADER ── */
 .header {
 height: var(--header-h);
-background: rgba(255,255,255,0.95);
-backdrop-filter: blur(24px);
--webkit-backdrop-filter: blur(24px);
-border-bottom: 1px solid var(--border);
+background: rgba(255,255,255,0.98);
+backdrop-filter: blur(32px);
+-webkit-backdrop-filter: blur(32px);
+border-bottom: 1px solid rgba(0,0,0,0.05);
 display: flex;
 align-items: center;
 justify-content: space-between;
-padding: 0 20px;
+padding: 0 24px;
 flex-shrink: 0;
 position: relative;
 z-index: 10;
+box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 
 .header-left { display: flex; flex-direction: column; }
@@ -118,36 +122,47 @@ font-size: 13px; color: var(--text); padding: 8px 0; border-bottom: 1px solid va
 /* ── TAB BAR ── */
 .tab-bar {
 height: var(--tab-h);
-background: rgba(255,255,255,0.95);
-backdrop-filter: blur(24px);
--webkit-backdrop-filter: blur(24px);
-border-top: 1px solid var(--border);
+background: rgba(255,255,255,0.98);
+backdrop-filter: blur(32px);
+-webkit-backdrop-filter: blur(32px);
+border-top: 1px solid rgba(0,0,0,0.05);
 display: flex; align-items: center; justify-content: space-around;
 flex-shrink: 0;
 padding-bottom: env(safe-area-inset-bottom, 0px);
+box-shadow: 0 -1px 3px rgba(0,0,0,0.04);
 }
 .tab-item {
-display: flex; flex-direction: column; align-items: center; gap: 4px;
-cursor: pointer; padding: 6px 12px;
+display: flex; flex-direction: column; align-items: center; gap: 5px;
+cursor: pointer; padding: 8px 14px;
 border: none; background: none;
 -webkit-tap-highlight-color: transparent;
+transition: all 0.2s;
+border-radius: 12px;
 }
-.tab-icon { font-size: 22px; line-height: 1; transition: transform 0.2s; filter: grayscale(1) opacity(0.4); }
+.tab-item:active { background: rgba(0,0,0,0.04); }
+.tab-icon { font-size: 22px; line-height: 1; transition: all 0.2s; filter: grayscale(1) opacity(0.45); }
 .tab-item.active .tab-icon { filter: none; transform: scale(1.1); }
-.tab-label { font-size: 10px; font-weight: 500; color: var(--text2); letter-spacing: 0.04em; text-transform: uppercase; transition: color 0.15s; }
-.tab-item.active .tab-label { color: #0052cc; }
+.tab-label { font-size: 10px; font-weight: 600; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; transition: color 0.15s; }
+.tab-item.active .tab-label { color: #0052cc; font-weight: 700; }
 
 /* ── CARDS ── */
 .card {
 background: var(--surface);
-border: 1px solid var(--border);
+border: 1px solid rgba(0,0,0,0.06);
 border-radius: var(--r);
-padding: 16px;
-margin-bottom: 12px;
+padding: 18px;
+margin-bottom: 14px;
+box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+transition: box-shadow 0.2s, transform 0.2s;
+}
+.card:active {
+transform: scale(0.99);
+box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 .card-title {
-font-size: 12px; font-weight: 600; color: #0052cc;
-text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 12px;
+font-size: 11px; font-weight: 700; color: #0052cc;
+text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 14px;
+opacity: 0.85;
 }
 
 /* ── SECTION LABEL ── */
@@ -241,23 +256,28 @@ display: flex; align-items: flex-start; gap: 10px;
 /* ── ASSIGNMENT CARDS ── */
 .asgn-card {
 background: var(--surface);
-border: 1px solid var(--border);
-border-radius: var(--r);
-padding: 14px 16px;
-margin-bottom: 10px;
-transition: transform 0.2s, border-color 0.2s;
+border: 1px solid rgba(0,0,0,0.06);
+border-radius: 14px;
+padding: 16px 18px;
+margin-bottom: 12px;
+transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 position: relative; overflow: hidden;
 cursor: pointer;
+box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.asgn-card:active {
+transform: scale(0.99);
+box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 .asgn-card::before {
 content: '';
-position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
-border-radius: 3px 0 0 3px;
+position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+border-radius: 4px 0 0 4px;
 }
 .asgn-card.urgency-high::before { background: var(--red); }
 .asgn-card.urgency-medium::before { background: var(--amber); }
 .asgn-card.urgency-low::before { background: var(--green); }
-.asgn-card.active-timer { border-color: rgba(0,82,204,0.4); background: rgba(0,82,204,0.06); }
+.asgn-card.active-timer { border-color: rgba(0,82,204,0.3); background: rgba(0,82,204,0.08); }
 .asgn-card.completing { animation: fadeSlide 0.5s ease forwards; }
 @keyframes fadeSlide {
 0% { opacity: 1; transform: scale(1); }
@@ -288,18 +308,21 @@ padding: 3px 7px; border-radius: 20px; flex-shrink: 0; margin-top: 2px;
 
 /* ── BUTTONS ── */
 .btn {
-border: none; border-radius: var(--r-sm); font-size: 13px; font-weight: 600;
-padding: 9px 16px; cursor: pointer; font-family: 'DM Sans', sans-serif;
+border: none; border-radius: 12px; font-size: 13px; font-weight: 600;
+padding: 11px 18px; cursor: pointer; font-family: 'DM Sans', sans-serif;
 -webkit-tap-highlight-color: transparent;
-transition: opacity 0.15s, transform 0.1s;
+transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+letter-spacing: -0.003em;
 }
-.btn:active { opacity: 0.7; transform: scale(0.97); }
-.btn-primary { background: var(--accent); color: #fff; flex: 1; font-size: 14px; font-weight: 600; }
-.btn-done { background: rgba(63,185,80,0.2); color: var(--green); flex: 1; border: 1px solid rgba(63,185,80,0.4); font-weight: 600; }
-.btn-pause { background: rgba(255,166,87,0.2); color: var(--amber); flex: 1; border: 1px solid rgba(255,166,87,0.4); font-weight: 600; }
-.btn-outline { background: var(--surface2); color: var(--text); flex: 1; border: 1px solid var(--border2); font-weight: 600; }
-.btn-danger { background: rgba(255,123,114,0.2); color: var(--red); border: 1px solid rgba(255,123,114,0.4); font-weight: 600; }
-.btn-gold { background: rgba(255,166,87,0.15); color: var(--gold2); border: 1px solid rgba(255,166,87,0.3); font-weight: 600; }
+.btn:active { opacity: 0.85; transform: scale(0.98); }
+.btn-primary { background: var(--accent); color: #fff; flex: 1; font-size: 14px; font-weight: 600; box-shadow: 0 2px 8px rgba(0,82,204,0.2); }
+.btn-primary:active { box-shadow: 0 4px 12px rgba(0,82,204,0.3); }
+.btn-done { background: rgba(46,125,50,0.12); color: var(--green); flex: 1; border: 1px solid rgba(46,125,50,0.3); font-weight: 600; }
+.btn-pause { background: rgba(255,152,0,0.12); color: var(--amber); flex: 1; border: 1px solid rgba(255,152,0,0.3); font-weight: 600; }
+.btn-outline { background: var(--surface); color: var(--text); flex: 1; border: 1px solid rgba(0,0,0,0.08); font-weight: 600; }
+.btn-outline:active { background: var(--surface2); }
+.btn-danger { background: rgba(211,47,47,0.12); color: var(--red); border: 1px solid rgba(211,47,47,0.3); font-weight: 600; }
+.btn-gold { background: rgba(255,152,0,0.12); color: var(--gold2); border: 1px solid rgba(255,152,0,0.3); font-weight: 600; }
 
 /* ── TIMER ── */
 .timer-section { display: none; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
@@ -412,32 +435,34 @@ border-bottom: 1px solid var(--border);
 
 /* ── DETAIL SHEET ── */
 .sheet-backdrop {
-position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+position: fixed; inset: 0; background: rgba(0,0,0,0.5);
 z-index: 100; opacity: 0; pointer-events: none;
-transition: opacity 0.3s; backdrop-filter: blur(4px);
+transition: opacity 0.3s; backdrop-filter: blur(8px);
 }
 .sheet-backdrop.open { opacity: 1; pointer-events: all; }
 
 .bottom-sheet {
 position: fixed; bottom: 0; left: 0; right: 0;
-background: var(--surface);
-border: 1px solid var(--border2);
-border-bottom: none;
-border-radius: 22px 22px 0 0;
-padding: 20px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+background: var(--bg);
+border: none;
+border-top: 1px solid rgba(0,0,0,0.06);
+border-radius: 28px 28px 0 0;
+padding: 24px 24px calc(32px + env(safe-area-inset-bottom, 0px));
 z-index: 101;
 transform: translateY(100%);
 transition: transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 max-height: 88dvh; overflow-y: auto;
+box-shadow: 0 -12px 40px rgba(0,0,0,0.08);
 }
 .bottom-sheet.open { transform: translateY(0); }
-.sheet-handle { width: 36px; height: 4px; background: var(--surface3); border-radius: 2px; margin: 0 auto 18px; }
-.sheet-title { font-family: 'DM Serif Display', serif; font-size: 22px; margin-bottom: 6px; line-height: 1.2; }
-.sheet-sub { font-size: 13px; color: var(--text3); margin-bottom: 16px; }
-.sheet-section { margin-bottom: 18px; }
+.sheet-handle { width: 40px; height: 4px; background: rgba(0,0,0,0.12); border-radius: 2px; margin: 0 auto 20px; }
+.sheet-title { font-family: 'DM Serif Display', serif; font-size: 24px; margin-bottom: 8px; line-height: 1.2; letter-spacing: -0.01em; }
+.sheet-sub { font-size: 14px; color: var(--text3); margin-bottom: 20px; }
+.sheet-section { margin-bottom: 22px; }
 .sheet-section-label {
-font-size: 10px; font-weight: 600; color: var(--text3);
-text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px;
+font-size: 11px; font-weight: 700; color: var(--text2);
+text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 10px;
+opacity: 0.85;
 }
 .sheet-body { font-size: 14px; color: var(--text2); line-height: 1.65; }
 .sheet-actions { display: flex; gap: 10px; margin-top: 20px; }
@@ -458,21 +483,24 @@ max-height: 88dvh; overflow-y: auto;
 .settings-sheet.open { transform: translateY(0); }
 .sheet-title-sm { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
 .field-group { margin-bottom: 16px; }
-.field-label { font-size: 12px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+.field-label { font-size: 11px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; opacity: 0.9; }
 .field-input {
 width: 100%;
 box-sizing: border-box;
-background: var(--surface2);
-border: 1px solid var(--border2);
-border-radius: var(--r-sm);
-padding: 12px 14px; font-size: 15px; font-family: 'DM Sans', sans-serif;
-color: var(--text); outline: none; transition: border-color 0.2s;
+background: var(--surface);
+border: 1px solid rgba(0,0,0,0.08);
+border-radius: 12px;
+padding: 13px 16px; font-size: 15px; font-family: 'DM Sans', sans-serif;
+color: var(--text); outline: none; transition: all 0.2s;
 }
-.field-input:focus { border-color: var(--accent); }
+.field-input:hover { border-color: rgba(0,0,0,0.12); }
+.field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,82,204,0.1); }
 .save-btn {
 width: 100%; box-sizing: border-box; background: var(--accent); color: #fff; border: none;
-border-radius: var(--r-sm); padding: 14px; font-size: 15px; font-weight: 600;
-cursor: pointer; margin-top: 8px; font-family: 'DM Sans', sans-serif;
+border-radius: 12px; padding: 15px; font-size: 15px; font-weight: 600;
+cursor: pointer; margin-top: 12px; font-family: 'DM Sans', sans-serif;
+transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+box-shadow: 0 2px 8px rgba(0,82,204,0.2);
 -webkit-tap-highlight-color: transparent; transition: opacity 0.15s;
 }
 .save-btn:active { opacity: 0.8; }
@@ -532,24 +560,27 @@ background: none; border: none; color: var(--text3); font-size: 16px; cursor: po
 
 /* ── DIALOG ── */
 .dialog-overlay {
-position: fixed; inset: 0; background: rgba(0,0,0,0.3);
+position: fixed; inset: 0; background: rgba(0,0,0,0.4);
 z-index: 200; display: flex; align-items: center; justify-content: center;
 padding: 24px; opacity: 0; pointer-events: none;
-transition: opacity 0.2s; backdrop-filter: blur(6px);
+transition: opacity 0.2s; backdrop-filter: blur(10px);
 }
 .dialog-overlay.open { opacity: 1; pointer-events: all; }
 .dialog-box {
-background: var(--surface); border: 1px solid var(--border2);
-border-radius: 20px; padding: 26px 22px 20px;
+background: var(--bg); border: 1px solid rgba(0,0,0,0.06);
+border-radius: 24px; padding: 28px 24px 22px;
 width: 100%; max-width: 320px; text-align: center;
-transform: scale(0.92); transition: transform 0.2s;
+transform: scale(0.92); transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+box-shadow: 0 20px 60px rgba(0,0,0,0.15);
 }
 .dialog-overlay.open .dialog-box { transform: scale(1); }
-.dialog-title { font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--text); margin-bottom: 8px; }
-.dialog-sub { font-size: 15px; color: var(--text); margin-bottom: 22px; line-height: 1.5; }
-.dialog-actions { display: flex; gap: 10px; }
-.btn-dialog-cancel { flex: 1; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 12px; border: 1px solid var(--border2); background: var(--surface2); color: var(--text); cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
-.btn-dialog-confirm { flex: 1; padding: 13px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; }
+.dialog-title { font-family: 'DM Serif Display', serif; font-size: 24px; color: var(--text); margin-bottom: 10px; letter-spacing: -0.01em; }
+.dialog-sub { font-size: 15px; color: var(--text2); margin-bottom: 24px; line-height: 1.5; }
+.dialog-actions { display: flex; gap: 12px; }
+.btn-dialog-cancel { flex: 1; padding: 14px; font-size: 15px; font-weight: 600; border-radius: 12px; border: 1px solid rgba(0,0,0,0.08); background: var(--surface); color: var(--text); cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; transition: all 0.2s; }
+.btn-dialog-cancel:active { background: var(--surface2); }
+.btn-dialog-confirm { flex: 1; padding: 14px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,82,204,0.2); }
+.btn-dialog-confirm:active { box-shadow: 0 4px 12px rgba(0,82,204,0.3); }
 
 /* ── EMPTY STATE ── */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; text-align: center; gap: 8px; }
@@ -1040,6 +1071,14 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
     <div class="field-label">Friday email — sign-off name</div>
     <input class="field-input" id="setting-formal-name" type="text" placeholder="Finley Thomas">
   </div>
+  <div class="field-group">
+    <div class="field-label">Event Reminders</div>
+    <select class="field-input" id="setting-notification-type">
+      <option value="browser">Browser Notifications Only</option>
+      <option value="in-app">In-App Notifications Only</option>
+      <option value="both">Both Browser & In-App</option>
+    </select>
+  </div>
   <button class="save-btn" onclick="saveSettings()">Save</button>
   <div class="save-feedback" id="save-feedback"></div>
 </div>
@@ -1082,6 +1121,7 @@ var assignments = [];
 var completedToday = [];
 var activeTimer = null;
 var appTimezone = 'America/Denver';
+var notificationPreference = 'browser';
 var timerInterval = null;
 var cutoffShown = false;
 var selectedUrgency = 'medium';
@@ -1216,6 +1256,9 @@ function loadConfig() {
     if (adv) adv.value = d.weekly_recap_advisor || 'Mr. Goldberg';
     var fn = document.getElementById('setting-formal-name');
     if (fn) fn.value = d.formal_signoff_name || 'Finley Thomas';
+    var notifType = document.getElementById('setting-notification-type');
+    if (notifType) notifType.value = d.notification_type || 'browser';
+    notificationPreference = d.notification_type || 'browser';
   }).catch(function(){});
 }
 
@@ -1243,8 +1286,10 @@ function saveSettings() {
   };
   var wadv = document.getElementById('setting-weekly-advisor');
   var fname = document.getElementById('setting-formal-name');
+  var notifType = document.getElementById('setting-notification-type');
   if (wadv) payload.weekly_recap_advisor = wadv.value.trim().slice(0, 200);
   if (fname) payload.formal_signoff_name = fname.value.trim().slice(0, 200);
+  if (notifType) payload.notification_type = notifType.value;
   fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     .then(function() {
       document.getElementById('save-feedback').textContent = 'Saved!';
@@ -1449,6 +1494,23 @@ function maybeBrowserNotifyDebrief(genIso, debText) {
   } catch (e) {}
 }
 
+function showInAppNotification(title, body) {
+  var container = document.getElementById('in-app-notifications');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'in-app-notifications';
+    container.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;padding:10px;pointer-events:none;';
+    document.body.insertBefore(container, document.body.firstChild);
+  }
+  var notification = document.createElement('div');
+  notification.style.cssText = 'background:var(--accent);color:white;padding:12px 16px;border-radius:6px;margin:8px auto;max-width:600px;box-shadow:0 4px 12px rgba(0,0,0,0.15);pointer-events:auto;font-size:14px;line-height:1.4;';
+  notification.innerHTML = '<strong>' + esc(title) + '</strong><br>' + esc(body);
+  container.appendChild(notification);
+  setTimeout(function() {
+    if (notification.parentNode) notification.parentNode.removeChild(notification);
+  }, 5000);
+}
+
 function calEventReminderId(e) {
   return String(e.start_iso || '') + '::' + String(e.title || '') + '::' + String(e.source || '');
 }
@@ -1509,19 +1571,18 @@ function armCalReminderEntry(entry) {
   var delay = entry.fireAt - Date.now();
   if (delay <= 0) return;
   var id = entry.id;
-  var notifType = entry.type || 'both';
   if (window._calReminderTimers[id]) clearTimeout(window._calReminderTimers[id]);
   window._calReminderTimers[id] = setTimeout(function() {
-    // Browser notification
-    if ((notifType === 'browser' || notifType === 'both') && 'Notification' in window && Notification.permission === 'granted') {
+    // Browser notification (based on global preference)
+    if ((notificationPreference === 'browser' || notificationPreference === 'both') && 'Notification' in window && Notification.permission === 'granted') {
       var n = new Notification('In 30 min: ' + entry.title, { body: entry.subtitle || 'Event starting soon', tag: 'cal-' + id.slice(0, 80) });
       n.onclick = function() {
         window.focus();
         try { n.close(); } catch (e) {}
       };
     }
-    // Home screen notification
-    if (notifType === 'home' || notifType === 'both') {
+    // In-app/home screen notification (based on global preference)
+    if (notificationPreference === 'in-app' || notificationPreference === 'both') {
       showCalEventHomeScreenNotif(entry);
     }
     var list = getCalReminders().filter(function(x) { return x.id !== id; });
@@ -3233,21 +3294,14 @@ function openCalEventDetail(evtJson) {
     var remEntry = getCalReminders().find(function(x) { return x.id === rid; });
     if (remEntry) remType = remEntry.type || 'both';
   }
+  var notifTypeText = notificationPreference === 'browser' ? 'browser notification' :
+                      notificationPreference === 'in-app' ? 'home screen pill' : 'browser notification and home screen pill';
+  var notifNote = notificationPreference === 'browser' ? 'Keeps working if you close the app.' :
+                  notificationPreference === 'in-app' ? 'Shows a pill on the home screen.' : 'Shows both a browser notification and home screen pill.';
   html += '<div class="sheet-section" style="margin-top:12px">' +
     '<label style="display:flex;align-items:flex-start;gap:10px;cursor:' + (e.all_day ? 'default' : 'pointer') + '">' +
     '<input type="checkbox" id="notif-toggle" style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px"' + (hasRem ? ' checked' : '') + (e.all_day ? ' disabled' : '') + '>' +
-    '<span style="font-size:14px;line-height:1.45">Remind me <strong>30 minutes before</strong> this event</span></label>' +
-    '<div id="notif-type-options" style="display:' + (hasRem ? 'block' : 'none') + ';margin-top:12px;margin-left:28px;gap:8px">' +
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">How would you like to be notified?</div>' +
-    '<label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer">' +
-    '<input type="radio" name="notif-type" value="browser" style="cursor:pointer"' + (remType === 'browser' ? ' checked' : '') + '>' +
-    '<span style="font-size:13px">Browser notification (pop-up)</span></label>' +
-    '<label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer">' +
-    '<input type="radio" name="notif-type" value="home" style="cursor:pointer"' + (remType === 'home' ? ' checked' : '') + '>' +
-    '<span style="font-size:13px">Home screen pill</span></label>' +
-    '<label style="display:flex;gap:8px;align-items:center;cursor:pointer">' +
-    '<input type="radio" name="notif-type" value="both" style="cursor:pointer"' + (remType === 'both' ? ' checked' : '') + '>' +
-    '<span style="font-size:13px">Both browser and home screen</span></label></div>' +
+    '<span style="font-size:14px;line-height:1.45">Remind me <strong>30 minutes before</strong> this event (' + notifTypeText + '). ' + notifNote + '</span></label>' +
     '<div id="notif-toggle-hint" style="font-size:11px;color:var(--text3);margin-top:8px;margin-left:28px;line-height:1.4"></div></div>';
   document.getElementById('cal-event-content').innerHTML = html;
   document.getElementById('sheet-backdrop').classList.add('open');
@@ -3261,37 +3315,39 @@ function openCalEventDetail(evtJson) {
     // Create a named handler to avoid listener accumulation when modal is opened multiple times
     window._calEventNotifHandler = function() {
       var hint = document.getElementById('notif-toggle-hint');
-      var typeOptions = document.getElementById('notif-type-options');
       if (notifToggle.checked) {
-        // Show notification type options
-        if (typeOptions) typeOptions.style.display = 'block';
-        if (!('Notification' in window)) {
-          if (hint) hint.textContent = 'Notifications are not supported in this browser.';
-          notifToggle.checked = false;
-          if (typeOptions) typeOptions.style.display = 'none';
-          return;
-        }
-        Notification.requestPermission().then(function(perm) {
-          if (perm !== 'granted') {
-            if (hint) hint.textContent = 'Permission denied — enable notifications in browser settings.';
+        // Only request browser permission if using browser notifications
+        var needsBrowserPermission = notificationPreference === 'browser' || notificationPreference === 'both';
+        if (needsBrowserPermission) {
+          if (!('Notification' in window)) {
+            if (hint) hint.textContent = 'Notifications are not supported in this browser.';
             notifToggle.checked = false;
-            if (typeOptions) typeOptions.style.display = 'none';
             return;
           }
-          // Get selected notification type
-          var notifType = 'both';
-          var radioBtn = document.querySelector('input[name="notif-type"]:checked');
-          if (radioBtn) notifType = radioBtn.value;
-          var res = scheduleCalEventReminder(e, notifType);
+          Notification.requestPermission().then(function(perm) {
+            if (perm !== 'granted') {
+              if (hint) hint.textContent = 'Permission denied — enable notifications in browser settings.';
+              notifToggle.checked = false;
+              return;
+            }
+            scheduleReminder();
+          });
+        } else {
+          scheduleReminder();
+        }
+
+        function scheduleReminder() {
+          var res = scheduleCalEventReminder(e);
           if (res.error) {
             if (hint) hint.textContent = res.error;
             notifToggle.checked = false;
-            if (typeOptions) typeOptions.style.display = 'none';
           } else if (hint) {
-            var typeText = notifType === 'browser' ? 'browser notification' : notifType === 'home' ? 'home screen pill' : 'both';
-            hint.textContent = 'You will get a ' + typeText + ' 30 minutes before the start time.';
+            var msg = notificationPreference === 'browser' ? 'You will get a browser notification 30 minutes before the start time.' :
+                      notificationPreference === 'in-app' ? 'You will get a home screen pill 30 minutes before the start time.' :
+                      'You will get a browser notification and home screen pill 30 minutes before the start time.';
+            hint.textContent = msg;
           }
-        });
+        }
       } else {
         removeCalEventReminder(e);
         if (hint) hint.textContent = '';
