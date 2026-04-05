@@ -1537,7 +1537,7 @@ function restoreCalReminders() {
   list.forEach(armCalReminderEntry);
 }
 
-function scheduleCalEventReminder(e, notificationType, isUpdate) {
+function scheduleCalEventReminder(e, notificationType) {
   notificationType = notificationType || 'both';
   if (e.all_day) return { error: '30-minute reminders are not used for all-day events.' };
   var start = new Date(e.start_iso);
@@ -1550,9 +1550,7 @@ function scheduleCalEventReminder(e, notificationType, isUpdate) {
   var entry = { id: id, fireAt: fireAt, title: e.title, subtitle: subtitle, type: notificationType, event: e };
   list.push(entry);
   setCalReminders(list);
-  if (!isUpdate || !window._calReminderTimers[id]) {
-    armCalReminderEntry(entry);
-  }
+  armCalReminderEntry(entry);
   return { ok: true };
 }
 
@@ -3229,6 +3227,11 @@ function openCalEventDetail(evtJson) {
   }
   var rid = calEventReminderId(e);
   var hasRem = getCalReminders().some(function(x) { return x.id === rid; });
+  var remType = 'both';
+  if (hasRem) {
+    var remEntry = getCalReminders().find(function(x) { return x.id === rid; });
+    if (remEntry) remType = remEntry.type || 'both';
+  }
   html += '<div class="sheet-section" style="margin-top:12px">' +
     '<label style="display:flex;align-items:flex-start;gap:10px;cursor:' + (e.all_day ? 'default' : 'pointer') + '">' +
     '<input type="checkbox" id="notif-toggle" style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px"' + (hasRem ? ' checked' : '') + (e.all_day ? ' disabled' : '') + '>' +
@@ -3236,13 +3239,13 @@ function openCalEventDetail(evtJson) {
     '<div id="notif-type-options" style="display:' + (hasRem ? 'block' : 'none') + ';margin-top:12px;margin-left:28px;gap:8px">' +
     '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">How would you like to be notified?</div>' +
     '<label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer">' +
-    '<input type="radio" name="notif-type-' + rid + '" value="browser" style="cursor:pointer">' +
+    '<input type="radio" name="notif-type" value="browser" style="cursor:pointer"' + (remType === 'browser' ? ' checked' : '') + '>' +
     '<span style="font-size:13px">Browser notification (pop-up)</span></label>' +
     '<label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer">' +
-    '<input type="radio" name="notif-type-' + rid + '" value="home" style="cursor:pointer">' +
+    '<input type="radio" name="notif-type" value="home" style="cursor:pointer"' + (remType === 'home' ? ' checked' : '') + '>' +
     '<span style="font-size:13px">Home screen pill</span></label>' +
     '<label style="display:flex;gap:8px;align-items:center;cursor:pointer">' +
-    '<input type="radio" name="notif-type-' + rid + '" value="both" style="cursor:pointer" checked>' +
+    '<input type="radio" name="notif-type" value="both" style="cursor:pointer"' + (remType === 'both' ? ' checked' : '') + '>' +
     '<span style="font-size:13px">Both browser and home screen</span></label></div>' +
     '<div id="notif-toggle-hint" style="font-size:11px;color:var(--text3);margin-top:8px;margin-left:28px;line-height:1.4"></div></div>';
   document.getElementById('cal-event-content').innerHTML = html;
@@ -3276,7 +3279,7 @@ function openCalEventDetail(evtJson) {
           }
           // Get selected notification type
           var notifType = 'both';
-          var radioBtn = document.querySelector('input[name="notif-type-' + rid + '"]:checked');
+          var radioBtn = document.querySelector('input[name="notif-type"]:checked');
           if (radioBtn) notifType = radioBtn.value;
           var res = scheduleCalEventReminder(e, notifType);
           if (res.error) {
@@ -3299,13 +3302,13 @@ function openCalEventDetail(evtJson) {
     notifToggle.addEventListener('change', window._calEventNotifHandler);
 
     // Add listeners for radio buttons to update when selection changes
-    var radios = document.querySelectorAll('input[name="notif-type-' + rid + '"]');
+    var radios = document.querySelectorAll('input[name="notif-type"]');
     radios.forEach(function(radio) {
       radio.addEventListener('change', function() {
         if (notifToggle.checked) {
           var notifType = this.value;
           var hint = document.getElementById('notif-toggle-hint');
-          scheduleCalEventReminder(e, notifType, true);
+          scheduleCalEventReminder(e, notifType);
           if (hint) {
             var typeText = notifType === 'browser' ? 'browser notification' : notifType === 'home' ? 'home screen pill' : 'both';
             hint.textContent = 'You will get a ' + typeText + ' 30 minutes before the start time.';
