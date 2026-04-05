@@ -1047,6 +1047,30 @@ def api_calendar():
     return jsonify({"events": events})
 
 
+@app.route("/api/diagnostic")
+def api_diagnostic():
+    """Diagnostic endpoint to check if debrief can be generated."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    has_db = True
+    has_debrief = False
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT content FROM debrief_cache WHERE id = 1")
+        row = cur.fetchone()
+        has_debrief = bool(row and row["content"])
+        cur.close()
+        conn.close()
+    except Exception as e:
+        has_db = False
+
+    return jsonify({
+        "api_key_set": bool(api_key),
+        "database_connected": has_db,
+        "debrief_generated": has_debrief,
+        "current_time": datetime.now(TZ).isoformat()
+    })
+
 @app.route("/api/briefing")
 def api_briefing():
     conn = get_db()
