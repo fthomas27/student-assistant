@@ -1350,8 +1350,9 @@ function armCalReminderEntry(entry) {
 
 function restoreCalReminders() {
   var now = Date.now();
-  var list = getCalReminders().filter(function(entry) { return entry.fireAt > now; });
-  if (list.length !== getCalReminders().length) setCalReminders(list);
+  var allReminders = getCalReminders();
+  var list = allReminders.filter(function(entry) { return entry.fireAt > now; });
+  if (list.length !== allReminders.length) setCalReminders(list);
   list.forEach(armCalReminderEntry);
 }
 
@@ -3009,7 +3010,8 @@ function openCalEventDetail(evtJson) {
     html += '<div class="sheet-section"><div class="sheet-section-label">Notes</div><div class="sheet-body" style="white-space:pre-line;font-size:13px">' + esc(e.notes.substring(0,300)) + '</div></div>';
   }
   var rid = calEventReminderId(e);
-  var hasRem = getCalReminders().some(function(x) { return x.id === rid; });
+  var allReminders = getCalReminders();
+  var hasRem = allReminders.some(function(x) { return x.id === rid; });
   html += '<div class="sheet-section" style="margin-top:12px">' +
     '<label style="display:flex;align-items:flex-start;gap:10px;cursor:' + (e.all_day ? 'default' : 'pointer') + '">' +
     '<input type="checkbox" id="notif-toggle" style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px"' + (hasRem ? ' checked' : '') + (e.all_day ? ' disabled' : '') + '>' +
