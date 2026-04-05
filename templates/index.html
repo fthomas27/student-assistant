@@ -1302,12 +1302,12 @@ function renderDebriefPill() {
   var deb = cachedDebrief.text;
   var gen = cachedDebrief.generatedAt;
 
-  // Check if we're in the debrief window (6:30 PM - 7:30 PM)
+  // Check if we're in the debrief window (6:30 PM - 8:30 PM)
   var now = new Date();
   var debriefStartTime = new Date(now);
   debriefStartTime.setHours(18, 30, 0, 0); // 6:30 PM
   var debriefEndTime = new Date(now);
-  debriefEndTime.setHours(19, 30, 0, 0); // 7:30 PM
+  debriefEndTime.setHours(20, 30, 0, 0); // 8:30 PM
   var inDebriefWindow = now >= debriefStartTime && now < debriefEndTime;
 
   // If we have today's debrief and are in window, show it
