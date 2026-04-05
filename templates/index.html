@@ -461,6 +461,7 @@ max-height: 88dvh; overflow-y: auto;
 .field-label { font-size: 12px; font-weight: 600; color: var(--text); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
 .field-input {
 width: 100%;
+box-sizing: border-box;
 background: var(--surface2);
 border: 1px solid var(--border2);
 border-radius: var(--r-sm);
@@ -469,7 +470,7 @@ color: var(--text); outline: none; transition: border-color 0.2s;
 }
 .field-input:focus { border-color: var(--accent); }
 .save-btn {
-width: 100%; background: var(--accent); color: #fff; border: none;
+width: 100%; box-sizing: border-box; background: var(--accent); color: #fff; border: none;
 border-radius: var(--r-sm); padding: 14px; font-size: 15px; font-weight: 600;
 cursor: pointer; margin-top: 8px; font-family: 'DM Sans', sans-serif;
 -webkit-tap-highlight-color: transparent; transition: opacity 0.15s;
@@ -504,7 +505,7 @@ text-align: center; -webkit-tap-highlight-color: transparent; transition: all 0.
 .day-btn.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
 .form-actions { display: flex; gap: 8px; }
 .add-fab {
-width: 100%; background: var(--surface2); border: 1px dashed var(--border2);
+width: 100%; box-sizing: border-box; background: var(--surface2); border: 1px dashed var(--border2);
 border-radius: var(--r-sm); padding: 12px; font-size: 13px; font-weight: 500;
 color: var(--text3); cursor: pointer; font-family: 'DM Sans', sans-serif;
 -webkit-tap-highlight-color: transparent; transition: border-color 0.15s, color 0.15s;
@@ -767,6 +768,12 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
 
 <!-- ══ TAB 3: CALENDAR ══ -->
 <div class="tab-panel" id="tab-calendar">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:0 0 12px 0;margin-bottom:12px">
+    <div></div>
+    <button onclick="refreshCalendar()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--accent2);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
+      🔄 Refresh
+    </button>
+  </div>
   <div id="calendar-container">
     <div class="shimmer"></div>
     <div class="shimmer" style="width:70%"></div>
@@ -916,9 +923,40 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   <div class="sheet-handle"></div>
   <div class="sheet-title-sm" style="margin-bottom:4px">Daily debrief</div>
   <div class="sheet-sub" id="debrief-sheet-sub"></div>
-  <div class="briefing-text" id="debrief-sheet-body" style="margin-top:14px;font-size:14px"></div>
+
+  <!-- Reflection Form Section (shown before debrief) -->
+  <div id="debrief-reflection-form" style="display:none;margin-top:14px;font-size:14px">
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">How did you feel overall today?</label>
+      <input type="text" id="debrief-mood" class="field-input" placeholder="e.g., energized, neutral, tired..." style="width:100%;padding:8px;border:1px solid var(--border1);border-radius:4px;box-sizing:border-box"/>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">How productive did you feel today? (1-10)</label>
+      <input type="range" id="debrief-productivity" min="1" max="10" value="5" style="width:100%;cursor:pointer"/>
+      <div style="text-align:center;color:var(--text3);font-size:12px;margin-top:4px"><span id="debrief-productivity-value">5</span>/10</div>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">What went well today?</label>
+      <textarea id="debrief-wellgoing" class="field-input" placeholder="What did you accomplish or enjoy?" style="width:100%;padding:8px;border:1px solid var(--border1);border-radius:4px;box-sizing:border-box;min-height:80px;resize:vertical"></textarea>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">What was challenging?</label>
+      <textarea id="debrief-challenging" class="field-input" placeholder="What was hard or frustrating?" style="width:100%;padding:8px;border:1px solid var(--border1);border-radius:4px;box-sizing:border-box;min-height:80px;resize:vertical"></textarea>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">Key learnings or insights?</label>
+      <textarea id="debrief-learnings" class="field-input" placeholder="What did you learn today?" style="width:100%;padding:8px;border:1px solid var(--border1);border-radius:4px;box-sizing:border-box;min-height:80px;resize:vertical"></textarea>
+    </div>
+  </div>
+
+  <!-- Debrief Content Section (shown after reflection is submitted) -->
+  <div id="debrief-content" style="display:none;margin-top:14px;font-size:14px">
+    <div class="briefing-text" id="debrief-sheet-body"></div>
+  </div>
+
   <div class="sheet-actions" style="padding-top:16px">
-    <button class="btn btn-outline" style="width:100%" onclick="closeAllSheets()">Close</button>
+    <button id="debrief-submit-btn" class="btn" style="width:100%;display:none" onclick="submitDebriefReflection()">Review Debrief</button>
+    <button id="debrief-close-btn" class="btn btn-outline" style="width:100%;display:none" onclick="closeAllSheets()">Close</button>
   </div>
 </div>
 
@@ -1246,8 +1284,10 @@ function isDebriefFromToday(genIso) {
 function updateDebriefFromApi(d) {
   var deb = (d && d.debrief) ? String(d.debrief).trim() : '';
   var gen = d && d.debrief_generated_at ? d.debrief_generated_at : null;
-  cachedDebrief.text = deb;
-  cachedDebrief.generatedAt = gen;
+  if (deb) {
+    cachedDebrief.text = deb;
+    cachedDebrief.generatedAt = gen;
+  }
   renderDebriefPill();
   maybeBrowserNotifyDebrief(gen, deb);
 }
@@ -1258,32 +1298,134 @@ function renderDebriefPill() {
   slot.innerHTML = '';
   var deb = cachedDebrief.text;
   var gen = cachedDebrief.generatedAt;
-  if (!deb || !isDebriefFromToday(gen)) return;
-  try {
-    if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
-  } catch (e) {}
-  var when = gen ? formatRelative(gen) : '';
-  var permHint = '';
-  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-    permHint = '<br><span style="font-size:12px;color:var(--text3)">Tip: allow notifications in your browser to get pinged when the debrief is ready.</span>';
+
+  // Check if we're in the debrief window (6:30 PM - 8:30 PM)
+  var now = new Date();
+  var debriefStartTime = new Date(now);
+  debriefStartTime.setHours(18, 30, 0, 0); // 6:30 PM
+  var debriefEndTime = new Date(now);
+  debriefEndTime.setHours(20, 30, 0, 0); // 8:30 PM
+  var inDebriefWindow = now >= debriefStartTime && now < debriefEndTime;
+
+  // If we have today's debrief and are in window, show it
+  if (deb && isDebriefFromToday(gen) && inDebriefWindow) {
+    try {
+      if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
+    } catch (e) {}
+
+    var when = gen ? formatRelative(gen) : '';
+    var permHint = '';
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      permHint = '<br><span style="font-size:12px;color:var(--text3)">Tip: allow notifications in your browser to get pinged when the debrief is ready.</span>';
+    }
+    slot.innerHTML =
+      '<div class="notif-row debrief-notif" role="button" tabindex="0" onclick="openDebriefSheet()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDebriefSheet();}">' +
+      '<span class="notif-icon">&#127961;</span>' +
+      '<div class="notif-text"><span class="notif-title">Daily debrief ready · Submit now!</span><br>' +
+      '<span style="color:var(--text3)">Tap to read and review today' + (when ? ' · Generated ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
+  } else if (inDebriefWindow && !deb) {
+    // In debrief window but no debrief yet - show loading/waiting state
+    slot.innerHTML =
+      '<div class="notif-row debrief-notif" style="opacity:0.7">' +
+      '<span class="notif-icon">⏳</span>' +
+      '<div class="notif-text"><span class="notif-title">Daily debrief loading...</span><br>' +
+      '<span style="color:var(--text3)">Fetching your debrief summary</span></div></div>';
   }
-  slot.innerHTML =
-    '<div class="notif-row debrief-notif" role="button" tabindex="0" onclick="openDebriefSheet()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDebriefSheet();}">' +
-    '<span class="notif-icon">&#127961;</span>' +
-    '<div class="notif-text"><span class="notif-title">Daily debrief</span><br>' +
-    '<span style="color:var(--text3)">Tap to read what happened today' + (when ? ' · ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
 }
 
 function openDebriefSheet() {
   if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
     Notification.requestPermission();
   }
-  var body = document.getElementById('debrief-sheet-body');
+
   var sub = document.getElementById('debrief-sheet-sub');
-  if (body) body.innerHTML = cachedDebrief.text ? renderMarkdown(cachedDebrief.text, false) : '<span style="color:var(--text3)">No debrief yet. It is generated around 7:00 PM.</span>';
-  if (sub) sub.textContent = cachedDebrief.generatedAt ? 'Generated ' + formatRelative(cachedDebrief.generatedAt) : '';
+  var body = document.getElementById('debrief-sheet-body');
+  var reflectionForm = document.getElementById('debrief-reflection-form');
+  var debriefContent = document.getElementById('debrief-content');
+  var submitBtn = document.getElementById('debrief-submit-btn');
+  var closeBtn = document.getElementById('debrief-close-btn');
+
+  // Check if reflection has been submitted for today
+  var today = localDateKey(new Date());
+  var reflectionKey = 'debrief_reflection_' + today;
+  var hasReflection = false;
+  try {
+    hasReflection = !!localStorage.getItem(reflectionKey);
+  } catch (e) {}
+
+  if (hasReflection) {
+    // Show debrief, hide form
+    if (body) body.innerHTML = cachedDebrief.text ? renderMarkdown(cachedDebrief.text, false) : '<span style="color:var(--text3)">No debrief yet. It is generated around 7:00 PM.</span>';
+    if (sub) sub.textContent = cachedDebrief.generatedAt ? 'Generated ' + formatRelative(cachedDebrief.generatedAt) : '';
+    reflectionForm.style.display = 'none';
+    debriefContent.style.display = 'block';
+    submitBtn.style.display = 'none';
+    closeBtn.style.display = 'block';
+  } else {
+    // Show form, hide debrief
+    reflectionForm.style.display = 'block';
+    debriefContent.style.display = 'none';
+    submitBtn.style.display = 'block';
+    closeBtn.style.display = 'none';
+    if (sub) sub.textContent = 'Answer these questions to continue';
+
+    // Setup productivity slider listener
+    var slider = document.getElementById('debrief-productivity');
+    if (slider) {
+      slider.oninput = function() {
+        document.getElementById('debrief-productivity-value').textContent = this.value;
+      };
+    }
+  }
+
   document.getElementById('sheet-backdrop').classList.add('open');
   document.getElementById('debrief-sheet').classList.add('open');
+}
+
+function submitDebriefReflection() {
+  var mood = document.getElementById('debrief-mood').value.trim();
+  var productivity = document.getElementById('debrief-productivity').value;
+  var wellgoing = document.getElementById('debrief-wellgoing').value.trim();
+  var challenging = document.getElementById('debrief-challenging').value.trim();
+  var learnings = document.getElementById('debrief-learnings').value.trim();
+
+  if (!mood || !wellgoing) {
+    alert('Please fill in at least your mood and what went well.');
+    return;
+  }
+
+  // Save reflection to localStorage
+  var today = localDateKey(new Date());
+  var reflectionKey = 'debrief_reflection_' + today;
+  var reflectionData = {
+    mood: mood,
+    productivity: parseInt(productivity),
+    wellgoing: wellgoing,
+    challenging: challenging,
+    learnings: learnings,
+    submittedAt: new Date().toISOString()
+  };
+  try {
+    localStorage.setItem(reflectionKey, JSON.stringify(reflectionData));
+  } catch (e) {
+    console.error('Failed to save reflection:', e);
+  }
+
+  // Now show the debrief
+  var reflectionForm = document.getElementById('debrief-reflection-form');
+  var debriefContent = document.getElementById('debrief-content');
+  var submitBtn = document.getElementById('debrief-submit-btn');
+  var closeBtn = document.getElementById('debrief-close-btn');
+  var body = document.getElementById('debrief-sheet-body');
+  var sub = document.getElementById('debrief-sheet-sub');
+
+  if (body) body.innerHTML = cachedDebrief.text ? renderMarkdown(cachedDebrief.text, false) : '<span style="color:var(--text3)">No debrief yet. It is generated around 7:00 PM.</span>';
+  if (sub) sub.textContent = cachedDebrief.generatedAt ? 'Generated ' + formatRelative(cachedDebrief.generatedAt) : '';
+
+  reflectionForm.style.display = 'none';
+  debriefContent.style.display = 'block';
+  submitBtn.style.display = 'none';
+  closeBtn.style.display = 'block';
 }
 
 function maybeBrowserNotifyDebrief(genIso, debText) {
@@ -1328,19 +1470,59 @@ function setCalReminders(arr) {
   } catch (err) {}
 }
 
+function showCalEventHomeScreenNotif(entry) {
+  var slot = document.getElementById('notif-slot');
+  if (!slot) return;
+  var notifId = 'cal-notif-' + Math.random().toString(36).substr(2, 9);
+  var notifHtml = '<div class="notif-row cal-event-notif" id="' + notifId + '" role="button" tabindex="0" style="cursor:pointer">' +
+    '<span class="notif-icon">📅</span>' +
+    '<div class="notif-text"><span class="notif-title">In 30 min: ' + esc(entry.title) + '</span><br>' +
+    '<span style="color:var(--text3)">' + esc(entry.subtitle || 'Event starting soon') + '</span></div></div>';
+  // Find or create the calendar notifications container
+  var existing = slot.querySelector('.cal-event-notif');
+  if (existing) {
+    existing.outerHTML = notifHtml;
+  } else {
+    slot.insertAdjacentHTML('beforeend', notifHtml);
+  }
+
+  // Add click handler to show event details
+  setTimeout(function() {
+    var notifEl = document.getElementById(notifId);
+    if (notifEl && entry.event) {
+      var eventJson = encodeURIComponent(JSON.stringify(entry.event));
+      notifEl.onclick = function() {
+        openCalEventDetail(eventJson);
+      };
+      notifEl.onkeydown = function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openCalEventDetail(eventJson);
+        }
+      };
+    }
+  }, 0);
+}
+
 function armCalReminderEntry(entry) {
   if (!entry || entry.fireAt == null) return;
   var delay = entry.fireAt - Date.now();
   if (delay <= 0) return;
   var id = entry.id;
+  var notifType = entry.type || 'both';
   if (window._calReminderTimers[id]) clearTimeout(window._calReminderTimers[id]);
   window._calReminderTimers[id] = setTimeout(function() {
-    if ('Notification' in window && Notification.permission === 'granted') {
+    // Browser notification
+    if ((notifType === 'browser' || notifType === 'both') && 'Notification' in window && Notification.permission === 'granted') {
       var n = new Notification('In 30 min: ' + entry.title, { body: entry.subtitle || 'Event starting soon', tag: 'cal-' + id.slice(0, 80) });
       n.onclick = function() {
         window.focus();
         try { n.close(); } catch (e) {}
       };
+    }
+    // Home screen notification
+    if (notifType === 'home' || notifType === 'both') {
+      showCalEventHomeScreenNotif(entry);
     }
     var list = getCalReminders().filter(function(x) { return x.id !== id; });
     setCalReminders(list);
@@ -1356,7 +1538,8 @@ function restoreCalReminders() {
   list.forEach(armCalReminderEntry);
 }
 
-function scheduleCalEventReminder(e) {
+function scheduleCalEventReminder(e, notificationType) {
+  notificationType = notificationType || 'both';
   if (e.all_day) return { error: '30-minute reminders are not used for all-day events.' };
   var start = new Date(e.start_iso);
   if (isNaN(start.getTime())) return { error: 'Could not read this event start time.' };
@@ -1365,9 +1548,10 @@ function scheduleCalEventReminder(e) {
   var id = calEventReminderId(e);
   var list = getCalReminders().filter(function(x) { return x.id !== id; });
   var subtitle = (e.start_display || '') + (e.location ? ' · ' + e.location : '');
-  list.push({ id: id, fireAt: fireAt, title: e.title, subtitle: subtitle });
+  var entry = { id: id, fireAt: fireAt, title: e.title, subtitle: subtitle, type: notificationType, event: e };
+  list.push(entry);
   setCalReminders(list);
-  armCalReminderEntry(list[list.length - 1]);
+  armCalReminderEntry(entry);
   return { ok: true };
 }
 
@@ -1450,6 +1634,11 @@ function getDateInTimezone(date, tzName) {
   var month = parts.find(p => p.type === 'month').value;
   var day = parts.find(p => p.type === 'day').value;
   return new Date(year + '-' + month + '-' + day);
+}
+
+function isQuizOrTest(title) {
+  var t = (title || '').toLowerCase();
+  return t.includes('quiz') || t.includes('test');
 }
 
 function getPriorityLabel(a) {
@@ -1573,10 +1762,13 @@ function buildAsgnCard(a, isActive) {
     'style="padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--surface3);color:var(--accent2);font-size:11px;font-weight:600;cursor:pointer">Save</button>' +
     '</div>';
 
+  var isQuiz = isQuizOrTest(a.title);
   var sideButtons = isActive ? '' :
     '<div class="asgn-card-btns" onclick="event.stopPropagation()">' +
-    '<button class="btn btn-primary" onclick="startTimer(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Start</button>' +
-    '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Done</button>' +
+    (isQuiz
+      ? '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',0)">Taken</button>'
+      : '<button class="btn btn-primary" onclick="startTimer(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Start</button>' +
+        '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Done</button>') +
     '</div>';
 
   return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + uid + '" onclick="openAsgnDetail(\'' + uid + '\')">' +
@@ -1631,7 +1823,7 @@ function openAsgnDetail(uid) {
     '<div class="sheet-section-label">Due</div>' +
     '<div class="sheet-body">' + esc(a.due_display || '') + '</div>' +
     '</div>' +
-    '<div class="sheet-section">' +
+    '<div class="sheet-section" id="estimate-section" style="' + (isQuizOrTest(a.title) ? 'display:none' : '') + '">' +
     '<div class="sheet-section-label">Time Estimate</div>' +
     '<div style="display:flex;align-items:center;gap:8px;margin-top:4px">' +
     '<input type="number" id="estimate-input" value="' + estVal + '" min="1" max="600" style="width:72px;padding:6px 8px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:15px;font-weight:600;text-align:center">' +
@@ -1642,31 +1834,38 @@ function openAsgnDetail(uid) {
     (a.description ? '<div class="sheet-section"><div class="sheet-section-label">Details</div><div class="sheet-body">' + esc(a.description) + '</div></div>' : '');
 
   actions.innerHTML =
-    '<button class="btn btn-primary" onclick="startTimerFromDetail()">Start Timer</button>' +
-    '<button class="btn btn-done" onclick="markDoneFromDetail()">Mark Done</button>';
+    (isQuizOrTest(a.title)
+      ? '<button class="btn btn-done" onclick="markDoneFromDetail()">Mark as Taken</button>'
+      : '<button class="btn btn-primary" onclick="startTimerFromDetail()">Start Timer</button>' +
+        '<button class="btn btn-done" onclick="markDoneFromDetail()">Mark Done</button>');
 
   document.getElementById('sheet-backdrop').classList.add('open');
   document.getElementById('asgn-detail-sheet').classList.add('open');
 
-  // Save estimate when user changes the input
-  // Create a named handler to avoid listener accumulation when sheet is opened multiple times
+  // Save estimate when user changes the input (only for non-quizzes)
   var estimateInput = document.getElementById('estimate-input');
-  window._estimateChangeHandler = function() {
-    var mins = parseFloat(estimateInput.value);
-    if (isNaN(mins) || mins < 1) return;
-    fetch('/api/assignments/' + encodeURIComponent(a.uid) + '/estimate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ minutes: mins })
-    }).then(function() {
-      a.estimate_minutes = mins;
-      a.estimate_custom = true;
-      document.getElementById('estimate-tag').textContent = '(your estimate)';
-    });
-  };
-  // Remove existing listener to prevent accumulation
-  estimateInput.removeEventListener('change', window._estimateChangeHandler);
-  estimateInput.addEventListener('change', window._estimateChangeHandler);
+  if (estimateInput) {
+    window._estimateChangeHandler = function() {
+      var mins = parseFloat(estimateInput.value);
+      if (isNaN(mins) || mins < 1) return;
+      fetch('/api/assignments/' + encodeURIComponent(a.uid) + '/estimate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minutes: mins })
+      }).then(function(r) {
+        if (!r.ok) throw new Error('Failed to save estimate');
+        return r.json();
+      }).then(function() {
+        a.estimate_minutes = mins;
+        a.estimate_custom = true;
+        document.getElementById('estimate-tag').textContent = '(your estimate)';
+      }).catch(function(err) {
+        console.error('Error saving estimate:', err);
+      });
+    };
+    // Note: removeEventListener is not needed here since estimateInput is a newly created element
+    estimateInput.addEventListener('change', window._estimateChangeHandler);
+  }
 }
 
 function startTimerFromDetail() {
@@ -2368,7 +2567,13 @@ function openProjectDetail(id) {
   var p = allProjects.find(function(x) { return x.id === id; });
   if (!p) return;
 
-  var membersStr = [p.lead ? '👑 ' + p.lead : '', p.members].filter(Boolean).join(', ');
+  var teamContent = '';
+  if (p.lead || p.members) {
+    var teamLines = '';
+    if (p.lead) teamLines += '<div><strong>Lead:</strong> ' + esc(p.lead) + '</div>';
+    if (p.members) teamLines += '<div><strong>Others assigned:</strong> ' + esc(p.members) + '</div>';
+    teamContent = '<div class="sheet-section"><div class="sheet-body">' + teamLines + '</div></div>';
+  }
 
   var content = '<div class="sheet-title">' + esc(p.title) + '</div>' +
     '<div class="sheet-sub">' + esc(p.description || '') + '</div>' +
@@ -2378,8 +2583,7 @@ function openProjectDetail(id) {
     (p.status === 'done' ? '<span style="font-size:12px;color:var(--text3)">Marked complete — still here until you delete it.</span>' : '') +
     '</div>' +
 
-    '<div class="sheet-section"><div class="sheet-section-label">Team</div>' +
-    '<div class="sheet-body">' + esc(membersStr || 'Not set') + '</div></div>' +
+    teamContent +
 
     '<div class="sheet-section">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
@@ -2823,6 +3027,7 @@ function loadCalendar() {
           var evtData = isClickable ? encodeURIComponent(JSON.stringify({
             title: e.title, source: e.source, all_day: e.all_day,
             start_display: e.start_display, end_display: e.end_display,
+            start_iso: e.start_iso || '',
             location: e.location || '', notes: e.notes || ''
           })) : '';
           html += '<div class="week-event' + (isClickable ? '" onclick="openCalEventDetail(\'' + evtData + '\')" style="cursor:pointer' : '') + '">' +
@@ -2839,6 +3044,18 @@ function loadCalendar() {
   }).catch(function() {
     document.getElementById('calendar-container').innerHTML = '<div class="empty-state"><div class="empty-emoji">⚠</div><div class="empty-title">Could not load calendar</div></div>';
   });
+}
+
+function refreshCalendar() {
+  var btn = event.target.closest('button');
+  var originalText = btn.innerHTML;
+  btn.innerHTML = '⏳ Loading...';
+  btn.disabled = true;
+  loadCalendar();
+  setTimeout(function() {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }, 1000);
 }
 
 // ══════════════════════════════════════════
@@ -3010,12 +3227,27 @@ function openCalEventDetail(evtJson) {
     html += '<div class="sheet-section"><div class="sheet-section-label">Notes</div><div class="sheet-body" style="white-space:pre-line;font-size:13px">' + esc(e.notes.substring(0,300)) + '</div></div>';
   }
   var rid = calEventReminderId(e);
-  var allReminders = getCalReminders();
-  var hasRem = allReminders.some(function(x) { return x.id === rid; });
+  var hasRem = getCalReminders().some(function(x) { return x.id === rid; });
+  var remType = 'both';
+  if (hasRem) {
+    var remEntry = getCalReminders().find(function(x) { return x.id === rid; });
+    if (remEntry) remType = remEntry.type || 'both';
+  }
   html += '<div class="sheet-section" style="margin-top:12px">' +
     '<label style="display:flex;align-items:flex-start;gap:10px;cursor:' + (e.all_day ? 'default' : 'pointer') + '">' +
     '<input type="checkbox" id="notif-toggle" style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px"' + (hasRem ? ' checked' : '') + (e.all_day ? ' disabled' : '') + '>' +
-    '<span style="font-size:14px;line-height:1.45">Remind me <strong>30 minutes before</strong> this event (browser notification). Keeps working if you leave this tab open.</span></label>' +
+    '<span style="font-size:14px;line-height:1.45">Remind me <strong>30 minutes before</strong> this event</span></label>' +
+    '<div id="notif-type-options" style="display:' + (hasRem ? 'block' : 'none') + ';margin-top:12px;margin-left:28px;gap:8px">' +
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">How would you like to be notified?</div>' +
+    '<label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer">' +
+    '<input type="radio" name="notif-type" value="browser" style="cursor:pointer"' + (remType === 'browser' ? ' checked' : '') + '>' +
+    '<span style="font-size:13px">Browser notification (pop-up)</span></label>' +
+    '<label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer">' +
+    '<input type="radio" name="notif-type" value="home" style="cursor:pointer"' + (remType === 'home' ? ' checked' : '') + '>' +
+    '<span style="font-size:13px">Home screen pill</span></label>' +
+    '<label style="display:flex;gap:8px;align-items:center;cursor:pointer">' +
+    '<input type="radio" name="notif-type" value="both" style="cursor:pointer"' + (remType === 'both' ? ' checked' : '') + '>' +
+    '<span style="font-size:13px">Both browser and home screen</span></label></div>' +
     '<div id="notif-toggle-hint" style="font-size:11px;color:var(--text3);margin-top:8px;margin-left:28px;line-height:1.4"></div></div>';
   document.getElementById('cal-event-content').innerHTML = html;
   document.getElementById('sheet-backdrop').classList.add('open');
@@ -3029,34 +3261,62 @@ function openCalEventDetail(evtJson) {
     // Create a named handler to avoid listener accumulation when modal is opened multiple times
     window._calEventNotifHandler = function() {
       var hint = document.getElementById('notif-toggle-hint');
+      var typeOptions = document.getElementById('notif-type-options');
       if (notifToggle.checked) {
+        // Show notification type options
+        if (typeOptions) typeOptions.style.display = 'block';
         if (!('Notification' in window)) {
           if (hint) hint.textContent = 'Notifications are not supported in this browser.';
           notifToggle.checked = false;
+          if (typeOptions) typeOptions.style.display = 'none';
           return;
         }
         Notification.requestPermission().then(function(perm) {
           if (perm !== 'granted') {
             if (hint) hint.textContent = 'Permission denied — enable notifications in browser settings.';
             notifToggle.checked = false;
+            if (typeOptions) typeOptions.style.display = 'none';
             return;
           }
-          var res = scheduleCalEventReminder(e);
+          // Get selected notification type
+          var notifType = 'both';
+          var radioBtn = document.querySelector('input[name="notif-type"]:checked');
+          if (radioBtn) notifType = radioBtn.value;
+          var res = scheduleCalEventReminder(e, notifType);
           if (res.error) {
             if (hint) hint.textContent = res.error;
             notifToggle.checked = false;
+            if (typeOptions) typeOptions.style.display = 'none';
           } else if (hint) {
-            hint.textContent = 'You will get a notification 30 minutes before the start time (keep a tab open or return before then).';
+            var typeText = notifType === 'browser' ? 'browser notification' : notifType === 'home' ? 'home screen pill' : 'both';
+            hint.textContent = 'You will get a ' + typeText + ' 30 minutes before the start time.';
           }
         });
       } else {
         removeCalEventReminder(e);
         if (hint) hint.textContent = '';
+        if (typeOptions) typeOptions.style.display = 'none';
       }
     };
     // Remove existing listener to prevent accumulation
     notifToggle.removeEventListener('change', window._calEventNotifHandler);
     notifToggle.addEventListener('change', window._calEventNotifHandler);
+
+    // Add listeners for radio buttons to update when selection changes
+    var radios = document.querySelectorAll('input[name="notif-type"]');
+    radios.forEach(function(radio) {
+      radio.addEventListener('change', function() {
+        if (notifToggle.checked) {
+          var notifType = this.value;
+          var hint = document.getElementById('notif-toggle-hint');
+          scheduleCalEventReminder(e, notifType);
+          if (hint) {
+            var typeText = notifType === 'browser' ? 'browser notification' : notifType === 'home' ? 'home screen pill' : 'both';
+            hint.textContent = 'You will get a ' + typeText + ' 30 minutes before the start time.';
+          }
+        }
+      });
+    });
   }
 }
 

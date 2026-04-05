@@ -61,10 +61,10 @@ WORKOUT_FOCUS_CYCLE = [
     ("shoulders", "Shoulders"),
 ]
 
-# ── Hardcoded calendar URLs ──────────────────────────────────────────────────
-PERSONAL_ICAL_URL = "https://p107-caldav.icloud.com/published/2/OTg1NzQ4NTY5ODU3NDg1NhsR_oH4Uc5HZPs6egZwYCgNaNoVdbGZnhTJRBFIsovYYGFTxg1u1ClSf4dPKWfDbUirJMtTPpJPtm_Zct60PgM"
-CANVAS_ICAL_URL = "https://pcsd.instructure.com/feeds/calendars/user_wC7Sn9BAtT2VtytLikpkf7f2hC8Pz90mqGLPXR9F.ics"
-SPORTS_ICAL_URL = "https://api.olliesports.com/ical/team-NgstTqqq97a7sBEoUbq1Ig89P0mFplM1.ics?accountId=rxwb8YV8yIfpjwKHxxndqXcQ3ss2"
+# ── Calendar URLs from environment variables ──────────────────────────────────
+PERSONAL_ICAL_URL = os.environ.get("PERSONAL_ICAL_URL", "")
+CANVAS_ICAL_URL = os.environ.get("CANVAS_ICAL_URL", "")
+SPORTS_ICAL_URL = os.environ.get("SPORTS_ICAL_URL", "")
 
 # ── Park City School District 2025-2026 Bell Schedule ────────────────────────
 # Red Day = shorter (A-block), White Day = longer (B-block), alternating each school day
@@ -594,10 +594,11 @@ def _is_big_work_assignment(a):
 
 def generate_briefing(force=False):
     with _briefing_lock:
-        cfg = get_config()
-        api_key = cfg.get("anthropic_api_key", "")
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
+            log.warning("Morning briefing: ANTHROPIC_API_KEY not set")
             return
+        cfg = get_config()
         name = cfg.get("name", "Finn")
         if not force:
             conn = get_db()
@@ -807,10 +808,11 @@ scheduler = BackgroundScheduler(timezone=TZ)
 def generate_evening_debrief():
     """Generate a 7 PM evening debrief summarizing the day."""
     with _briefing_lock:
-        cfg = get_config()
-        api_key = cfg.get("anthropic_api_key", "")
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
+            log.warning("Evening debrief: ANTHROPIC_API_KEY not set")
             return
+        cfg = get_config()
         name = cfg.get("name", "Finn")
         conn = get_db()
         cur = conn.cursor()
@@ -823,26 +825,54 @@ FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_
         pending_tasks = [dict(r) for r in cur.fetchall()]
         cur.close()
         conn.close()
+
+        # Calculate productivity metrics
+        total_minutes = sum(d["duration_minutes"] for d in done_today)
+        total_hours = total_minutes / 60.0
+        item_count = len(done_today)
+
+        # Build time breakdown by class
+        class_time = {}
+        for item in done_today:
+            class_name = item["class_name"]
+            duration = item["duration_minutes"]
+            class_time[class_name] = class_time.get(class_name, 0) + duration
+
+        # Build formatted text sections
+        done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
+
+        # Time breakdown by class
+        time_breakdown = "\n".join(["- %s: %.1f hours" % (cls, mins/60.0) for cls, mins in sorted(class_time.items(), key=lambda x: x[1], reverse=True)])
+
+        # Metrics section
+        metrics_text = "Items completed: %d | Total time: %.1f hours" % (item_count, total_hours)
+
         cal = fetch_ical(CANVAS_ICAL_URL)
         remaining_asgn = []
         if cal:
             all_asgn = parse_canvas_assignments(cal)
             done_titles = {d["assignment_title"] for d in done_today}
             remaining_asgn = [a for a in all_asgn if a["title"] not in done_titles]
-        done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
+
         remaining_text = "\n".join(["- %s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"]) for a in remaining_asgn[:6]]) or "None."
         tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in pending_tasks]) or "None."
         now_str = datetime.now(TZ).strftime("%A, %B %-d at %-I:%M %p")
+
         prompt = (
             "You are a sharp personal assistant for %s, a high school student in Park City, Utah.\n"
             "Current time: %s (evening debrief)\n\n"
-            "Completed Today:\n%s\n\n"
-            "Still Due (not completed):\n%s\n\n"
-            "Pending Tasks:\n%s\n\n"
-            "Write a concise evening debrief using ONLY bullet points (start each with •). "
-            "Include: what was accomplished today, what was missed/still needs doing, and a 'Tomorrow's Outlook' section. "
-            "Be direct and encouraging. No intro sentence."
-        ) % (name, now_str, done_text, remaining_text, tasks_text)
+            "TODAY'S ACCOMPLISHMENTS:\n%s\n\n"
+            "PRODUCTIVITY METRICS:\n%s\n\n"
+            "TIME BREAKDOWN BY CLASS:\n%s\n\n"
+            "STILL DUE (not completed):\n%s\n\n"
+            "PENDING TASKS:\n%s\n\n"
+            "Write a concise evening debrief using ONLY bullet points (start each with •). Include sections:\n"
+            "- Summary of accomplishments (reference the items and metrics above)\n"
+            "- What still needs doing\n"
+            "- Tomorrow's Outlook (brief forecast of what's coming)\n\n"
+            "Be direct, encouraging, and insightful. No intro sentence."
+        ) % (name, now_str, done_text, metrics_text, time_breakdown, remaining_text, tasks_text)
+
         try:
             client = anthropic.Anthropic(api_key=api_key)
             message = client.messages.create(model="claude-sonnet-4-6", max_tokens=600,
@@ -872,14 +902,14 @@ def schedule_briefing():
     scheduler.remove_all_jobs()
     scheduler.add_job(generate_briefing, "cron", hour=hour, minute=minute,
                       id="morning_briefing", replace_existing=True)
-    # Evening debrief at 7:00 PM
-    scheduler.add_job(generate_evening_debrief, "cron", hour=19, minute=0,
+    # Evening debrief at 6:30 PM
+    scheduler.add_job(generate_evening_debrief, "cron", hour=18, minute=30,
                       id="evening_debrief", replace_existing=True)
     # Process recurring tasks daily at midnight
     scheduler.add_job(_process_recurring_tasks, "cron", hour=0, minute=0,
                       id="process_recurring_tasks", replace_existing=True)
     log.info("Briefing scheduled for %02d:%02d Mountain", hour, minute)
-    log.info("Evening debrief scheduled for 19:00 Mountain")
+    log.info("Evening debrief scheduled for 18:30 Mountain")
     log.info("Recurring tasks processor scheduled for 00:00 Mountain")
 
 
@@ -1045,6 +1075,30 @@ def api_calendar():
     return jsonify({"events": events})
 
 
+@app.route("/api/diagnostic")
+def api_diagnostic():
+    """Diagnostic endpoint to check if debrief can be generated."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    has_db = True
+    has_debrief = False
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT content FROM debrief_cache WHERE id = 1")
+        row = cur.fetchone()
+        has_debrief = bool(row and row["content"])
+        cur.close()
+        conn.close()
+    except Exception as e:
+        has_db = False
+
+    return jsonify({
+        "api_key_set": bool(api_key),
+        "database_connected": has_db,
+        "debrief_generated": has_debrief,
+        "current_time": datetime.now(TZ).isoformat()
+    })
+
 @app.route("/api/briefing")
 def api_briefing():
     conn = get_db()
@@ -1080,6 +1134,12 @@ def api_briefing():
 def api_briefing_refresh():
     threading.Thread(target=generate_briefing, kwargs={"force": True}, daemon=True).start()
     return jsonify({"status": "refreshing"})
+
+@app.route("/api/debrief/generate", methods=["GET", "POST"])
+def api_debrief_generate():
+    """Manual trigger to generate debrief."""
+    threading.Thread(target=generate_evening_debrief, daemon=True).start()
+    return jsonify({"status": "generating", "message": "Debrief generation started"})
 
 
 def _workout_history_block(cur):
@@ -1159,9 +1219,9 @@ def api_workout_generate():
     if location not in ("home", "rec"):
         location = "home"
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return jsonify({"error": "Add your Anthropic API key in Settings to generate workouts."}), 500
+        return jsonify({"error": "Add your Anthropic API key in Railway environment to generate workouts."}), 500
 
     with _workout_lock:
         conn = get_db()
@@ -1291,9 +1351,9 @@ def api_workout_log_custom():
     if not user_description:
         return jsonify({"error": "Workout description required"}), 400
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return jsonify({"error": "Add your Anthropic API key in Settings to log workouts."}), 500
+        return jsonify({"error": "Add your Anthropic API key in Railway environment to log workouts."}), 500
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
@@ -1359,9 +1419,9 @@ def api_workout_regenerate():
     if log_id <= 0:
         return jsonify({"error": "log_id required"}), 400
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return jsonify({"error": "Add your Anthropic API key in Settings to regenerate workouts."}), 500
+        return jsonify({"error": "Add your Anthropic API key in Railway environment to regenerate workouts."}), 500
 
     conn = get_db()
     cur = conn.cursor()
@@ -2359,9 +2419,9 @@ def api_chat():
     data = request.get_json(force=True) or {}
     system_prompt = data.get("system", "")
     messages = data.get("messages", [])
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "") or get_config().get("anthropic_api_key", "")
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
-        return jsonify({"error": "ANTHROPIC_API_KEY not configured. Add it in Settings."}), 500
+        return jsonify({"error": "ANTHROPIC_API_KEY not configured in Railway environment."}), 500
     try:
         now_chat = datetime.now(TZ)
         system_prompt = (
@@ -2505,6 +2565,26 @@ try:
         schedule_briefing()
         scheduler.start()
         threading.Thread(target=generate_briefing, daemon=True).start()
+
+        # Ensure debrief is generated if we're in the debrief window (6:30 PM - 7:30 PM)
+        now = datetime.now(TZ)
+        debrief_start = now.replace(hour=18, minute=30, second=0, microsecond=0)
+        debrief_end = now.replace(hour=19, minute=30, second=0, microsecond=0)
+        if debrief_start <= now <= debrief_end:
+            try:
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute("SELECT content FROM debrief_cache WHERE id = 1")
+                row = cur.fetchone()
+                cur.close()
+                conn.close()
+                # If no debrief or it's empty, generate it
+                if not row or not row["content"]:
+                    threading.Thread(target=generate_evening_debrief, daemon=True).start()
+                    log.info("Debrief window detected - generating debrief on startup")
+            except Exception as e:
+                log.warning(f"Could not check debrief status: {e}")
+
         log.info("Background scheduler started")
 except Exception as e:
     log.warning(f"Background scheduler failed to start: {e}")
