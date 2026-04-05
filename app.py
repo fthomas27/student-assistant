@@ -1107,7 +1107,7 @@ def api_briefing_refresh():
     threading.Thread(target=generate_briefing, kwargs={"force": True}, daemon=True).start()
     return jsonify({"status": "refreshing"})
 
-@app.route("/api/debrief/generate", methods=["POST"])
+@app.route("/api/debrief/generate", methods=["GET", "POST"])
 def api_debrief_generate():
     """Manual trigger to generate debrief."""
     threading.Thread(target=generate_evening_debrief, daemon=True).start()
@@ -2537,6 +2537,26 @@ try:
         schedule_briefing()
         scheduler.start()
         threading.Thread(target=generate_briefing, daemon=True).start()
+
+        # Ensure debrief is generated if we're in the debrief window (6:30 PM - 7:30 PM)
+        now = datetime.now(TZ)
+        debrief_start = now.replace(hour=18, minute=30, second=0, microsecond=0)
+        debrief_end = now.replace(hour=19, minute=30, second=0, microsecond=0)
+        if debrief_start <= now <= debrief_end:
+            try:
+                conn = get_db()
+                cur = conn.cursor()
+                cur.execute("SELECT content FROM debrief_cache WHERE id = 1")
+                row = cur.fetchone()
+                cur.close()
+                conn.close()
+                # If no debrief or it's empty, generate it
+                if not row or not row["content"]:
+                    threading.Thread(target=generate_evening_debrief, daemon=True).start()
+                    log.info("Debrief window detected - generating debrief on startup")
+            except Exception as e:
+                log.warning(f"Could not check debrief status: {e}")
+
         log.info("Background scheduler started")
 except Exception as e:
     log.warning(f"Background scheduler failed to start: {e}")
