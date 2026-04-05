@@ -1143,6 +1143,18 @@ document.addEventListener('DOMContentLoaded', function() {
   };
   document.removeEventListener('visibilitychange', window._briefingVisibilityHandler);
   document.addEventListener('visibilitychange', window._briefingVisibilityHandler);
+
+  // Check if debrief should be opened (from notification click)
+  setTimeout(function() {
+    try {
+      if (sessionStorage.getItem('open_debrief_on_load')) {
+        sessionStorage.removeItem('open_debrief_on_load');
+        if (cachedDebrief.text) {
+          openDebriefSheet();
+        }
+      }
+    } catch (e) {}
+  }, 500);
 });
 
 function updateHeaderDate() {
@@ -1357,11 +1369,18 @@ function scheduleDebriefReminder() {
   window._debriefReminderTimeout = setTimeout(function() {
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try {
-        new Notification('Daily debrief reminder', {
+        var n = new Notification('Daily debrief reminder', {
           body: 'Your daily debrief will be ready at 7:00 PM. Get ready to submit it!',
           tag: 'debrief-reminder',
           requireInteraction: true
         });
+        n.onclick = function() {
+          try {
+            sessionStorage.setItem('open_debrief_on_load', '1');
+          } catch (e2) {}
+          window.open(window.location.href, '_blank');
+          try { n.close(); } catch (e) {}
+        };
       } catch (e) {}
     }
   }, msUntilReminder);
