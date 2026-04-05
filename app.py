@@ -1142,22 +1142,6 @@ def api_debrief_generate():
     return jsonify({"status": "generating", "message": "Debrief generation started"})
 
 
-@app.route("/api/debrief/reset", methods=["GET", "POST"])
-def api_debrief_reset():
-    """Reset today's debrief cache (for testing)."""
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM debrief_cache WHERE id = 1")
-        conn.commit()
-        cur.close()
-        conn.close()
-        return jsonify({"status": "reset", "message": "Debrief cache cleared"})
-    except Exception as e:
-        log.error("Error resetting debrief: %s", e)
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
 def _workout_history_block(cur):
     cur.execute("""
 SELECT created_at, focus_label, intensity, location, user_notes, perceived_difficulty
