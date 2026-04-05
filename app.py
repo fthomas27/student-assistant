@@ -1107,7 +1107,7 @@ def api_briefing_refresh():
     threading.Thread(target=generate_briefing, kwargs={"force": True}, daemon=True).start()
     return jsonify({"status": "refreshing"})
 
-@app.route("/api/debrief/generate", methods=["POST"])
+@app.route("/api/debrief/generate", methods=["GET", "POST"])
 def api_debrief_generate():
     """Manual trigger to generate debrief."""
     threading.Thread(target=generate_evening_debrief, daemon=True).start()
