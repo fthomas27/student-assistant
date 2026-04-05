@@ -923,9 +923,43 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   <div class="sheet-handle"></div>
   <div class="sheet-title-sm" style="margin-bottom:4px">Daily debrief</div>
   <div class="sheet-sub" id="debrief-sheet-sub"></div>
-  <div class="briefing-text" id="debrief-sheet-body" style="margin-top:14px;font-size:14px"></div>
+
+  <!-- Reflection Form Section (shown before debrief) -->
+  <div id="debrief-reflection-form" style="display:none;margin-top:14px;font-size:14px">
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">How did you feel overall today?</label>
+      <input type="text" id="debrief-mood" class="field-input" placeholder="e.g., energized, neutral, tired..." style="width:100%;padding:8px;border:1px solid var(--border1);border-radius:4px;box-sizing:border-box"/>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">How productive did you feel today? (1-10)</label>
+      <input type="range" id="debrief-productivity" min="1" max="10" value="5" style="width:100%;cursor:pointer"/>
+      <div style="text-align:center;color:var(--text3);font-size:12px;margin-top:4px"><span id="debrief-productivity-value">5</span>/10</div>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">What went well today?</label>
+      <textarea id="debrief-wellgoing" class="field-input" placeholder="What did you accomplish or enjoy?" style="width:100%;padding:8px;border:1px solid var(--border1);border-radius:4px;box-sizing:border-box;min-height:80px;resize:vertical"></textarea>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">What was challenging?</label>
+      <textarea id="debrief-challenging" class="field-input" placeholder="What was hard or frustrating?" style="width:100%;padding:8px;border:1px solid var(--border1);border-radius:4px;box-sizing:border-box;min-height:80px;resize:vertical"></textarea>
+    </div>
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:8px;font-weight:600">Key learnings or insights?</label>
+      <textarea id="debrief-learnings" class="field-input" placeholder="What did you learn today?" style="width:100%;padding:8px;border:1px solid var(--border1);border-radius:4px;box-sizing:border-box;min-height:80px;resize:vertical"></textarea>
+    </div>
+  </div>
+
+  <!-- Debrief Content Section (shown after reflection is submitted) -->
+  <div id="debrief-content" style="display:none;margin-top:14px;font-size:14px">
+    <div class="briefing-text" id="debrief-sheet-body"></div>
+  </div>
+
   <div class="sheet-actions" style="padding-top:16px">
-    <button class="btn btn-outline" style="width:100%" onclick="closeAllSheets()">Close</button>
+    <button id="debrief-submit-btn" class="btn" style="width:100%;display:none" onclick="submitDebriefReflection()">Review Debrief</button>
+    <div style="display:flex;gap:8px;width:100%">
+      <button id="debrief-close-btn" class="btn btn-outline" style="flex:1;display:none" onclick="closeAllSheets()">Close</button>
+      <button id="debrief-reset-btn" class="btn btn-outline" style="flex:1;display:none;font-size:12px" onclick="resetDebriefForTesting()" title="Reset today's debrief to test again">↻ Redo</button>
+    </div>
   </div>
 </div>
 
@@ -1268,12 +1302,12 @@ function renderDebriefPill() {
   var deb = cachedDebrief.text;
   var gen = cachedDebrief.generatedAt;
 
-  // Check if we're in the debrief window (6:30 PM - 7:30 PM)
+  // Check if we're in the debrief window (6:30 PM - 8:30 PM)
   var now = new Date();
   var debriefStartTime = new Date(now);
   debriefStartTime.setHours(18, 30, 0, 0); // 6:30 PM
   var debriefEndTime = new Date(now);
-  debriefEndTime.setHours(19, 30, 0, 0); // 7:30 PM
+  debriefEndTime.setHours(20, 30, 0, 0); // 8:30 PM
   var inDebriefWindow = now >= debriefStartTime && now < debriefEndTime;
 
   // If we have today's debrief and are in window, show it
@@ -1306,12 +1340,126 @@ function openDebriefSheet() {
   if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
     Notification.requestPermission();
   }
-  var body = document.getElementById('debrief-sheet-body');
+
   var sub = document.getElementById('debrief-sheet-sub');
-  if (body) body.innerHTML = cachedDebrief.text ? renderMarkdown(cachedDebrief.text, false) : '<span style="color:var(--text3)">No debrief yet. It is generated around 7:00 PM.</span>';
-  if (sub) sub.textContent = cachedDebrief.generatedAt ? 'Generated ' + formatRelative(cachedDebrief.generatedAt) : '';
+  var body = document.getElementById('debrief-sheet-body');
+  var reflectionForm = document.getElementById('debrief-reflection-form');
+  var debriefContent = document.getElementById('debrief-content');
+  var submitBtn = document.getElementById('debrief-submit-btn');
+  var closeBtn = document.getElementById('debrief-close-btn');
+
+  // Check if reflection has been submitted for today
+  var today = localDateKey(new Date());
+  var reflectionKey = 'debrief_reflection_' + today;
+  var hasReflection = false;
+  try {
+    hasReflection = !!localStorage.getItem(reflectionKey);
+  } catch (e) {}
+
+  if (hasReflection) {
+    // Show debrief, hide form
+    if (body) body.innerHTML = cachedDebrief.text ? renderMarkdown(cachedDebrief.text, false) : '<span style="color:var(--text3)">No debrief yet. It is generated around 7:00 PM.</span>';
+    if (sub) sub.textContent = cachedDebrief.generatedAt ? 'Generated ' + formatRelative(cachedDebrief.generatedAt) : '';
+    reflectionForm.style.display = 'none';
+    debriefContent.style.display = 'block';
+    submitBtn.style.display = 'none';
+    closeBtn.style.display = 'block';
+    var resetBtn = document.getElementById('debrief-reset-btn');
+    if (resetBtn) resetBtn.style.display = 'block';
+  } else {
+    // Show form, hide debrief
+    reflectionForm.style.display = 'block';
+    debriefContent.style.display = 'none';
+    submitBtn.style.display = 'block';
+    closeBtn.style.display = 'none';
+    if (sub) sub.textContent = 'Answer these questions to continue';
+
+    // Setup productivity slider listener
+    var slider = document.getElementById('debrief-productivity');
+    if (slider) {
+      slider.oninput = function() {
+        document.getElementById('debrief-productivity-value').textContent = this.value;
+      };
+    }
+  }
+
   document.getElementById('sheet-backdrop').classList.add('open');
   document.getElementById('debrief-sheet').classList.add('open');
+}
+
+function submitDebriefReflection() {
+  var mood = document.getElementById('debrief-mood').value.trim();
+  var productivity = document.getElementById('debrief-productivity').value;
+  var wellgoing = document.getElementById('debrief-wellgoing').value.trim();
+  var challenging = document.getElementById('debrief-challenging').value.trim();
+  var learnings = document.getElementById('debrief-learnings').value.trim();
+
+  if (!mood || !wellgoing) {
+    alert('Please fill in at least your mood and what went well.');
+    return;
+  }
+
+  // Save reflection to localStorage
+  var today = localDateKey(new Date());
+  var reflectionKey = 'debrief_reflection_' + today;
+  var reflectionData = {
+    mood: mood,
+    productivity: parseInt(productivity),
+    wellgoing: wellgoing,
+    challenging: challenging,
+    learnings: learnings,
+    submittedAt: new Date().toISOString()
+  };
+  try {
+    localStorage.setItem(reflectionKey, JSON.stringify(reflectionData));
+  } catch (e) {
+    console.error('Failed to save reflection:', e);
+  }
+
+  // Now show the debrief
+  var reflectionForm = document.getElementById('debrief-reflection-form');
+  var debriefContent = document.getElementById('debrief-content');
+  var submitBtn = document.getElementById('debrief-submit-btn');
+  var closeBtn = document.getElementById('debrief-close-btn');
+  var resetBtn = document.getElementById('debrief-reset-btn');
+  var body = document.getElementById('debrief-sheet-body');
+  var sub = document.getElementById('debrief-sheet-sub');
+
+  if (body) body.innerHTML = cachedDebrief.text ? renderMarkdown(cachedDebrief.text, false) : '<span style="color:var(--text3)">No debrief yet. It is generated around 7:00 PM.</span>';
+  if (sub) sub.textContent = cachedDebrief.generatedAt ? 'Generated ' + formatRelative(cachedDebrief.generatedAt) : '';
+
+  reflectionForm.style.display = 'none';
+  debriefContent.style.display = 'block';
+  submitBtn.style.display = 'none';
+  closeBtn.style.display = 'block';
+  resetBtn.style.display = 'block';
+}
+
+function resetDebriefForTesting() {
+  if (!confirm('This will clear today\'s debrief so you can test it again. Continue?')) return;
+
+  // Call reset endpoint
+  fetch('/api/debrief/reset', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      // Clear localStorage reflection
+      var today = localDateKey(new Date());
+      try {
+        localStorage.removeItem('debrief_reflection_' + today);
+      } catch (e) {}
+
+      // Clear cached debrief in memory
+      cachedDebrief.text = '';
+      cachedDebrief.generatedAt = null;
+
+      // Close sheet
+      closeAllSheets();
+      alert('Debrief reset! You can now test it again.');
+    })
+    .catch(err => {
+      console.error('Reset failed:', err);
+      alert('Failed to reset debrief');
+    });
 }
 
 function maybeBrowserNotifyDebrief(genIso, debText) {
