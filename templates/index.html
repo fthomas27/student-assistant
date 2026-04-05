@@ -1040,6 +1040,14 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
     <div class="field-label">Friday email — sign-off name</div>
     <input class="field-input" id="setting-formal-name" type="text" placeholder="Finley Thomas">
   </div>
+  <div class="field-group">
+    <div class="field-label">Event Reminders</div>
+    <select class="field-input" id="setting-notification-type">
+      <option value="browser">Browser Notifications Only</option>
+      <option value="in-app">In-App Notifications Only</option>
+      <option value="both">Both Browser & In-App</option>
+    </select>
+  </div>
   <button class="save-btn" onclick="saveSettings()">Save</button>
   <div class="save-feedback" id="save-feedback"></div>
 </div>
@@ -1082,6 +1090,7 @@ var assignments = [];
 var completedToday = [];
 var activeTimer = null;
 var appTimezone = 'America/Denver';
+var notificationPreference = 'browser';
 var timerInterval = null;
 var cutoffShown = false;
 var selectedUrgency = 'medium';
@@ -1216,6 +1225,9 @@ function loadConfig() {
     if (adv) adv.value = d.weekly_recap_advisor || 'Mr. Goldberg';
     var fn = document.getElementById('setting-formal-name');
     if (fn) fn.value = d.formal_signoff_name || 'Finley Thomas';
+    var notifType = document.getElementById('setting-notification-type');
+    if (notifType) notifType.value = d.notification_type || 'browser';
+    notificationPreference = d.notification_type || 'browser';
   }).catch(function(){});
 }
 
@@ -1243,8 +1255,10 @@ function saveSettings() {
   };
   var wadv = document.getElementById('setting-weekly-advisor');
   var fname = document.getElementById('setting-formal-name');
+  var notifType = document.getElementById('setting-notification-type');
   if (wadv) payload.weekly_recap_advisor = wadv.value.trim().slice(0, 200);
   if (fname) payload.formal_signoff_name = fname.value.trim().slice(0, 200);
+  if (notifType) payload.notification_type = notifType.value;
   fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     .then(function() {
       document.getElementById('save-feedback').textContent = 'Saved!';
@@ -1449,6 +1463,23 @@ function maybeBrowserNotifyDebrief(genIso, debText) {
   } catch (e) {}
 }
 
+function showInAppNotification(title, body) {
+  var container = document.getElementById('in-app-notifications');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'in-app-notifications';
+    container.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;padding:10px;pointer-events:none;';
+    document.body.insertBefore(container, document.body.firstChild);
+  }
+  var notification = document.createElement('div');
+  notification.style.cssText = 'background:var(--accent);color:white;padding:12px 16px;border-radius:6px;margin:8px auto;max-width:600px;box-shadow:0 4px 12px rgba(0,0,0,0.15);pointer-events:auto;font-size:14px;line-height:1.4;';
+  notification.innerHTML = '<strong>' + esc(title) + '</strong><br>' + esc(body);
+  container.appendChild(notification);
+  setTimeout(function() {
+    if (notification.parentNode) notification.parentNode.removeChild(notification);
+  }, 5000);
+}
+
 function calEventReminderId(e) {
   return String(e.start_iso || '') + '::' + String(e.title || '') + '::' + String(e.source || '');
 }
@@ -1509,19 +1540,18 @@ function armCalReminderEntry(entry) {
   var delay = entry.fireAt - Date.now();
   if (delay <= 0) return;
   var id = entry.id;
-  var notifType = entry.type || 'both';
   if (window._calReminderTimers[id]) clearTimeout(window._calReminderTimers[id]);
   window._calReminderTimers[id] = setTimeout(function() {
-    // Browser notification
-    if ((notifType === 'browser' || notifType === 'both') && 'Notification' in window && Notification.permission === 'granted') {
+    // Browser notification (based on global preference)
+    if ((notificationPreference === 'browser' || notificationPreference === 'both') && 'Notification' in window && Notification.permission === 'granted') {
       var n = new Notification('In 30 min: ' + entry.title, { body: entry.subtitle || 'Event starting soon', tag: 'cal-' + id.slice(0, 80) });
       n.onclick = function() {
         window.focus();
         try { n.close(); } catch (e) {}
       };
     }
-    // Home screen notification
-    if (notifType === 'home' || notifType === 'both') {
+    // In-app/home screen notification (based on global preference)
+    if (notificationPreference === 'in-app' || notificationPreference === 'both') {
       showCalEventHomeScreenNotif(entry);
     }
     var list = getCalReminders().filter(function(x) { return x.id !== id; });
@@ -3233,21 +3263,14 @@ function openCalEventDetail(evtJson) {
     var remEntry = getCalReminders().find(function(x) { return x.id === rid; });
     if (remEntry) remType = remEntry.type || 'both';
   }
+  var notifTypeText = notificationPreference === 'browser' ? 'browser notification' :
+                      notificationPreference === 'in-app' ? 'home screen pill' : 'browser notification and home screen pill';
+  var notifNote = notificationPreference === 'browser' ? 'Keeps working if you close the app.' :
+                  notificationPreference === 'in-app' ? 'Shows a pill on the home screen.' : 'Shows both a browser notification and home screen pill.';
   html += '<div class="sheet-section" style="margin-top:12px">' +
     '<label style="display:flex;align-items:flex-start;gap:10px;cursor:' + (e.all_day ? 'default' : 'pointer') + '">' +
     '<input type="checkbox" id="notif-toggle" style="width:18px;height:18px;accent-color:var(--accent);margin-top:2px"' + (hasRem ? ' checked' : '') + (e.all_day ? ' disabled' : '') + '>' +
-    '<span style="font-size:14px;line-height:1.45">Remind me <strong>30 minutes before</strong> this event</span></label>' +
-    '<div id="notif-type-options" style="display:' + (hasRem ? 'block' : 'none') + ';margin-top:12px;margin-left:28px;gap:8px">' +
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:8px">How would you like to be notified?</div>' +
-    '<label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer">' +
-    '<input type="radio" name="notif-type" value="browser" style="cursor:pointer"' + (remType === 'browser' ? ' checked' : '') + '>' +
-    '<span style="font-size:13px">Browser notification (pop-up)</span></label>' +
-    '<label style="display:flex;gap:8px;align-items:center;margin-bottom:8px;cursor:pointer">' +
-    '<input type="radio" name="notif-type" value="home" style="cursor:pointer"' + (remType === 'home' ? ' checked' : '') + '>' +
-    '<span style="font-size:13px">Home screen pill</span></label>' +
-    '<label style="display:flex;gap:8px;align-items:center;cursor:pointer">' +
-    '<input type="radio" name="notif-type" value="both" style="cursor:pointer"' + (remType === 'both' ? ' checked' : '') + '>' +
-    '<span style="font-size:13px">Both browser and home screen</span></label></div>' +
+    '<span style="font-size:14px;line-height:1.45">Remind me <strong>30 minutes before</strong> this event (' + notifTypeText + '). ' + notifNote + '</span></label>' +
     '<div id="notif-toggle-hint" style="font-size:11px;color:var(--text3);margin-top:8px;margin-left:28px;line-height:1.4"></div></div>';
   document.getElementById('cal-event-content').innerHTML = html;
   document.getElementById('sheet-backdrop').classList.add('open');
@@ -3261,37 +3284,39 @@ function openCalEventDetail(evtJson) {
     // Create a named handler to avoid listener accumulation when modal is opened multiple times
     window._calEventNotifHandler = function() {
       var hint = document.getElementById('notif-toggle-hint');
-      var typeOptions = document.getElementById('notif-type-options');
       if (notifToggle.checked) {
-        // Show notification type options
-        if (typeOptions) typeOptions.style.display = 'block';
-        if (!('Notification' in window)) {
-          if (hint) hint.textContent = 'Notifications are not supported in this browser.';
-          notifToggle.checked = false;
-          if (typeOptions) typeOptions.style.display = 'none';
-          return;
-        }
-        Notification.requestPermission().then(function(perm) {
-          if (perm !== 'granted') {
-            if (hint) hint.textContent = 'Permission denied — enable notifications in browser settings.';
+        // Only request browser permission if using browser notifications
+        var needsBrowserPermission = notificationPreference === 'browser' || notificationPreference === 'both';
+        if (needsBrowserPermission) {
+          if (!('Notification' in window)) {
+            if (hint) hint.textContent = 'Notifications are not supported in this browser.';
             notifToggle.checked = false;
-            if (typeOptions) typeOptions.style.display = 'none';
             return;
           }
-          // Get selected notification type
-          var notifType = 'both';
-          var radioBtn = document.querySelector('input[name="notif-type"]:checked');
-          if (radioBtn) notifType = radioBtn.value;
-          var res = scheduleCalEventReminder(e, notifType);
+          Notification.requestPermission().then(function(perm) {
+            if (perm !== 'granted') {
+              if (hint) hint.textContent = 'Permission denied — enable notifications in browser settings.';
+              notifToggle.checked = false;
+              return;
+            }
+            scheduleReminder();
+          });
+        } else {
+          scheduleReminder();
+        }
+
+        function scheduleReminder() {
+          var res = scheduleCalEventReminder(e);
           if (res.error) {
             if (hint) hint.textContent = res.error;
             notifToggle.checked = false;
-            if (typeOptions) typeOptions.style.display = 'none';
           } else if (hint) {
-            var typeText = notifType === 'browser' ? 'browser notification' : notifType === 'home' ? 'home screen pill' : 'both';
-            hint.textContent = 'You will get a ' + typeText + ' 30 minutes before the start time.';
+            var msg = notificationPreference === 'browser' ? 'You will get a browser notification 30 minutes before the start time.' :
+                      notificationPreference === 'in-app' ? 'You will get a home screen pill 30 minutes before the start time.' :
+                      'You will get a browser notification and home screen pill 30 minutes before the start time.';
+            hint.textContent = msg;
           }
-        });
+        }
       } else {
         removeCalEventReminder(e);
         if (hint) hint.textContent = '';
