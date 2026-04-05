@@ -825,26 +825,54 @@ FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_
         pending_tasks = [dict(r) for r in cur.fetchall()]
         cur.close()
         conn.close()
+
+        # Calculate productivity metrics
+        total_minutes = sum(d["duration_minutes"] for d in done_today)
+        total_hours = total_minutes / 60.0
+        item_count = len(done_today)
+
+        # Build time breakdown by class
+        class_time = {}
+        for item in done_today:
+            class_name = item["class_name"]
+            duration = item["duration_minutes"]
+            class_time[class_name] = class_time.get(class_name, 0) + duration
+
+        # Build formatted text sections
+        done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
+
+        # Time breakdown by class
+        time_breakdown = "\n".join(["- %s: %.1f hours" % (cls, mins/60.0) for cls, mins in sorted(class_time.items(), key=lambda x: x[1], reverse=True)])
+
+        # Metrics section
+        metrics_text = "Items completed: %d | Total time: %.1f hours" % (item_count, total_hours)
+
         cal = fetch_ical(CANVAS_ICAL_URL)
         remaining_asgn = []
         if cal:
             all_asgn = parse_canvas_assignments(cal)
             done_titles = {d["assignment_title"] for d in done_today}
             remaining_asgn = [a for a in all_asgn if a["title"] not in done_titles]
-        done_text = "\n".join(["- %s (%s) — %.0f min" % (d["assignment_title"], d["class_name"], d["duration_minutes"]) for d in done_today]) or "Nothing completed today."
+
         remaining_text = "\n".join(["- %s (%s, due %s)" % (a["title"], a["class_name"], a["due_display"]) for a in remaining_asgn[:6]]) or "None."
         tasks_text = "\n".join(["- [%s] %s" % (t["urgency"], t["title"]) for t in pending_tasks]) or "None."
         now_str = datetime.now(TZ).strftime("%A, %B %-d at %-I:%M %p")
+
         prompt = (
             "You are a sharp personal assistant for %s, a high school student in Park City, Utah.\n"
             "Current time: %s (evening debrief)\n\n"
-            "Completed Today:\n%s\n\n"
-            "Still Due (not completed):\n%s\n\n"
-            "Pending Tasks:\n%s\n\n"
-            "Write a concise evening debrief using ONLY bullet points (start each with •). "
-            "Include: what was accomplished today, what was missed/still needs doing, and a 'Tomorrow's Outlook' section. "
-            "Be direct and encouraging. No intro sentence."
-        ) % (name, now_str, done_text, remaining_text, tasks_text)
+            "TODAY'S ACCOMPLISHMENTS:\n%s\n\n"
+            "PRODUCTIVITY METRICS:\n%s\n\n"
+            "TIME BREAKDOWN BY CLASS:\n%s\n\n"
+            "STILL DUE (not completed):\n%s\n\n"
+            "PENDING TASKS:\n%s\n\n"
+            "Write a concise evening debrief using ONLY bullet points (start each with •). Include sections:\n"
+            "- Summary of accomplishments (reference the items and metrics above)\n"
+            "- What still needs doing\n"
+            "- Tomorrow's Outlook (brief forecast of what's coming)\n\n"
+            "Be direct, encouraging, and insightful. No intro sentence."
+        ) % (name, now_str, done_text, metrics_text, time_breakdown, remaining_text, tasks_text)
+
         try:
             client = anthropic.Anthropic(api_key=api_key)
             message = client.messages.create(model="claude-sonnet-4-6", max_tokens=600,
