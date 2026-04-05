@@ -1532,8 +1532,9 @@ function armCalReminderEntry(entry) {
 
 function restoreCalReminders() {
   var now = Date.now();
-  var list = getCalReminders().filter(function(entry) { return entry.fireAt > now; });
-  if (list.length !== getCalReminders().length) setCalReminders(list);
+  var allReminders = getCalReminders();
+  var list = allReminders.filter(function(entry) { return entry.fireAt > now; });
+  if (list.length !== allReminders.length) setCalReminders(list);
   list.forEach(armCalReminderEntry);
 }
 
