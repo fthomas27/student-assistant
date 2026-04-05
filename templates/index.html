@@ -3445,16 +3445,23 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     if (!draggingSheet) return;
     var dy = e.touches[0].clientY - startY;
     var dx = Math.abs(e.touches[0].clientX - startX);
-    // Only allow vertical dragging; if horizontal movement > 20px, cancel
-    if (dx > 20) { draggingSheet = false; return; }
-    // Only apply drag if user is dragging downward (positive dy)
-    if (dy > 0) {
-      settingsSheet.style.transition = 'none';
-      settingsSheet.style.transform = 'translateY(' + dy + 'px)';
-      // Fade backdrop as sheet is dragged down
-      var fadeAmount = Math.min(dy / 300, 1);
-      sheetBackdrop.style.opacity = 1 - fadeAmount * 0.5;
+    // Cancel drag if horizontal movement > 20px
+    if (dx > 20) {
+      draggingSheet = false;
+      // Reset inline styles to let CSS classes take over
+      settingsSheet.style.transition = '';
+      settingsSheet.style.transform = '';
+      sheetBackdrop.style.transition = '';
+      sheetBackdrop.style.opacity = '';
+      return;
     }
+    // Apply transform for any vertical movement (up or down)
+    settingsSheet.style.transition = 'none';
+    settingsSheet.style.transform = 'translateY(' + dy + 'px)';
+    // Fade backdrop as sheet is dragged; disable backdrop transition during drag
+    sheetBackdrop.style.transition = 'none';
+    var fadeAmount = Math.max(0, Math.min(dy / 300, 1));
+    sheetBackdrop.style.opacity = 1 - fadeAmount * 0.5;
   }, { passive: true });
 
   settingsSheet.addEventListener('touchend', function(e) {
@@ -3462,7 +3469,7 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     var dy = e.changedTouches[0].clientY - startY;
     draggingSheet = false;
 
-    // Restore transition
+    // Restore transitions
     settingsSheet.style.transition = 'transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
     sheetBackdrop.style.transition = 'opacity 0.3s';
 
@@ -3470,12 +3477,13 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     if (dy > 100) {
       settingsSheet.classList.remove('open');
       sheetBackdrop.classList.remove('open');
-      settingsSheet.style.transform = 'translateY(100%)';
-      sheetBackdrop.style.opacity = '0';
+      // Clear inline styles to let CSS handle the closed state
+      settingsSheet.style.transform = '';
+      sheetBackdrop.style.opacity = '';
     } else {
       // Snap back to open position
-      settingsSheet.style.transform = 'translateY(0)';
-      sheetBackdrop.style.opacity = '1';
+      settingsSheet.style.transform = '';
+      sheetBackdrop.style.opacity = '';
     }
   });
 })();
