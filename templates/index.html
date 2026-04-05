@@ -768,6 +768,12 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
 
 <!-- ══ TAB 3: CALENDAR ══ -->
 <div class="tab-panel" id="tab-calendar">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:0 0 12px 0;margin-bottom:12px">
+    <div></div>
+    <button onclick="refreshCalendar()" style="padding:8px 12px;border-radius:8px;border:1px solid var(--border2);background:var(--surface2);color:var(--accent2);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
+      🔄 Refresh
+    </button>
+  </div>
   <div id="calendar-container">
     <div class="shimmer"></div>
     <div class="shimmer" style="width:70%"></div>
@@ -2859,6 +2865,18 @@ function loadCalendar() {
   }).catch(function() {
     document.getElementById('calendar-container').innerHTML = '<div class="empty-state"><div class="empty-emoji">⚠</div><div class="empty-title">Could not load calendar</div></div>';
   });
+}
+
+function refreshCalendar() {
+  var btn = event.target.closest('button');
+  var originalText = btn.innerHTML;
+  btn.innerHTML = '⏳ Loading...';
+  btn.disabled = true;
+  loadCalendar();
+  setTimeout(function() {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }, 1000);
 }
 
 // ══════════════════════════════════════════
