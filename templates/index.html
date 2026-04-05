@@ -1473,7 +1473,8 @@ function setCalReminders(arr) {
 function showCalEventHomeScreenNotif(entry) {
   var slot = document.getElementById('notif-slot');
   if (!slot) return;
-  var notifHtml = '<div class="notif-row cal-event-notif" role="button" tabindex="0">' +
+  var notifId = 'cal-notif-' + Math.random().toString(36).substr(2, 9);
+  var notifHtml = '<div class="notif-row cal-event-notif" id="' + notifId + '" role="button" tabindex="0" style="cursor:pointer">' +
     '<span class="notif-icon">📅</span>' +
     '<div class="notif-text"><span class="notif-title">In 30 min: ' + esc(entry.title) + '</span><br>' +
     '<span style="color:var(--text3)">' + esc(entry.subtitle || 'Event starting soon') + '</span></div></div>';
@@ -1484,6 +1485,23 @@ function showCalEventHomeScreenNotif(entry) {
   } else {
     slot.insertAdjacentHTML('beforeend', notifHtml);
   }
+
+  // Add click handler to show event details
+  setTimeout(function() {
+    var notifEl = document.getElementById(notifId);
+    if (notifEl && entry.event) {
+      var eventJson = encodeURIComponent(JSON.stringify(entry.event));
+      notifEl.onclick = function() {
+        openCalEventDetail(eventJson);
+      };
+      notifEl.onkeydown = function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openCalEventDetail(eventJson);
+        }
+      };
+    }
+  }, 0);
 }
 
 function armCalReminderEntry(entry) {
@@ -1529,7 +1547,7 @@ function scheduleCalEventReminder(e, notificationType, isUpdate) {
   var id = calEventReminderId(e);
   var list = getCalReminders().filter(function(x) { return x.id !== id; });
   var subtitle = (e.start_display || '') + (e.location ? ' · ' + e.location : '');
-  var entry = { id: id, fireAt: fireAt, title: e.title, subtitle: subtitle, type: notificationType };
+  var entry = { id: id, fireAt: fireAt, title: e.title, subtitle: subtitle, type: notificationType, event: e };
   list.push(entry);
   setCalReminders(list);
   if (!isUpdate || !window._calReminderTimers[id]) {
