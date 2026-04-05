@@ -956,7 +956,10 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
 
   <div class="sheet-actions" style="padding-top:16px">
     <button id="debrief-submit-btn" class="btn" style="width:100%;display:none" onclick="submitDebriefReflection()">Review Debrief</button>
-    <button id="debrief-close-btn" class="btn btn-outline" style="width:100%;display:none" onclick="closeAllSheets()">Close</button>
+    <div style="display:flex;gap:8px;width:100%">
+      <button id="debrief-close-btn" class="btn btn-outline" style="flex:1;display:none" onclick="closeAllSheets()">Close</button>
+      <button id="debrief-reset-btn" class="btn btn-outline" style="flex:1;display:none;font-size:12px" onclick="resetDebriefForTesting()" title="Reset today's debrief to test again">↻ Redo</button>
+    </div>
   </div>
 </div>
 
@@ -1361,6 +1364,8 @@ function openDebriefSheet() {
     debriefContent.style.display = 'block';
     submitBtn.style.display = 'none';
     closeBtn.style.display = 'block';
+    var resetBtn = document.getElementById('debrief-reset-btn');
+    if (resetBtn) resetBtn.style.display = 'block';
   } else {
     // Show form, hide debrief
     reflectionForm.style.display = 'block';
@@ -1416,6 +1421,7 @@ function submitDebriefReflection() {
   var debriefContent = document.getElementById('debrief-content');
   var submitBtn = document.getElementById('debrief-submit-btn');
   var closeBtn = document.getElementById('debrief-close-btn');
+  var resetBtn = document.getElementById('debrief-reset-btn');
   var body = document.getElementById('debrief-sheet-body');
   var sub = document.getElementById('debrief-sheet-sub');
 
@@ -1426,6 +1432,34 @@ function submitDebriefReflection() {
   debriefContent.style.display = 'block';
   submitBtn.style.display = 'none';
   closeBtn.style.display = 'block';
+  resetBtn.style.display = 'block';
+}
+
+function resetDebriefForTesting() {
+  if (!confirm('This will clear today\'s debrief so you can test it again. Continue?')) return;
+
+  // Call reset endpoint
+  fetch('/api/debrief/reset', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      // Clear localStorage reflection
+      var today = localDateKey(new Date());
+      try {
+        localStorage.removeItem('debrief_reflection_' + today);
+      } catch (e) {}
+
+      // Clear cached debrief in memory
+      cachedDebrief.text = '';
+      cachedDebrief.generatedAt = null;
+
+      // Close sheet
+      closeAllSheets();
+      alert('Debrief reset! You can now test it again.');
+    })
+    .catch(err => {
+      console.error('Reset failed:', err);
+      alert('Failed to reset debrief');
+    });
 }
 
 function maybeBrowserNotifyDebrief(genIso, debText) {
