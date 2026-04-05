@@ -872,14 +872,14 @@ def schedule_briefing():
     scheduler.remove_all_jobs()
     scheduler.add_job(generate_briefing, "cron", hour=hour, minute=minute,
                       id="morning_briefing", replace_existing=True)
-    # Evening debrief at 7:00 PM
-    scheduler.add_job(generate_evening_debrief, "cron", hour=19, minute=0,
+    # Evening debrief at 6:30 PM
+    scheduler.add_job(generate_evening_debrief, "cron", hour=18, minute=30,
                       id="evening_debrief", replace_existing=True)
     # Process recurring tasks daily at midnight
     scheduler.add_job(_process_recurring_tasks, "cron", hour=0, minute=0,
                       id="process_recurring_tasks", replace_existing=True)
     log.info("Briefing scheduled for %02d:%02d Mountain", hour, minute)
-    log.info("Evening debrief scheduled for 19:00 Mountain")
+    log.info("Evening debrief scheduled for 18:30 Mountain")
     log.info("Recurring tasks processor scheduled for 00:00 Mountain")
 
 

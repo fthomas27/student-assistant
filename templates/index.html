@@ -1265,10 +1265,14 @@ function renderDebriefPill() {
   slot.innerHTML = '';
   var deb = cachedDebrief.text;
   var gen = cachedDebrief.generatedAt;
+
+  // Only show debrief if it exists and is from today
   if (!deb || !isDebriefFromToday(gen)) return;
+
   try {
     if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
   } catch (e) {}
+
   var when = gen ? formatRelative(gen) : '';
   var permHint = '';
   if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
@@ -1277,8 +1281,8 @@ function renderDebriefPill() {
   slot.innerHTML =
     '<div class="notif-row debrief-notif" role="button" tabindex="0" onclick="openDebriefSheet()" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openDebriefSheet();}">' +
     '<span class="notif-icon">&#127961;</span>' +
-    '<div class="notif-text"><span class="notif-title">Daily debrief</span><br>' +
-    '<span style="color:var(--text3)">Tap to read what happened today' + (when ? ' · ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
+    '<div class="notif-text"><span class="notif-title">Daily debrief ready · Submit now!</span><br>' +
+    '<span style="color:var(--text3)">Tap to read and review today' + (when ? ' · Generated ' + esc(when) : '') + '</span>' + permHint + '</div></div>';
 }
 
 function openDebriefSheet() {
