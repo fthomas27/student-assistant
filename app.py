@@ -2,6 +2,8 @@ import os
 import time
 import logging
 import threading
+import hashlib
+import secrets
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 
@@ -20,14 +22,18 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "finn-dashboard-secret-change-me")
 app.permanent_session_lifetime = timedelta(days=30)
 APP_PASSWORD = os.environ.get("APP_PASSWORD", "finn2025")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@example.com")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin2025")
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 
 @app.before_request
 def require_auth():
-    if request.path in ('/login', '/logout'):
+    if request.path in ('/login', '/logout', '/signup'):
         return None
+    if request.path == '/admin' and not session.get("is_admin"):
+        return redirect("/login")
     if not session.get("authenticated"):
         if request.path.startswith('/api/'):
             return jsonify({"error": "Not authenticated"}), 401
@@ -136,6 +142,23 @@ def get_school_hours(d):
         return (7, 30, 10, 25) if dtype == "red" else (7, 30, 11, 30)
     else:  # Mon-Thu
         return (7, 30, 11, 53) if dtype == "red" else (7, 30, 14, 25)
+
+
+def hash_password(password):
+    """Hash a password with a salt."""
+    salt = secrets.token_hex(16)
+    pwd_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+    return f"{salt}${pwd_hash.hex()}"
+
+
+def verify_password(password, hash_str):
+    """Verify a password against its hash."""
+    try:
+        salt, pwd_hash = hash_str.split('$')
+        new_hash = hashlib.pbkdf2_hmac('sha256', password.encode(), salt.encode(), 100000)
+        return new_hash.hex() == pwd_hash
+    except:
+        return False
 
 
 def get_db():
@@ -277,6 +300,15 @@ CREATE TABLE IF NOT EXISTS workout_logs (
     perceived_difficulty INT
 )""")
 
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'user',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+
     defaults = {
         "name": "Finn",
         "morning_briefing_time": "07:00",
@@ -289,6 +321,12 @@ CREATE TABLE IF NOT EXISTS workout_logs (
         cur.execute("""
 INSERT INTO config (key, value) VALUES (%s, %s)
 ON CONFLICT (key) DO NOTHING""", (k, v))
+
+    # Create admin user if it doesn't exist
+    hashed_pwd = hash_password(ADMIN_PASSWORD)
+    cur.execute("""
+INSERT INTO users (email, password, role) VALUES (%s, %s, %s)
+ON CONFLICT (email) DO NOTHING""", (ADMIN_EMAIL, hashed_pwd, 'admin'))
 
     cur.execute("INSERT INTO timer_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
     cur.execute("INSERT INTO briefing_cache (id, content) VALUES (1, '') ON CONFLICT (id) DO NOTHING")
@@ -967,11 +1005,75 @@ def login():
             return redirect("/")
         return render_template("login.html")
     data = request.get_json(force=True) or {}
-    if data.get("password") == APP_PASSWORD:
-        session.permanent = True
-        session["authenticated"] = True
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+
+    if not email or not password:
+        return jsonify({"error": "Email and password required"}), 400
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, password, role FROM users WHERE email = %s", (email,))
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if user and verify_password(password, user["password"]):
+            session.permanent = True
+            session["authenticated"] = True
+            session["user_id"] = user["id"]
+            session["user_email"] = email
+            if user["role"] == "admin":
+                session["is_admin"] = True
+            return jsonify({"status": "ok"})
+        return jsonify({"error": "Invalid email or password"}), 401
+    except Exception as e:
+        log.error(f"Login error: {e}")
+        return jsonify({"error": "Login error"}), 500
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if request.method == "GET":
+        if session.get("authenticated"):
+            return redirect("/")
+        return render_template("signup.html")
+    data = request.get_json(force=True) or {}
+    email = data.get("email", "").strip()
+    password = data.get("password", "")
+    confirm_password = data.get("confirm_password", "")
+
+    if not email or not password or not confirm_password:
+        return jsonify({"error": "All fields required"}), 400
+
+    if password != confirm_password:
+        return jsonify({"error": "Passwords do not match"}), 400
+
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        # Check if email already exists
+        cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            return jsonify({"error": "Email already registered"}), 400
+
+        hashed_pwd = hash_password(password)
+        cur.execute("INSERT INTO users (email, password, role) VALUES (%s, %s, %s)",
+                    (email, hashed_pwd, 'user'))
+        conn.commit()
+        cur.close()
+        conn.close()
+
         return jsonify({"status": "ok"})
-    return jsonify({"error": "Wrong password"}), 401
+    except Exception as e:
+        log.error(f"Signup error: {e}")
+        return jsonify({"error": "Signup error"}), 500
 
 
 @app.route("/logout")
@@ -983,6 +1085,94 @@ def logout():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/admin")
+def admin():
+    if not session.get("is_admin"):
+        return redirect("/login")
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT id, email, role, created_at FROM users ORDER BY created_at DESC")
+        users = cur.fetchall()
+        cur.close()
+        conn.close()
+        return render_template("admin.html", users=users)
+    except Exception as e:
+        log.error(f"Admin error: {e}")
+        return "Error loading admin page", 500
+
+
+@app.route("/api/admin/users", methods=["GET", "POST", "DELETE"])
+def api_admin_users():
+    if not session.get("is_admin"):
+        return jsonify({"error": "Admin access required"}), 401
+
+    if request.method == "GET":
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT id, email, role, created_at FROM users ORDER BY created_at DESC")
+            users = cur.fetchall()
+            cur.close()
+            conn.close()
+            return jsonify(users)
+        except Exception as e:
+            log.error(f"Get users error: {e}")
+            return jsonify({"error": "Error fetching users"}), 500
+
+    elif request.method == "POST":
+        data = request.get_json(force=True) or {}
+        email = data.get("email", "").strip()
+        password = data.get("password", "")
+        role = data.get("role", "user")
+
+        if not email or not password:
+            return jsonify({"error": "Email and password required"}), 400
+
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+            if cur.fetchone():
+                cur.close()
+                conn.close()
+                return jsonify({"error": "Email already exists"}), 400
+
+            hashed_pwd = hash_password(password)
+            cur.execute("INSERT INTO users (email, password, role) VALUES (%s, %s, %s)",
+                        (email, hashed_pwd, role))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return jsonify({"status": "ok"})
+        except Exception as e:
+            log.error(f"Create user error: {e}")
+            return jsonify({"error": "Error creating user"}), 500
+
+    elif request.method == "DELETE":
+        data = request.get_json(force=True) or {}
+        user_id = data.get("user_id")
+
+        if not user_id:
+            return jsonify({"error": "User ID required"}), 400
+
+        # Prevent deleting the current admin
+        if user_id == session.get("user_id"):
+            return jsonify({"error": "Cannot delete your own account"}), 400
+
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return jsonify({"status": "ok"})
+        except Exception as e:
+            log.error(f"Delete user error: {e}")
+            return jsonify({"error": "Error deleting user"}), 500
 
 
 @app.route("/api/assignments")

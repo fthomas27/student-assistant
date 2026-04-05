@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Finn -- Admin Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+--bg: #0a0a0f;
+--surface: #111118;
+--surface2: #18181f;
+--border: rgba(255,255,255,0.07);
+--border2: rgba(255,255,255,0.12);
+--text: #f0f0f5;
+--text2: #8888a0;
+--text3: #555568;
+--accent: #7c6af7;
+--accent2: #a89cf8;
+--red: #f05c5c;
+--green: #4caf82;
+}
+
+body {
+font-family: 'DM Sans', sans-serif;
+background: var(--bg);
+color: var(--text);
+padding: 24px;
+position: relative;
+}
+
+body::before {
+content: '';
+position: fixed;
+inset: 0;
+background:
+radial-gradient(ellipse 60% 50% at 20% 20%, rgba(124,106,247,0.06) 0%, transparent 70%),
+radial-gradient(ellipse 50% 40% at 80% 80%, rgba(124,106,247,0.04) 0%, transparent 70%);
+pointer-events: none;
+}
+
+.container {
+max-width: 1000px;
+margin: 0 auto;
+position: relative;
+z-index: 1;
+}
+
+header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 32px;
+}
+
+h1 {
+font-family: 'DM Serif Display', serif;
+font-size: 32px;
+}
+
+.header-buttons {
+display: flex;
+gap: 12px;
+}
+
+button {
+background: var(--accent);
+color: #fff;
+border: none;
+border-radius: 12px;
+padding: 12px 20px;
+font-size: 14px;
+font-weight: 600;
+cursor: pointer;
+transition: opacity 0.15s, transform 0.1s;
+font-family: 'DM Sans', sans-serif;
+}
+
+button:active {
+opacity: 0.85;
+transform: scale(0.98);
+}
+
+.logout-btn {
+background: var(--red);
+}
+
+.card {
+background: var(--surface);
+border: 1px solid var(--border2);
+border-radius: 16px;
+padding: 24px;
+margin-bottom: 24px;
+}
+
+.card-title {
+font-size: 18px;
+font-weight: 600;
+margin-bottom: 20px;
+}
+
+.form-group {
+margin-bottom: 16px;
+}
+
+label {
+display: block;
+font-size: 12px;
+font-weight: 600;
+color: var(--text3);
+text-transform: uppercase;
+letter-spacing: 0.08em;
+margin-bottom: 8px;
+}
+
+input {
+width: 100%;
+background: var(--surface2);
+border: 1px solid var(--border2);
+border-radius: 8px;
+padding: 12px 14px;
+font-size: 14px;
+color: var(--text);
+font-family: 'DM Sans', sans-serif;
+outline: none;
+transition: border-color 0.2s;
+}
+
+input:focus {
+border-color: var(--accent);
+box-shadow: 0 0 0 3px rgba(124,106,247,0.12);
+}
+
+select {
+width: 100%;
+background: var(--surface2);
+border: 1px solid var(--border2);
+border-radius: 8px;
+padding: 12px 14px;
+font-size: 14px;
+color: var(--text);
+font-family: 'DM Sans', sans-serif;
+outline: none;
+transition: border-color 0.2s;
+}
+
+select:focus {
+border-color: var(--accent);
+box-shadow: 0 0 0 3px rgba(124,106,247,0.12);
+}
+
+.form-row {
+display: grid;
+grid-template-columns: 1fr 1fr;
+gap: 16px;
+}
+
+@media (max-width: 600px) {
+.form-row {
+grid-template-columns: 1fr;
+}
+}
+
+.users-table {
+width: 100%;
+border-collapse: collapse;
+}
+
+.users-table th {
+text-align: left;
+padding: 12px;
+font-size: 11px;
+font-weight: 600;
+color: var(--text3);
+text-transform: uppercase;
+letter-spacing: 0.08em;
+border-bottom: 1px solid var(--border);
+}
+
+.users-table td {
+padding: 14px 12px;
+border-bottom: 1px solid var(--border);
+font-size: 14px;
+}
+
+.users-table tr:hover {
+background: rgba(124,106,247,0.05);
+}
+
+.role-badge {
+display: inline-block;
+padding: 4px 10px;
+border-radius: 6px;
+font-size: 11px;
+font-weight: 600;
+text-transform: uppercase;
+letter-spacing: 0.05em;
+}
+
+.role-admin {
+background: rgba(124,106,247,0.2);
+color: var(--accent2);
+}
+
+.role-user {
+background: rgba(136,136,160,0.2);
+color: var(--text2);
+}
+
+.delete-btn {
+background: var(--red);
+padding: 8px 12px;
+font-size: 12px;
+}
+
+.message {
+padding: 12px;
+border-radius: 8px;
+margin-bottom: 16px;
+font-size: 14px;
+}
+
+.message.error {
+background: rgba(240,92,92,0.15);
+color: var(--red);
+border: 1px solid rgba(240,92,92,0.3);
+}
+
+.message.success {
+background: rgba(76,175,130,0.15);
+color: var(--green);
+border: 1px solid rgba(76,175,130,0.3);
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>Admin Panel</h1>
+    <div class="header-buttons">
+      <button onclick="window.location.href='/'">Back to Dashboard</button>
+      <button class="logout-btn" onclick="window.location.href='/logout'">Logout</button>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="card-title">Create New User</div>
+    <div id="create-message"></div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="new-email" placeholder="user@example.com">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="new-password" placeholder="••••••••••••">
+    </div>
+    <div class="form-group">
+      <label>Role</label>
+      <select id="new-role">
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <button onclick="createUser()">Create User</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Users</div>
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Created</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="users-tbody">
+        <tr><td colspan="4">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function formatDate(isoString) {
+  if (!isoString) return '-';
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return isoString;
+  }
+}
+
+function loadUsers() {
+  fetch('/api/admin/users')
+    .then(r => r.json())
+    .then(users => {
+      const tbody = document.getElementById('users-tbody');
+      tbody.innerHTML = '';
+      users.forEach(user => {
+        const row = document.createElement('tr');
+        const roleClass = user.role === 'admin' ? 'role-admin' : 'role-user';
+        const deleteBtn = user.role === 'admin' ? '<span style="color: var(--text3);">-</span>' : `<button class="delete-btn" onclick="deleteUser(${user.id}, '${user.email}')">Delete</button>`;
+        row.innerHTML = `
+          <td>${user.email}</td>
+          <td><span class="role-badge ${roleClass}">${user.role}</span></td>
+          <td>${formatDate(user.created_at)}</td>
+          <td>${deleteBtn}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    })
+    .catch(err => {
+      console.error('Error loading users:', err);
+      document.getElementById('users-tbody').innerHTML = '<tr><td colspan="4">Error loading users</td></tr>';
+    });
+}
+
+function createUser() {
+  const email = document.getElementById('new-email').value.trim();
+  const password = document.getElementById('new-password').value;
+  const role = document.getElementById('new-role').value;
+  const msgDiv = document.getElementById('create-message');
+
+  if (!email || !password) {
+    msgDiv.innerHTML = '<div class="message error">Email and password required</div>';
+    return;
+  }
+
+  fetch('/api/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, role })
+  })
+  .then(r => r.json().then(data => ({ ok: r.ok, data })))
+  .then(({ ok, data }) => {
+    if (ok) {
+      msgDiv.innerHTML = '<div class="message success">User created successfully</div>';
+      document.getElementById('new-email').value = '';
+      document.getElementById('new-password').value = '';
+      loadUsers();
+    } else {
+      msgDiv.innerHTML = `<div class="message error">${data.error || 'Error creating user'}</div>`;
+    }
+  })
+  .catch(err => {
+    msgDiv.innerHTML = `<div class="message error">Error: ${err.message}</div>`;
+  });
+}
+
+function deleteUser(userId, email) {
+  if (!confirm(`Delete user "${email}"?`)) return;
+
+  fetch('/api/admin/users', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.status === 'ok') {
+      loadUsers();
+    } else {
+      alert(data.error || 'Error deleting user');
+    }
+  })
+  .catch(err => {
+    alert(`Error: ${err.message}`);
+  });
+}
+
+// Load users on page load
+loadUsers();
+</script>
+
+</body>
+</html>

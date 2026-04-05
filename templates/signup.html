@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<title>Finn -- Sign In</title>
+<title>Finn -- Sign Up</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -50,7 +50,7 @@ radial-gradient(ellipse 50% 40% at 80% 80%, rgba(124,106,247,0.04) 0%, transpare
 pointer-events: none;
 }
 
-.login-card {
+.signup-card {
 width: 100%;
 max-width: 360px;
 background: var(--surface);
@@ -59,6 +59,8 @@ border-radius: 24px;
 padding: 40px 32px 36px;
 position: relative;
 animation: fadeUp 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+overflow-y: auto;
+max-height: 90dvh;
 }
 
 @keyframes fadeUp {
@@ -76,7 +78,7 @@ font-size: 24px;
 margin: 0 auto 20px;
 }
 
-.login-title {
+.signup-title {
 font-family: 'DM Serif Display', serif;
 font-size: 28px;
 text-align: center;
@@ -84,7 +86,7 @@ margin-bottom: 6px;
 line-height: 1.1;
 }
 
-.login-sub {
+.signup-sub {
 font-size: 13px;
 color: var(--text3);
 text-align: center;
@@ -99,11 +101,15 @@ color: var(--text3);
 text-transform: uppercase;
 letter-spacing: 0.08em;
 margin-bottom: 8px;
+margin-top: 16px;
+}
+
+.field-label:first-of-type {
+margin-top: 0;
 }
 
 .pw-wrap {
 position: relative;
-margin-bottom: 20px;
 }
 
 .field-input {
@@ -161,6 +167,7 @@ transition: opacity 0.15s, transform 0.1s;
 -webkit-tap-highlight-color: transparent;
 position: relative;
 overflow: hidden;
+margin-top: 24px;
 }
 .submit-btn:active { opacity: 0.85; transform: scale(0.98); }
 .submit-btn:disabled { opacity: 0.5; cursor: default; }
@@ -174,22 +181,27 @@ height: 18px;
 transition: opacity 0.2s;
 }
 
-.session-note {
+.signin-link {
 font-size: 11px;
 color: var(--text3);
 text-align: center;
 margin-top: 22px;
 letter-spacing: 0.02em;
 }
+
+.signin-link a {
+color: var(--accent);
+text-decoration: none;
+}
 </style>
 
 </head>
 <body>
 
-<div class="login-card">
+<div class="signup-card">
   <div class="logo-ring">✦</div>
-  <div class="login-title">Welcome back</div>
-  <div class="login-sub">Your personal dashboard</div>
+  <div class="signup-title">Create Account</div>
+  <div class="signup-sub">Join the dashboard</div>
 
   <div class="field-label">Email</div>
   <input
@@ -201,37 +213,55 @@ letter-spacing: 0.02em;
     autofocus
   >
 
-  <div class="field-label" style="margin-top: 20px;">Password</div>
+  <div class="field-label">Password</div>
   <div class="pw-wrap">
     <input
       class="field-input"
       id="pw-input"
       type="password"
       placeholder="••••••••••••"
-      autocomplete="current-password"
+      autocomplete="new-password"
     >
     <button class="toggle-pw" type="button" onclick="toggleVisibility()" id="toggle-btn">👁</button>
   </div>
 
-<button class="submit-btn" id="submit-btn" onclick="submitLogin()">Sign In</button>
+  <div class="field-label">Confirm Password</div>
+  <div class="pw-wrap">
+    <input
+      class="field-input"
+      id="confirm-pw-input"
+      type="password"
+      placeholder="••••••••••••"
+      autocomplete="new-password"
+    >
+    <button class="toggle-pw" type="button" onclick="toggleConfirmVisibility()" id="toggle-confirm-btn">👁</button>
+  </div>
+
+<button class="submit-btn" id="submit-btn" onclick="submitSignup()">Create Account</button>
 
   <div class="error-msg" id="error-msg"></div>
-  <div class="session-note">Don't have an account? <a href="/signup" style="color: var(--accent); text-decoration: none;">Sign up</a></div>
+  <div class="signin-link">Already have an account? <a href="/login">Sign in</a></div>
 </div>
 
 <script>
 var emailInput = document.getElementById('email-input');
 var pwInput = document.getElementById('pw-input');
+var confirmPwInput = document.getElementById('confirm-pw-input');
 var btn = document.getElementById('submit-btn');
 var errMsg = document.getElementById('error-msg');
 var visible = false;
+var confirmVisible = false;
 
 emailInput.addEventListener('keydown', function(e) {
   if (e.key === 'Enter') pwInput.focus();
 });
 
 pwInput.addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') submitLogin();
+  if (e.key === 'Enter') confirmPwInput.focus();
+});
+
+confirmPwInput.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') submitSignup();
 });
 
 function toggleVisibility() {
@@ -240,37 +270,51 @@ function toggleVisibility() {
   document.getElementById('toggle-btn').textContent = visible ? '🙈' : '👁';
 }
 
-function submitLogin() {
+function toggleConfirmVisibility() {
+  confirmVisible = !confirmVisible;
+  confirmPwInput.type = confirmVisible ? 'text' : 'password';
+  document.getElementById('toggle-confirm-btn').textContent = confirmVisible ? '🙈' : '👁';
+}
+
+function submitSignup() {
   var email = emailInput.value.trim();
   var pw = pwInput.value;
-  if (!email || !pw) return;
+  var confirmPw = confirmPwInput.value;
+
+  if (!email || !pw || !confirmPw) {
+    errMsg.textContent = 'All fields required.';
+    return;
+  }
+
   btn.disabled = true;
-  btn.textContent = 'Signing in...';
+  btn.textContent = 'Creating account...';
   errMsg.textContent = '';
   emailInput.classList.remove('error');
   pwInput.classList.remove('error');
+  confirmPwInput.classList.remove('error');
 
-  fetch('/login', {
+  fetch('/signup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: email, password: pw })
+    body: JSON.stringify({ email: email, password: pw, confirm_password: confirmPw })
   }).then(function(r) {
-    if (r.ok) {
-      btn.textContent = '✓ Opening...';
-      setTimeout(function() { window.location.href = '/'; }, 300);
-    } else {
-      pwInput.value = '';
-      emailInput.classList.add('error');
-      pwInput.classList.add('error');
-      errMsg.textContent = 'Invalid email or password. Try again.';
-      btn.disabled = false;
-      btn.textContent = 'Sign In';
-      emailInput.focus();
-    }
+    return r.json().then(function(data) {
+      if (r.ok) {
+        btn.textContent = '✓ Redirecting...';
+        setTimeout(function() { window.location.href = '/login'; }, 300);
+      } else {
+        errMsg.textContent = data.error || 'Signup failed.';
+        emailInput.classList.add('error');
+        pwInput.classList.add('error');
+        confirmPwInput.classList.add('error');
+        btn.disabled = false;
+        btn.textContent = 'Create Account';
+      }
+    });
   }).catch(function() {
     errMsg.textContent = 'Connection error.';
     btn.disabled = false;
-    btn.textContent = 'Sign In';
+    btn.textContent = 'Create Account';
   });
 }
 </script>
