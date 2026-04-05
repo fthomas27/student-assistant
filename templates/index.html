@@ -3431,52 +3431,69 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
 
 // ── Vertical-only drag for settings sheet ──
 (function() {
-  var startY = 0, startX = 0, draggingSheet = null;
+  var startY = 0, startX = 0, isDragging = false;
   var settingsSheet = document.getElementById('settings-sheet');
   var sheetBackdrop = document.getElementById('sheet-backdrop');
 
   settingsSheet.addEventListener('touchstart', function(e) {
     startY = e.touches[0].clientY;
     startX = e.touches[0].clientX;
-    draggingSheet = true;
+    isDragging = true;
   }, { passive: true });
 
   settingsSheet.addEventListener('touchmove', function(e) {
-    if (!draggingSheet) return;
+    if (!isDragging) return;
     var dy = e.touches[0].clientY - startY;
     var dx = Math.abs(e.touches[0].clientX - startX);
-    // Only allow vertical dragging; if horizontal movement > 20px, cancel
-    if (dx > 20) { draggingSheet = false; return; }
-    // Only apply drag if user is dragging downward (positive dy)
-    if (dy > 0) {
-      settingsSheet.style.transition = 'none';
-      settingsSheet.style.transform = 'translateY(' + dy + 'px)';
-      // Fade backdrop as sheet is dragged down
-      var fadeAmount = Math.min(dy / 300, 1);
-      sheetBackdrop.style.opacity = 1 - fadeAmount * 0.5;
+
+    // Cancel drag if horizontal movement exceeds threshold
+    if (dx > 20) {
+      isDragging = false;
+      // Restore to open state without inline styles interfering
+      settingsSheet.style.removeProperty('transform');
+      settingsSheet.style.removeProperty('transition');
+      sheetBackdrop.style.removeProperty('opacity');
+      sheetBackdrop.style.removeProperty('transition');
+      return;
     }
+
+    // Only drag downward; don't follow upward
+    if (dy <= 0) return;
+
+    // Disable transitions during drag
+    if (settingsSheet.style.transition !== 'none') {
+      settingsSheet.style.transition = 'none';
+      sheetBackdrop.style.transition = 'none';
+    }
+
+    // Apply drag transform
+    settingsSheet.style.transform = 'translateY(' + dy + 'px)';
+
+    // Fade backdrop proportionally
+    var fadeAmount = Math.min(dy / 300, 0.5);
+    sheetBackdrop.style.opacity = Math.max(0, 1 - fadeAmount);
   }, { passive: true });
 
   settingsSheet.addEventListener('touchend', function(e) {
-    if (!draggingSheet) return;
-    var dy = e.changedTouches[0].clientY - startY;
-    draggingSheet = false;
+    if (!isDragging) return;
+    isDragging = false;
 
-    // Restore transition
+    var dy = e.changedTouches[0].clientY - startY;
+    var shouldClose = dy > 100;
+
+    // Enable transitions for snap animation
     settingsSheet.style.transition = 'transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
     sheetBackdrop.style.transition = 'opacity 0.3s';
 
-    // If dragged down more than 100px, close the sheet
-    if (dy > 100) {
+    if (shouldClose) {
+      // Close: use CSS classes to control final state
       settingsSheet.classList.remove('open');
       sheetBackdrop.classList.remove('open');
-      settingsSheet.style.transform = 'translateY(100%)';
-      sheetBackdrop.style.opacity = '0';
-    } else {
-      // Snap back to open position
-      settingsSheet.style.transform = 'translateY(0)';
-      sheetBackdrop.style.opacity = '1';
     }
+
+    // Clear inline transforms to let CSS classes provide final values
+    settingsSheet.style.removeProperty('transform');
+    sheetBackdrop.style.removeProperty('opacity');
   });
 })();
 
