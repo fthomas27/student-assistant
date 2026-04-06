@@ -3440,6 +3440,7 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     settingsSheet.classList.remove('dragging');
     settingsSheet.style.removeProperty('transform');
     sheetBackdrop.style.removeProperty('opacity');
+    sheetBackdrop.style.removeProperty('transition');
     transitionDisabled = false;
   }
 
@@ -3500,6 +3501,9 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     // Clear inline transforms to let CSS classes provide final values
     settingsSheet.style.removeProperty('transform');
     sheetBackdrop.style.removeProperty('opacity');
+
+    // Reset flag for next drag
+    transitionDisabled = false;
   });
 })();
 
