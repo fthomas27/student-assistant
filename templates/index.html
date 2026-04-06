@@ -1275,6 +1275,52 @@ function getElement(elementId) {
   return document.getElementById(elementId);
 }
 
+// ══════════════════════════════════════════
+// STORAGE HELPERS (Private Browsing Safe)
+// ══════════════════════════════════════════
+
+// Safely read from localStorage (handles private browsing mode)
+function storageGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (err) {
+    logError('localStorage.getItem(' + key + ')', err);
+    return null;
+  }
+}
+
+// Safely write to localStorage (handles private browsing mode)
+function storageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    logError('localStorage.setItem(' + key + ')', err);
+    return false;
+  }
+}
+
+// Safely read from sessionStorage (handles private browsing mode)
+function sessionGet(key) {
+  try {
+    return sessionStorage.getItem(key);
+  } catch (err) {
+    logError('sessionStorage.getItem(' + key + ')', err);
+    return null;
+  }
+}
+
+// Safely write to sessionStorage (handles private browsing mode)
+function sessionSet(key, value) {
+  try {
+    sessionStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    logError('sessionStorage.setItem(' + key + ')', err);
+    return false;
+  }
+}
+
 // CSRF Token helper - gets token from window cache
 function getCsrfToken() {
   return window._csrf_token || '';
@@ -1509,9 +1555,7 @@ function renderDebriefPill() {
 
   // If we have today's debrief and are in window, show it
   if (deb && isDebriefFromToday(gen) && inDebriefWindow) {
-    try {
-      if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
-    } catch (e) {}
+    if (sessionGet('debrief_hide_' + localDateKey())) return;
 
     var when = gen ? formatRelative(gen) : '';
     var permHint = '';
@@ -1548,10 +1592,7 @@ function openDebriefSheet() {
   // Check if reflection has been submitted for today
   var today = localDateKey(new Date());
   var reflectionKey = 'debrief_reflection_' + today;
-  var hasReflection = false;
-  try {
-    hasReflection = !!localStorage.getItem(reflectionKey);
-  } catch (e) {}
+  var hasReflection = !!storageGet(reflectionKey);
 
   if (hasReflection) {
     // Show debrief, hide form
@@ -1605,11 +1646,7 @@ function submitDebriefReflection() {
     learnings: learnings,
     submittedAt: new Date().toISOString()
   };
-  try {
-    localStorage.setItem(reflectionKey, JSON.stringify(reflectionData));
-  } catch (e) {
-    console.error('Failed to save reflection:', e);
-  }
+  storageSet(reflectionKey, JSON.stringify(reflectionData));
 
   // Now show the debrief
   var reflectionForm = document.getElementById('debrief-reflection-form');
@@ -1632,9 +1669,7 @@ function maybeBrowserNotifyDebrief(genIso, debText) {
   if (!debText || !isDebriefFromToday(genIso)) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   var key = 'debrief_bn_' + String(genIso).replace(/[^\w.-]/g, '_');
-  try {
-    if (sessionStorage.getItem(key)) return;
-  } catch (e) {}
+  if (sessionGet(key)) return;
   try {
     var n = new Notification('Daily debrief ready', {
       body: 'Tap to see how today went',
@@ -1645,8 +1680,10 @@ function maybeBrowserNotifyDebrief(genIso, debText) {
       openDebriefSheet();
       try { n.close(); } catch (e2) {}
     };
-    sessionStorage.setItem(key, '1');
-  } catch (e) {}
+    sessionSet(key, '1');
+  } catch (e) {
+    logError('showDebriefNotification', e);
+  }
 }
 
 function showInAppNotification(title, body) {
@@ -1671,20 +1708,19 @@ function calEventReminderId(e) {
 }
 
 function getCalReminders() {
+  var raw = storageGet('cal_reminders_v1');
+  if (!raw) return [];
   try {
-    var raw = localStorage.getItem('cal_reminders_v1');
-    if (!raw) return [];
     var arr = JSON.parse(raw);
     return Array.isArray(arr) ? arr : [];
   } catch (err) {
+    logError('getCalReminders: JSON.parse', err);
     return [];
   }
 }
 
 function setCalReminders(arr) {
-  try {
-    localStorage.setItem('cal_reminders_v1', JSON.stringify(arr));
-  } catch (err) {}
+  storageSet('cal_reminders_v1', JSON.stringify(arr));
 }
 
 function showCalEventHomeScreenNotif(entry) {
@@ -3737,7 +3773,7 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     if (dx < -60) {
       // Swipe left → dismiss
       if (row.classList.contains('debrief-notif')) {
-        try { sessionStorage.setItem('debrief_hide_' + localDateKey(), '1'); } catch (err) {}
+        sessionSet('debrief_hide_' + localDateKey(), '1');
       }
       row.style.transition = 'transform 0.25s,opacity 0.25s';
       row.style.transform = 'translateX(-110%)'; row.style.opacity = '0';
