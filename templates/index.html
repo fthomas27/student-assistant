@@ -1203,6 +1203,7 @@ var timerFocusHydrated = false;
 var workoutLocationChoice = 'home';
 var currentWorkoutLogId = null;
 var cachedDebrief = { text: '', generatedAt: null };
+var cachedDueTodayList = [];
 window._calReminderTimers = window._calReminderTimers || {};
 
 // CSRF Token helper - gets token from window cache
@@ -1829,7 +1830,8 @@ function renderNotifications(allAsgn) {
     html += '<div class="notif-row"><span class="notif-icon">&#128680;</span><div class="notif-text"><span class="notif-title">' + overdue.length + ' overdue</span><br>' + overdue.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + '</div></div>';
   }
   if (dueToday.length > 0) {
-    html += '<div class="notif-row" style="cursor:pointer" onclick="openDueTodayAssignments(' + JSON.stringify(dueToday) + ')"><span class="notif-icon">⏰</span><div class="notif-text"><span class="notif-title">' + dueToday.length + ' due today</span><br>' + dueToday.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + (dueToday.length > 2 ? '...' : '') + '</div></div>';
+    cachedDueTodayList = dueToday;
+    html += '<div class="notif-row" style="cursor:pointer" onclick="openDueTodayAssignments()"><span class="notif-icon">⏰</span><div class="notif-text"><span class="notif-title">' + dueToday.length + ' due today</span><br>' + dueToday.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + (dueToday.length > 2 ? '...' : '') + '</div></div>';
   }
   if (bigNotStarted.length > 0) {
     html += '<div class="notif-row"><span class="notif-icon">&#128161;</span><div class="notif-text"><span class="notif-title">Not started yet</span><br>' + bigNotStarted.slice(0,2).map(function(a){ return esc(a.title) + ' (' + Math.round(a.estimate_minutes) + ' min)'; }).join(', ') + '</div></div>';
@@ -2008,7 +2010,8 @@ function markDoneFromDetail() {
   markDone(null, a.uid, a.title, a.class_name, mins);
 }
 
-function openDueTodayAssignments(dueTodayList) {
+function openDueTodayAssignments() {
+  var dueTodayList = cachedDueTodayList;
   if (!dueTodayList || dueTodayList.length === 0) return;
 
   if (dueTodayList.length === 1) {
@@ -2016,27 +2019,27 @@ function openDueTodayAssignments(dueTodayList) {
     openAsgnDetail(dueTodayList[0].uid);
   } else {
     // Multiple assignments: show list modal
-    var html = '<div style="padding:16px;max-height:400px;overflow-y:auto">';
-    dueTodayList.forEach(function(a) {
-      var timeStr = a.estimate_minutes ? Math.round(a.estimate_minutes) + ' min' : '?';
-      html += '<div onclick="openAsgnDetail(\'' + escq(a.uid) + '\')" style="padding:12px;margin-bottom:8px;background:var(--surface2);border-radius:10px;cursor:pointer;border:1px solid var(--border)">' +
-        '<div style="font-weight:600;color:var(--text);margin-bottom:4px">' + esc(a.title) + '</div>' +
-        '<div style="font-size:13px;color:var(--text2)">' + esc(a.class_name || '') + ' · ' + esc(a.due_display || '') + ' · ' + timeStr + '</div>' +
-        '</div>';
-    });
-    html += '</div>';
-
     var backdrop = document.getElementById('sheet-backdrop');
     var detailSheet = document.getElementById('asgn-detail-sheet');
+    var contentEl = document.getElementById('asgn-detail-content');
+    var actionsEl = document.getElementById('asgn-detail-actions');
 
-    if (detailSheet) {
-      detailSheet.innerHTML = '<div class="sheet-handle"></div>' +
-        '<div class="sheet-title">Due Today</div>' +
+    if (contentEl) {
+      var html = '<div class="sheet-title">Due Today</div>' +
         '<div class="sheet-sub">Select an assignment to view details</div>' +
-        html +
-        '<div id="asgn-detail-actions"></div>';
+        '<div style="padding:8px 0">';
+      dueTodayList.forEach(function(a) {
+        var timeStr = a.estimate_minutes ? Math.round(a.estimate_minutes) + ' min' : '?';
+        html += '<div onclick="openAsgnDetail(\'' + escq(a.uid) + '\')" style="padding:12px;margin-bottom:8px;background:var(--surface2);border-radius:10px;cursor:pointer;border:1px solid var(--border)">' +
+          '<div style="font-weight:600;color:var(--text);margin-bottom:4px">' + esc(a.title) + '</div>' +
+          '<div style="font-size:13px;color:var(--text2)">' + esc(a.class_name || '') + ' · ' + esc(a.due_display || '') + ' · ' + timeStr + '</div>' +
+          '</div>';
+      });
+      html += '</div>';
+      contentEl.innerHTML = html;
     }
 
+    if (actionsEl) actionsEl.innerHTML = '';
     if (backdrop) backdrop.classList.add('open');
     if (detailSheet) detailSheet.classList.add('open');
   }
