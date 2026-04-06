@@ -481,6 +481,7 @@ transition: transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 max-height: 88dvh; overflow-y: auto;
 }
 .settings-sheet.open { transform: translateY(0); }
+.settings-sheet.dragging { transition: none; }
 .sheet-title-sm { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
 .field-group { margin-bottom: 16px; }
 .field-label { font-size: 11px; font-weight: 700; color: var(--text); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; opacity: 0.9; }
@@ -3431,9 +3432,16 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
 
 // ── Vertical-only drag for settings sheet ──
 (function() {
-  var startY = 0, startX = 0, isDragging = false;
+  var startY = 0, startX = 0, isDragging = false, transitionDisabled = false;
   var settingsSheet = document.getElementById('settings-sheet');
   var sheetBackdrop = document.getElementById('sheet-backdrop');
+
+  function resetSheetStyles() {
+    settingsSheet.classList.remove('dragging');
+    settingsSheet.style.removeProperty('transform');
+    sheetBackdrop.style.removeProperty('opacity');
+    transitionDisabled = false;
+  }
 
   settingsSheet.addEventListener('touchstart', function(e) {
     startY = e.touches[0].clientY;
@@ -3449,21 +3457,18 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     // Cancel drag if horizontal movement exceeds threshold
     if (dx > 20) {
       isDragging = false;
-      // Restore to open state without inline styles interfering
-      settingsSheet.style.removeProperty('transform');
-      settingsSheet.style.removeProperty('transition');
-      sheetBackdrop.style.removeProperty('opacity');
-      sheetBackdrop.style.removeProperty('transition');
+      resetSheetStyles();
       return;
     }
 
     // Only drag downward; don't follow upward
     if (dy <= 0) return;
 
-    // Disable transitions during drag
-    if (settingsSheet.style.transition !== 'none') {
-      settingsSheet.style.transition = 'none';
+    // Disable transitions once on first significant move
+    if (!transitionDisabled) {
+      settingsSheet.classList.add('dragging');
       sheetBackdrop.style.transition = 'none';
+      transitionDisabled = true;
     }
 
     // Apply drag transform
@@ -3481,7 +3486,8 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     var dy = e.changedTouches[0].clientY - startY;
     var shouldClose = dy > 100;
 
-    // Enable transitions for snap animation
+    // Remove dragging class and restore transitions
+    settingsSheet.classList.remove('dragging');
     settingsSheet.style.transition = 'transform 0.38s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
     sheetBackdrop.style.transition = 'opacity 0.3s';
 
