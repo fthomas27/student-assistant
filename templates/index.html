@@ -1858,7 +1858,7 @@ function renderHomeAssignments(list) {
 function buildAsgnCard(a, isActive) {
   var activeClass = isActive ? ' active-timer' : '';
   var label = getPriorityLabel(a);
-  var estVal = a.estimate_minutes ? Math.round(a.estimate_minutes) : 30;
+  var estVal = a.estimate_minutes ? Math.round(a.estimate_minutes) : DEFAULT_ESTIMATE_MINS;
   var uid = esc(a.uid);
 
   var timerHTML = '';
@@ -2338,14 +2338,12 @@ function asgnCardButtonsHandler(e) {
     var uid = btn.getAttribute('data-uid');
     var title = btn.getAttribute('data-title');
     var className = btn.getAttribute('data-class');
+    var estInput = card.querySelector('input[id^="est-"]');
+    var estimate = estInput ? parseFloat(estInput.value) : DEFAULT_ESTIMATE_MINS;
 
     if (action === 'start-timer') {
-      var estInput = card.querySelector('input[id^="est-"]');
-      var estimate = estInput ? parseFloat(estInput.value) : 30;
       startTimer(e, uid, title, className, estimate);
     } else if (action === 'mark-done') {
-      var estInput = card.querySelector('input[id^="est-"]');
-      var estimate = estInput ? parseFloat(estInput.value) : 30;
       markDone(e, uid, title, className, estimate);
     } else if (action === 'mark-taken') {
       markDone(e, uid, title, className, 0);
@@ -2363,6 +2361,9 @@ function asgnCardButtonsHandler(e) {
     }
   }
 }
+
+// Constants
+var DEFAULT_ESTIMATE_MINS = 30;
 
 var timerPollerInterval = null;
 var briefingPollerInterval = null;

@@ -68,6 +68,9 @@ SPORTS_ICAL_URL = os.environ.get("SPORTS_ICAL_URL", "")
 RED_DAY_ICAL_URL = os.environ.get("RED_DAY_ICAL_URL", "https://calendar.google.com/calendar/ical/pcschools.us_7ufb5f1vj8aks1shds5ou4fhe8%40group.calendar.google.com/public/basic.ics")
 WHITE_DAY_ICAL_URL = os.environ.get("WHITE_DAY_ICAL_URL", "https://calendar.google.com/calendar/ical/pcschools.us_64ohm1bccvi50iti8fe455stkg%40group.calendar.google.com/public/basic.ics")
 
+# ── Default values ─────────────────────────────────────────────────────────────
+DEFAULT_ESTIMATE_MINS = 30
+
 # ── Park City School District 2025-2026 Bell Schedule ────────────────────────
 # Red Day = shorter (A-block), White Day = longer (B-block), alternating each school day
 # First day of school: 2025-08-18 (Red day)
@@ -143,11 +146,35 @@ def get_school_hours(d):
 def get_day_calendar_url(d):
     """Return the appropriate day calendar URL (red or white) based on the day type."""
     dtype = get_day_type(d)
-    if dtype == "red":
-        return RED_DAY_ICAL_URL
-    elif dtype == "white":
-        return WHITE_DAY_ICAL_URL
-    return None
+    day_urls = {
+        "red": RED_DAY_ICAL_URL,
+        "white": WHITE_DAY_ICAL_URL,
+    }
+    return day_urls.get(dtype)
+
+
+def fetch_day_calendar_events(d, days_ahead=30):
+    """Fetch calendar events from the appropriate day-specific calendar.
+
+    Args:
+        d: date object to determine red/white day
+        days_ahead: number of days to fetch events for
+
+    Returns:
+        list of event dictionaries with source set to 'redday' or 'whiteday', or empty list if unavailable
+    """
+    day_type = get_day_type(d)
+    day_cal_url = get_day_calendar_url(d)
+    events = []
+
+    if day_cal_url:
+        cal = fetch_ical(day_cal_url)
+        if cal:
+            for e in parse_calendar_events(cal, days_ahead=days_ahead):
+                e["source"] = f"{day_type}day"
+                events.append(e)
+
+    return events
 
 
 def get_db():
@@ -634,14 +661,7 @@ def generate_briefing(force=False):
         if cal2:
             events = list(parse_calendar_events(cal2, days_ahead=1))
         today = datetime.now(TZ).date()
-        day_cal_url = get_day_calendar_url(today)
-        if day_cal_url:
-            cal_sports = fetch_ical(day_cal_url)
-            if cal_sports:
-                day_type = get_day_type(today)
-                for e in parse_calendar_events(cal_sports, days_ahead=1):
-                    e["source"] = f"{day_type}day"
-                    events.append(e)
+        events.extend(fetch_day_calendar_events(today, days_ahead=1))
 
         # Get completed assignment titles (ever) so we don't flag them
         conn = get_db()
@@ -1081,16 +1101,9 @@ def api_calendar():
                 "urgency": a["urgency"],
                 "class_name": a["class_name"]
             })
-    # Day-specific calendar (red or white day) - replaces sports calendar
+    # Day-specific calendar (red or white day)
     today = datetime.now(TZ).date()
-    day_cal_url = get_day_calendar_url(today)
-    if day_cal_url:
-        cal3 = fetch_ical(day_cal_url)
-        if cal3:
-            day_type = get_day_type(today)
-            for e in parse_calendar_events(cal3, days_ahead=days):
-                e["source"] = f"{day_type}day"
-                events.append(e)
+    events.extend(fetch_day_calendar_events(today, days_ahead=days))
     events.sort(key=lambda x: x["start_iso"])
     return jsonify({"events": events})
 
