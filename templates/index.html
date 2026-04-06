@@ -2027,16 +2027,29 @@ function openDueTodayAssignments() {
     if (contentEl) {
       var html = '<div class="sheet-title">Due Today</div>' +
         '<div class="sheet-sub">Select an assignment to view details</div>' +
-        '<div style="padding:8px 0">';
+        '<div id="due-today-list" style="padding:8px 0">';
       dueTodayList.forEach(function(a) {
         var timeStr = a.estimate_minutes ? Math.round(a.estimate_minutes) + ' min' : '?';
-        html += '<div onclick="openAsgnDetail(\'' + escq(a.uid) + '\')" style="padding:12px;margin-bottom:8px;background:var(--surface2);border-radius:10px;cursor:pointer;border:1px solid var(--border)">' +
+        // Use data attribute instead of onclick to prevent XSS
+        html += '<div class="due-today-item" data-uid="' + esc(a.uid) + '" style="padding:12px;margin-bottom:8px;background:var(--surface2);border-radius:10px;cursor:pointer;border:1px solid var(--border)">' +
           '<div style="font-weight:600;color:var(--text);margin-bottom:4px">' + esc(a.title) + '</div>' +
           '<div style="font-size:13px;color:var(--text2)">' + esc(a.class_name || '') + ' · ' + esc(a.due_display || '') + ' · ' + timeStr + '</div>' +
           '</div>';
       });
       html += '</div>';
       contentEl.innerHTML = html;
+
+      // Add event delegation handler for due-today items
+      var listEl = document.getElementById('due-today-list');
+      if (listEl) {
+        listEl.addEventListener('click', function(e) {
+          var item = e.target.closest('.due-today-item');
+          if (item) {
+            var uid = item.getAttribute('data-uid');
+            if (uid) openAsgnDetail(uid);
+          }
+        });
+      }
     }
 
     if (actionsEl) actionsEl.innerHTML = '';
@@ -2123,16 +2136,18 @@ function updateTimerFocusDisplay() {
   updateTimerFullscreenDisplay();
   if (actionsEl && timerFocusPausedUi !== paused) {
     timerFocusPausedUi = paused;
-    var uq = escq(activeTimer.assignment_uid || '');
-    var tq = escq(activeTimer.assignment_title || '');
-    var cq = escq(activeTimer.class_name || '');
     actionsEl.innerHTML =
       '<button type="button" class="btn btn-outline" onclick="openTimerFullscreen()">Fullscreen</button>' +
       (paused
-        ? '<button type="button" class="btn btn-primary" onclick="resumeTimerFromFocus(event)">Resume</button>'
-        : '<button type="button" class="btn btn-pause" onclick="pauseTimerFromFocus(event)">Pause</button>') +
-      '<button type="button" class="btn btn-done" onclick="stopTimerFromFocus(event,true,\'' + uq + '\',\'' + tq + '\',\'' + cq + '\')">Done</button>' +
-      '<button type="button" class="btn btn-outline" onclick="stopTimerFromFocus(event,false,\'' + uq + '\',\'' + tq + '\',\'' + cq + '\')">Discard</button>';
+        ? '<button type="button" class="btn btn-primary" data-action="resume">Resume</button>'
+        : '<button type="button" class="btn btn-pause" data-action="pause">Pause</button>') +
+      '<button type="button" class="btn btn-done" data-action="done">Done</button>' +
+      '<button type="button" class="btn btn-outline" data-action="discard">Discard</button>';
+
+    // Remove any existing listeners
+    actionsEl.removeEventListener('click', timerActionsHandler);
+    // Add event delegation for timer actions
+    actionsEl.addEventListener('click', timerActionsHandler);
   }
 }
 
@@ -2150,6 +2165,34 @@ function stopTimerFromFocus(e, save, uid, title, className) {
   if (e) e.stopPropagation();
   stopTimer(e, save, uid, title, className);
 }
+
+// Event delegation handler for timer action buttons (safe XSS handling)
+var timerActionsHandler = function(e) {
+  if (!activeTimer || !activeTimer.active) return;
+  var action = e.target.getAttribute('data-action');
+  if (!action) return;
+
+  e.stopPropagation();
+
+  var uid = activeTimer.assignment_uid || '';
+  var title = activeTimer.assignment_title || '';
+  var className = activeTimer.class_name || '';
+
+  switch (action) {
+    case 'pause':
+      pauseTimer(e);
+      break;
+    case 'resume':
+      resumeTimer(e);
+      break;
+    case 'done':
+      stopTimer(e, true, uid, title, className);
+      break;
+    case 'discard':
+      stopTimer(e, false, uid, title, className);
+      break;
+  }
+};
 
 // ── Fullscreen Timer Functions ──
 function openTimerFullscreen() {
