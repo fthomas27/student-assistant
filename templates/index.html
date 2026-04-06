@@ -1378,33 +1378,45 @@ document.addEventListener('DOMContentLoaded', function() {
   restoreCalReminders();
 
   // Smart briefing polling: only fetch when app is visible
-  var lastBriefingFetch = Date.now();
-  briefingPollerInterval = setInterval(function() {
-    if (document.visibilityState === 'visible') {
-      // Only fetch if it's been more than 2 minutes since last fetch
-      if (Date.now() - lastBriefingFetch > 120000) {
-        fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function(err) {
-          logError('briefing auto-fetch (periodic)', err);
-        });
-        lastBriefingFetch = Date.now();
-      }
-    }
-  }, 30000); // Check every 30s, but only fetch if 2+ minutes have passed
+  // Prevent duplicate setup by checking if already initialized
+  if (!window._briefingPollerSetup) {
+    window._briefingPollerSetup = true;
+    var lastBriefingFetch = Date.now();
 
-  // Remove old listener if it exists, then add new one to prevent duplication
-  window._briefingVisibilityHandler = window._briefingVisibilityHandler || function() {
-    if (document.visibilityState === 'visible') {
-      // When app becomes visible, fetch immediately if cache is stale
-      if (Date.now() - lastBriefingFetch > 60000) {
-        fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function(err) {
-          logError('briefing auto-fetch (visibility)', err);
-        });
-        lastBriefingFetch = Date.now();
-      }
+    // Clear any existing intervals to prevent leaks
+    if (briefingPollerInterval) {
+      clearInterval(briefingPollerInterval);
     }
-  };
-  document.removeEventListener('visibilitychange', window._briefingVisibilityHandler);
-  document.addEventListener('visibilitychange', window._briefingVisibilityHandler);
+
+    briefingPollerInterval = setInterval(function() {
+      if (document.visibilityState === 'visible') {
+        // Only fetch if it's been more than 2 minutes since last fetch
+        if (Date.now() - lastBriefingFetch > 120000) {
+          fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function(err) {
+            logError('briefing auto-fetch (periodic)', err);
+          });
+          lastBriefingFetch = Date.now();
+        }
+      }
+    }, 30000); // Check every 30s, but only fetch if 2+ minutes have passed
+
+    // Setup visibility handler
+    if (window._briefingVisibilityHandler) {
+      document.removeEventListener('visibilitychange', window._briefingVisibilityHandler);
+    }
+    window._briefingVisibilityHandler = function() {
+      if (document.visibilityState === 'visible') {
+        // When app becomes visible, fetch immediately if cache is stale
+        if (Date.now() - lastBriefingFetch > 60000) {
+          fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function(err) {
+            logError('briefing auto-fetch (visibility)', err);
+          });
+          lastBriefingFetch = Date.now();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', window._briefingVisibilityHandler);
+  }
 });
 
 function updateHeaderDate() {
@@ -2516,8 +2528,16 @@ window._timerVisibilityHandler = function() {
 };
 
 function startTimerPoller() {
+  // Prevent duplicate poller setup
+  if (window._timerPollerStarted) return;
+  window._timerPollerStarted = true;
+
   pollTimer();
   // Smart polling: fast when timer active, slow otherwise
+  // Clear any existing interval first to prevent leaks
+  if (timerPollerInterval) {
+    clearInterval(timerPollerInterval);
+  }
   timerPollerInterval = setInterval(pollTimer, 60000);
 
   // Remove any existing listener to prevent accumulation
@@ -2525,6 +2545,29 @@ function startTimerPoller() {
   // When visibility changes, adjust polling
   document.addEventListener('visibilitychange', window._timerVisibilityHandler);
 }
+
+// Cleanup function for graceful shutdown
+function stopAllPollers() {
+  if (timerPollerInterval) {
+    clearInterval(timerPollerInterval);
+    timerPollerInterval = null;
+  }
+  if (briefingPollerInterval) {
+    clearInterval(briefingPollerInterval);
+    briefingPollerInterval = null;
+  }
+  if (window._timerVisibilityHandler) {
+    document.removeEventListener('visibilitychange', window._timerVisibilityHandler);
+  }
+  if (window._briefingVisibilityHandler) {
+    document.removeEventListener('visibilitychange', window._briefingVisibilityHandler);
+  }
+  window._timerPollerStarted = false;
+  window._briefingPollerSetup = false;
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', stopAllPollers);
 
 function pollTimer() {
   fetch('/api/timer').then(function(r) { return r.json(); }).then(function(d) {
