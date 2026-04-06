@@ -30,6 +30,7 @@
 --red: #d32f2f;
 --amber: #ff9500;
 --green: #2e7d32;
+--purple: #7c3aed;
 --tab-h: 68px;
 --header-h: 58px;
 --r: 16px;
@@ -466,7 +467,7 @@ border-bottom: 1px solid var(--border);
 .week-event:last-child { border-bottom: none; }
 .week-event-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
 .week-event-dot.personal { background: var(--blue); }
-.week-event-dot.sports { background: var(--accent); }
+.week-event-dot.sports { background: var(--purple); }
 .week-event-dot.canvas { background: var(--green); }
 .week-event-dot.canvas.high { background: var(--red); }
 .week-event-dot.canvas.medium { background: var(--yellow); }
@@ -3412,7 +3413,7 @@ function openCalEventDetail(evtJson) {
   var e = JSON.parse(decodeURIComponent(evtJson));
   var timeStr = e.all_day ? 'All Day' : (e.start_display + (e.end_display ? ' – ' + e.end_display : ''));
   var sourceLabel = e.source === 'sports' ? 'Sports' : 'Personal';
-  var dotColor = e.source === 'sports' ? 'var(--accent)' : 'var(--blue)';
+  var dotColor = e.source === 'sports' ? 'var(--purple)' : 'var(--blue)';
   var html =
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
     '<div style="width:10px;height:10px;border-radius:50%;background:' + dotColor + ';flex-shrink:0"></div>' +
