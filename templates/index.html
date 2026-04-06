@@ -1899,7 +1899,7 @@ function buildAsgnCard(a, isActive) {
         '<button class="btn btn-done" data-action="mark-done" data-uid="' + uid + '" data-title="' + esc(a.title) + '" data-class="' + esc(a.class_name) + '">Done</button>') +
     '</div>';
 
-  return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + uid + '" onclick="openAsgnDetail(\'' + uid + '\')">' +
+  return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + uid + '" data-asgn-uid="' + uid + '" style="cursor:pointer">' +
     '<div class="asgn-card-layout">' +
     '<div class="asgn-card-body">' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px;margin-bottom:2px">' +
@@ -2325,34 +2325,42 @@ function markDone(e, uid, title, className, estimate) {
     });
 }
 
-// Event delegation handler for assignment card buttons
+// Event delegation handler for assignment card buttons and card clicks
 function asgnCardButtonsHandler(e) {
   e.stopPropagation();
-  var btn = e.target.closest('button');
-  if (!btn) return;
-
-  var action = btn.getAttribute('data-action');
-  var card = btn.closest('.asgn-card');
+  var card = e.target.closest('.asgn-card');
   if (!card) return;
 
-  var uid = btn.getAttribute('data-uid');
-  var title = btn.getAttribute('data-title');
-  var className = btn.getAttribute('data-class');
+  var btn = e.target.closest('button');
+  if (btn) {
+    // Button click
+    var action = btn.getAttribute('data-action');
+    var uid = btn.getAttribute('data-uid');
+    var title = btn.getAttribute('data-title');
+    var className = btn.getAttribute('data-class');
 
-  if (action === 'start-timer') {
-    var estInput = card.querySelector('input[id^="est-"]');
-    var estimate = estInput ? parseFloat(estInput.value) : 30;
-    startTimer(e, uid, title, className, estimate);
-  } else if (action === 'mark-done') {
-    var estInput = card.querySelector('input[id^="est-"]');
-    var estimate = estInput ? parseFloat(estInput.value) : 30;
-    markDone(e, uid, title, className, estimate);
-  } else if (action === 'mark-taken') {
-    markDone(e, uid, title, className, 0);
-  } else if (action === 'stop-timer') {
-    stopTimer(e, true, uid, title, className);
-  } else if (action === 'save-estimate') {
-    saveEstimateFromCard(e, uid);
+    if (action === 'start-timer') {
+      var estInput = card.querySelector('input[id^="est-"]');
+      var estimate = estInput ? parseFloat(estInput.value) : 30;
+      startTimer(e, uid, title, className, estimate);
+    } else if (action === 'mark-done') {
+      var estInput = card.querySelector('input[id^="est-"]');
+      var estimate = estInput ? parseFloat(estInput.value) : 30;
+      markDone(e, uid, title, className, estimate);
+    } else if (action === 'mark-taken') {
+      markDone(e, uid, title, className, 0);
+    } else if (action === 'stop-timer') {
+      stopTimer(e, true, uid, title, className);
+    } else if (action === 'save-estimate') {
+      saveEstimateFromCard(e, uid);
+    }
+  } else {
+    // Card click (open detail) - make sure it's not a button or input
+    if (e.target.closest('button') || e.target.closest('input')) return;
+    var uid = card.getAttribute('data-asgn-uid');
+    if (uid) {
+      openAsgnDetail(uid);
+    }
   }
 }
 
