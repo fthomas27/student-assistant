@@ -1206,6 +1206,121 @@ var cachedDebrief = { text: '', generatedAt: null };
 var cachedDueTodayList = [];
 window._calReminderTimers = window._calReminderTimers || {};
 
+// ══════════════════════════════════════════
+// ERROR HANDLING
+// ══════════════════════════════════════════
+
+// Log errors to console with context
+function logError(context, error) {
+  var msg = '[' + new Date().toISOString() + '] ' + context;
+  if (error instanceof Error) {
+    console.error(msg, error.message, error.stack);
+  } else {
+    console.error(msg, error);
+  }
+}
+
+// Show non-blocking error notification to user
+function showErrorNotification(title, message) {
+  var notif = document.createElement('div');
+  notif.style.cssText = 'position:fixed;top:20px;right:20px;background:#f87171;color:white;padding:12px 16px;' +
+    'border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);z-index:9999;max-width:300px;font-size:13px';
+  notif.innerHTML = '<strong>' + title + '</strong><br>' + message;
+  document.body.appendChild(notif);
+  setTimeout(function() {
+    notif.style.opacity = '0';
+    notif.style.transition = 'opacity 0.3s';
+    setTimeout(function() { document.body.removeChild(notif); }, 300);
+  }, 5000);
+}
+
+// Generic API error handler
+function handleApiError(context, error, userMessage) {
+  logError(context, error);
+  if (userMessage) {
+    showErrorNotification('Error', userMessage || 'Something went wrong. Please try again.');
+  }
+}
+
+// ══════════════════════════════════════════
+// SAFE DOM HELPERS
+// ══════════════════════════════════════════
+
+// Safely set element text content
+function setText(elementId, text) {
+  var el = document.getElementById(elementId);
+  if (el) {
+    el.textContent = text;
+  }
+}
+
+// Safely set element HTML content
+function setHTML(elementId, html) {
+  var el = document.getElementById(elementId);
+  if (el) {
+    el.innerHTML = html;
+  }
+}
+
+// Safely set element style property
+function setStyle(elementId, property, value) {
+  var el = document.getElementById(elementId);
+  if (el) {
+    el.style[property] = value;
+  }
+}
+
+// Safely query and return element
+function getElement(elementId) {
+  return document.getElementById(elementId);
+}
+
+// ══════════════════════════════════════════
+// STORAGE HELPERS (Private Browsing Safe)
+// ══════════════════════════════════════════
+
+// Safely read from localStorage (handles private browsing mode)
+function storageGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (err) {
+    logError('localStorage.getItem(' + key + ')', err);
+    return null;
+  }
+}
+
+// Safely write to localStorage (handles private browsing mode)
+function storageSet(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    logError('localStorage.setItem(' + key + ')', err);
+    return false;
+  }
+}
+
+// Safely read from sessionStorage (handles private browsing mode)
+function sessionGet(key) {
+  try {
+    return sessionStorage.getItem(key);
+  } catch (err) {
+    logError('sessionStorage.getItem(' + key + ')', err);
+    return null;
+  }
+}
+
+// Safely write to sessionStorage (handles private browsing mode)
+function sessionSet(key, value) {
+  try {
+    sessionStorage.setItem(key, value);
+    return true;
+  } catch (err) {
+    logError('sessionStorage.setItem(' + key + ')', err);
+    return false;
+  }
+}
+
 // CSRF Token helper - gets token from window cache
 function getCsrfToken() {
   return window._csrf_token || '';
@@ -1234,12 +1349,22 @@ function apiFetch(url, options) {
 // INIT
 // ══════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', function() {
-  // Fetch and cache CSRF token
-  apiFetch('/api/csrf-token').then(function(r) { return r.json(); }).then(function(d) {
-    window._csrf_token = d.csrf_token;
-  }).catch(function() {
-    console.warn('Failed to fetch CSRF token');
-  });
+  // Fetch and cache CSRF token with retry
+  var csrfRetries = 0;
+  function fetchCsrfToken() {
+    apiFetch('/api/csrf-token').then(function(r) { return r.json(); }).then(function(d) {
+      window._csrf_token = d.csrf_token;
+    }).catch(function(err) {
+      csrfRetries++;
+      logError('CSRF token fetch', err);
+      if (csrfRetries < 3) {
+        setTimeout(fetchCsrfToken, 2000 * csrfRetries);
+      } else {
+        showErrorNotification('Auth Warning', 'Could not fetch security token. Some actions may fail.');
+      }
+    });
+  }
+  fetchCsrfToken();
 
   updateHeaderDate();
   loadConfig();
@@ -1253,29 +1378,45 @@ document.addEventListener('DOMContentLoaded', function() {
   restoreCalReminders();
 
   // Smart briefing polling: only fetch when app is visible
-  var lastBriefingFetch = Date.now();
-  briefingPollerInterval = setInterval(function() {
-    if (document.visibilityState === 'visible') {
-      // Only fetch if it's been more than 2 minutes since last fetch
-      if (Date.now() - lastBriefingFetch > 120000) {
-        fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
-        lastBriefingFetch = Date.now();
-      }
-    }
-  }, 30000); // Check every 30s, but only fetch if 2+ minutes have passed
+  // Prevent duplicate setup by checking if already initialized
+  if (!window._briefingPollerSetup) {
+    window._briefingPollerSetup = true;
+    var lastBriefingFetch = Date.now();
 
-  // Remove old listener if it exists, then add new one to prevent duplication
-  window._briefingVisibilityHandler = window._briefingVisibilityHandler || function() {
-    if (document.visibilityState === 'visible') {
-      // When app becomes visible, fetch immediately if cache is stale
-      if (Date.now() - lastBriefingFetch > 60000) {
-        fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function() {});
-        lastBriefingFetch = Date.now();
-      }
+    // Clear any existing intervals to prevent leaks
+    if (briefingPollerInterval) {
+      clearInterval(briefingPollerInterval);
     }
-  };
-  document.removeEventListener('visibilitychange', window._briefingVisibilityHandler);
-  document.addEventListener('visibilitychange', window._briefingVisibilityHandler);
+
+    briefingPollerInterval = setInterval(function() {
+      if (document.visibilityState === 'visible') {
+        // Only fetch if it's been more than 2 minutes since last fetch
+        if (Date.now() - lastBriefingFetch > 120000) {
+          fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function(err) {
+            logError('briefing auto-fetch (periodic)', err);
+          });
+          lastBriefingFetch = Date.now();
+        }
+      }
+    }, 30000); // Check every 30s, but only fetch if 2+ minutes have passed
+
+    // Setup visibility handler
+    if (window._briefingVisibilityHandler) {
+      document.removeEventListener('visibilitychange', window._briefingVisibilityHandler);
+    }
+    window._briefingVisibilityHandler = function() {
+      if (document.visibilityState === 'visible') {
+        // When app becomes visible, fetch immediately if cache is stale
+        if (Date.now() - lastBriefingFetch > 60000) {
+          fetch('/api/briefing').then(function(r) { return r.json(); }).then(updateDebriefFromApi).catch(function(err) {
+            logError('briefing auto-fetch (visibility)', err);
+          });
+          lastBriefingFetch = Date.now();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', window._briefingVisibilityHandler);
+  }
 });
 
 function updateHeaderDate() {
@@ -1291,7 +1432,10 @@ function updateHeaderDate() {
 // ══════════════════════════════════════════
 function switchTab(idx) {
   currentTab = idx;
-  document.getElementById('tabs-wrapper').style.transform = 'translateX(' + (-idx * (100 / 6)) + '%)';
+  var wrapper = document.getElementById('tabs-wrapper');
+  if (wrapper) {
+    wrapper.style.transform = 'translateX(' + (-idx * (100 / 6)) + '%)';
+  }
   document.querySelectorAll('.tab-item').forEach(function(el, i) { el.classList.toggle('active', i === idx); });
   if (idx === 1) loadTasks();
   if (idx === 2) loadProjects();
@@ -1321,7 +1465,9 @@ function loadConfig() {
     var notifType = document.getElementById('setting-notification-type');
     if (notifType) notifType.value = d.notification_type || 'browser';
     notificationPreference = d.notification_type || 'browser';
-  }).catch(function(){});
+  }).catch(function(err){
+    logError('loadConfig', err);
+  });
 }
 
 function openSettings() {
@@ -1371,9 +1517,14 @@ function renderBriefing(content) {
 
 function loadBriefing() {
   fetch('/api/briefing').then(function(r) { return r.json(); }).then(function(d) {
-    document.getElementById('briefing-text').innerHTML = renderBriefing(d.briefing);
+    var briefingEl = document.getElementById('briefing-text');
+    if (briefingEl) {
+      briefingEl.innerHTML = renderBriefing(d.briefing);
+    }
     updateDebriefFromApi(d);
-  }).catch(function(){});
+  }).catch(function(err){
+    logError('loadBriefing', err);
+  });
 }
 
 function localDateKey(d) {
@@ -1416,9 +1567,7 @@ function renderDebriefPill() {
 
   // If we have today's debrief and are in window, show it
   if (deb && isDebriefFromToday(gen) && inDebriefWindow) {
-    try {
-      if (sessionStorage.getItem('debrief_hide_' + localDateKey())) return;
-    } catch (e) {}
+    if (sessionGet('debrief_hide_' + localDateKey())) return;
 
     var when = gen ? formatRelative(gen) : '';
     var permHint = '';
@@ -1455,10 +1604,7 @@ function openDebriefSheet() {
   // Check if reflection has been submitted for today
   var today = localDateKey(new Date());
   var reflectionKey = 'debrief_reflection_' + today;
-  var hasReflection = false;
-  try {
-    hasReflection = !!localStorage.getItem(reflectionKey);
-  } catch (e) {}
+  var hasReflection = !!storageGet(reflectionKey);
 
   if (hasReflection) {
     // Show debrief, hide form
@@ -1512,11 +1658,7 @@ function submitDebriefReflection() {
     learnings: learnings,
     submittedAt: new Date().toISOString()
   };
-  try {
-    localStorage.setItem(reflectionKey, JSON.stringify(reflectionData));
-  } catch (e) {
-    console.error('Failed to save reflection:', e);
-  }
+  storageSet(reflectionKey, JSON.stringify(reflectionData));
 
   // Now show the debrief
   var reflectionForm = document.getElementById('debrief-reflection-form');
@@ -1539,9 +1681,7 @@ function maybeBrowserNotifyDebrief(genIso, debText) {
   if (!debText || !isDebriefFromToday(genIso)) return;
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   var key = 'debrief_bn_' + String(genIso).replace(/[^\w.-]/g, '_');
-  try {
-    if (sessionStorage.getItem(key)) return;
-  } catch (e) {}
+  if (sessionGet(key)) return;
   try {
     var n = new Notification('Daily debrief ready', {
       body: 'Tap to see how today went',
@@ -1552,8 +1692,10 @@ function maybeBrowserNotifyDebrief(genIso, debText) {
       openDebriefSheet();
       try { n.close(); } catch (e2) {}
     };
-    sessionStorage.setItem(key, '1');
-  } catch (e) {}
+    sessionSet(key, '1');
+  } catch (e) {
+    logError('showDebriefNotification', e);
+  }
 }
 
 function showInAppNotification(title, body) {
@@ -1578,20 +1720,19 @@ function calEventReminderId(e) {
 }
 
 function getCalReminders() {
+  var raw = storageGet('cal_reminders_v1');
+  if (!raw) return [];
   try {
-    var raw = localStorage.getItem('cal_reminders_v1');
-    if (!raw) return [];
     var arr = JSON.parse(raw);
     return Array.isArray(arr) ? arr : [];
   } catch (err) {
+    logError('getCalReminders: JSON.parse', err);
     return [];
   }
 }
 
 function setCalReminders(arr) {
-  try {
-    localStorage.setItem('cal_reminders_v1', JSON.stringify(arr));
-  } catch (err) {}
+  storageSet('cal_reminders_v1', JSON.stringify(arr));
 }
 
 function showCalEventHomeScreenNotif(entry) {
@@ -1807,8 +1948,11 @@ function loadHomeAssignments() {
     renderHomeAssignments(toShow);
     renderNotifications(assignments);
   }).catch(function(err) {
-    document.getElementById('home-assignments-container').innerHTML =
-      '<div class="card"><div style="color:var(--text3);text-align:center;font-size:14px">Could not load assignments: ' + err + '</div></div>';
+    handleApiError('loadHomeAssignments', err);
+    var container = document.getElementById('home-assignments-container');
+    if (container) {
+      container.innerHTML = '<div class="card"><div style="color:var(--text3);text-align:center;font-size:14px">Could not load assignments. Please refresh the page.</div></div>';
+    }
   });
 }
 
@@ -2384,8 +2528,16 @@ window._timerVisibilityHandler = function() {
 };
 
 function startTimerPoller() {
+  // Prevent duplicate poller setup
+  if (window._timerPollerStarted) return;
+  window._timerPollerStarted = true;
+
   pollTimer();
   // Smart polling: fast when timer active, slow otherwise
+  // Clear any existing interval first to prevent leaks
+  if (timerPollerInterval) {
+    clearInterval(timerPollerInterval);
+  }
   timerPollerInterval = setInterval(pollTimer, 60000);
 
   // Remove any existing listener to prevent accumulation
@@ -2393,6 +2545,29 @@ function startTimerPoller() {
   // When visibility changes, adjust polling
   document.addEventListener('visibilitychange', window._timerVisibilityHandler);
 }
+
+// Cleanup function for graceful shutdown
+function stopAllPollers() {
+  if (timerPollerInterval) {
+    clearInterval(timerPollerInterval);
+    timerPollerInterval = null;
+  }
+  if (briefingPollerInterval) {
+    clearInterval(briefingPollerInterval);
+    briefingPollerInterval = null;
+  }
+  if (window._timerVisibilityHandler) {
+    document.removeEventListener('visibilitychange', window._timerVisibilityHandler);
+  }
+  if (window._briefingVisibilityHandler) {
+    document.removeEventListener('visibilitychange', window._briefingVisibilityHandler);
+  }
+  window._timerPollerStarted = false;
+  window._briefingPollerSetup = false;
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', stopAllPollers);
 
 function pollTimer() {
   fetch('/api/timer').then(function(r) { return r.json(); }).then(function(d) {
@@ -2421,7 +2596,9 @@ function pollTimer() {
       timerFocusHydrated = false;
       syncTimerFocusPanel();
     }
-  }).catch(function(){});
+  }).catch(function(err) {
+    logError('pollTimer', err);
+  });
 }
 
 function showCutoffDialog(d) {
@@ -2443,6 +2620,7 @@ function loadCompletedToday() {
     var section = document.getElementById('completed-section');
     var badge = document.getElementById('completed-badge');
     var list = document.getElementById('completed-today-list');
+    if (!section || !badge || !list) return; // Exit if elements don't exist
     if (completedToday.length === 0) { section.style.display = 'none'; return; }
     section.style.display = 'block';
     badge.textContent = completedToday.length;
@@ -2452,7 +2630,9 @@ function loadCompletedToday() {
         '<span style="font-weight:500;color:var(--text2)">' + esc(c.assignment_title) + '</span>' +
         '<span style="color:var(--green);font-weight:600">' + dur + '</span></div>';
     }).join('');
-  }).catch(function(){});
+  }).catch(function(err){
+    logError('loadCompletedToday', err);
+  });
 }
 
 function toggleCompletedToday() {
@@ -3636,7 +3816,7 @@ function toggleProjectTaskStatus(taskId, projectId, newStatus) {
     if (dx < -60) {
       // Swipe left → dismiss
       if (row.classList.contains('debrief-notif')) {
-        try { sessionStorage.setItem('debrief_hide_' + localDateKey(), '1'); } catch (err) {}
+        sessionSet('debrief_hide_' + localDateKey(), '1');
       }
       row.style.transition = 'transform 0.25s,opacity 0.25s';
       row.style.transform = 'translateX(-110%)'; row.style.opacity = '0';
