@@ -1849,6 +1849,10 @@ function renderHomeAssignments(list) {
     var isActive = activeTimer && activeTimer.assignment_uid === a.uid && activeTimer.active;
     return buildAsgnCard(a, isActive);
   }).join('');
+
+  // Attach event delegation for card buttons
+  container.removeEventListener('click', asgnCardButtonsHandler);
+  container.addEventListener('click', asgnCardButtonsHandler);
 }
 
 function buildAsgnCard(a, isActive) {
@@ -1869,7 +1873,7 @@ function buildAsgnCard(a, isActive) {
       (activeTimer.paused
         ? '<button class="btn btn-primary" onclick="resumeTimer(event)">Resume</button>'
         : '<button class="btn btn-pause" onclick="pauseTimer(event)">Pause</button>') +
-      '<button class="btn btn-done" onclick="stopTimer(event,true,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\')">Done</button>' +
+      '<button class="btn btn-done" data-action="stop-timer" data-uid="' + uid + '" data-title="' + esc(a.title) + '" data-class="' + esc(a.class_name) + '">Done</button>' +
       '</div></div>';
   }
 
@@ -1882,7 +1886,7 @@ function buildAsgnCard(a, isActive) {
     '<input id="est-' + uid + '" type="number" value="' + estVal + '" min="1" max="600" onclick="event.stopPropagation()" ' +
     'style="width:46px;padding:2px 4px;border-radius:6px;border:1px solid var(--border2);background:var(--surface2);color:var(--text);font-size:12px;font-weight:600;text-align:center">' +
     '<span style="font-size:11px;color:var(--text3)">min</span>' +
-    '<button onclick="saveEstimateFromCard(event,\'' + uid + '\')" ' +
+    '<button data-action="save-estimate" data-uid="' + uid + '" ' +
     'style="padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--surface3);color:var(--accent2);font-size:11px;font-weight:600;cursor:pointer">Save</button>' +
     '</div>';
 
@@ -1890,9 +1894,9 @@ function buildAsgnCard(a, isActive) {
   var sideButtons = isActive ? '' :
     '<div class="asgn-card-btns" onclick="event.stopPropagation()">' +
     (isQuiz
-      ? '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',0)">Taken</button>'
-      : '<button class="btn btn-primary" onclick="startTimer(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Start</button>' +
-        '<button class="btn btn-done" onclick="markDone(event,\'' + uid + '\',\'' + escq(a.title) + '\',\'' + escq(a.class_name) + '\',parseFloat(document.getElementById(\'est-' + uid + '\').value)||' + estVal + ')">Done</button>') +
+      ? '<button class="btn btn-done" data-action="mark-taken" data-uid="' + uid + '" data-title="' + esc(a.title) + '" data-class="' + esc(a.class_name) + '">Taken</button>'
+      : '<button class="btn btn-primary" data-action="start-timer" data-uid="' + uid + '" data-title="' + esc(a.title) + '" data-class="' + esc(a.class_name) + '">Start</button>' +
+        '<button class="btn btn-done" data-action="mark-done" data-uid="' + uid + '" data-title="' + esc(a.title) + '" data-class="' + esc(a.class_name) + '">Done</button>') +
     '</div>';
 
   return '<div class="asgn-card urgency-' + esc(a.urgency) + activeClass + '" id="asgn-' + uid + '" onclick="openAsgnDetail(\'' + uid + '\')">' +
@@ -2319,6 +2323,37 @@ function markDone(e, uid, title, className, estimate) {
         }, 550);
       }
     });
+}
+
+// Event delegation handler for assignment card buttons
+function asgnCardButtonsHandler(e) {
+  e.stopPropagation();
+  var btn = e.target.closest('button');
+  if (!btn) return;
+
+  var action = btn.getAttribute('data-action');
+  var card = btn.closest('.asgn-card');
+  if (!card) return;
+
+  var uid = btn.getAttribute('data-uid');
+  var title = btn.getAttribute('data-title');
+  var className = btn.getAttribute('data-class');
+
+  if (action === 'start-timer') {
+    var estInput = card.querySelector('input[id^="est-"]');
+    var estimate = estInput ? parseFloat(estInput.value) : 30;
+    startTimer(e, uid, title, className, estimate);
+  } else if (action === 'mark-done') {
+    var estInput = card.querySelector('input[id^="est-"]');
+    var estimate = estInput ? parseFloat(estInput.value) : 30;
+    markDone(e, uid, title, className, estimate);
+  } else if (action === 'mark-taken') {
+    markDone(e, uid, title, className, 0);
+  } else if (action === 'stop-timer') {
+    stopTimer(e, true, uid, title, className);
+  } else if (action === 'save-estimate') {
+    saveEstimateFromCard(e, uid);
+  }
 }
 
 var timerPollerInterval = null;
