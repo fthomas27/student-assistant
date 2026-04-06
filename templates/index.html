@@ -1242,6 +1242,39 @@ function handleApiError(context, error, userMessage) {
   }
 }
 
+// ══════════════════════════════════════════
+// SAFE DOM HELPERS
+// ══════════════════════════════════════════
+
+// Safely set element text content
+function setText(elementId, text) {
+  var el = document.getElementById(elementId);
+  if (el) {
+    el.textContent = text;
+  }
+}
+
+// Safely set element HTML content
+function setHTML(elementId, html) {
+  var el = document.getElementById(elementId);
+  if (el) {
+    el.innerHTML = html;
+  }
+}
+
+// Safely set element style property
+function setStyle(elementId, property, value) {
+  var el = document.getElementById(elementId);
+  if (el) {
+    el.style[property] = value;
+  }
+}
+
+// Safely query and return element
+function getElement(elementId) {
+  return document.getElementById(elementId);
+}
+
 // CSRF Token helper - gets token from window cache
 function getCsrfToken() {
   return window._csrf_token || '';
@@ -1341,7 +1374,10 @@ function updateHeaderDate() {
 // ══════════════════════════════════════════
 function switchTab(idx) {
   currentTab = idx;
-  document.getElementById('tabs-wrapper').style.transform = 'translateX(' + (-idx * (100 / 6)) + '%)';
+  var wrapper = document.getElementById('tabs-wrapper');
+  if (wrapper) {
+    wrapper.style.transform = 'translateX(' + (-idx * (100 / 6)) + '%)';
+  }
   document.querySelectorAll('.tab-item').forEach(function(el, i) { el.classList.toggle('active', i === idx); });
   if (idx === 1) loadTasks();
   if (idx === 2) loadProjects();

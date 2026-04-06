@@ -1545,7 +1545,11 @@ def api_workout_regenerate():
 
 @app.route("/api/timer", methods=["GET"])
 def api_timer_get():
-    return jsonify(timer_response(get_timer_state_row()))
+    # Read timer state within lock to prevent race conditions
+    with _timer_lock:
+        row = get_timer_state_row()
+        response = timer_response(row)
+    return jsonify(response)
 
 
 @app.route("/api/timer/start", methods=["POST"])
@@ -1565,7 +1569,10 @@ estimate_minutes=%s, started_at=NOW(), paused_at=NULL, accumulated_seconds=0, ac
         conn.commit()
         cur.close()
         conn.close()
-    return jsonify(timer_response(get_timer_state_row()))
+        # Read state within lock to prevent race condition
+        row = get_timer_state_row()
+        response = timer_response(row)
+    return jsonify(response)
 
 
 @app.route("/api/timer/pause", methods=["POST"])
@@ -1573,7 +1580,8 @@ def api_timer_pause():
     with _timer_lock:
         row = get_timer_state_row()
         if not row.get("active") or row.get("paused_at"):
-            return jsonify(timer_response(row))
+            response = timer_response(row)
+            return jsonify(response)
         elapsed = get_timer_elapsed(row)
         conn = get_db()
         cur = conn.cursor()
@@ -1581,7 +1589,10 @@ def api_timer_pause():
         conn.commit()
         cur.close()
         conn.close()
-    return jsonify(timer_response(get_timer_state_row()))
+        # Read state within lock
+        row = get_timer_state_row()
+        response = timer_response(row)
+    return jsonify(response)
 
 
 @app.route("/api/timer/resume", methods=["POST"])
@@ -1593,7 +1604,10 @@ def api_timer_resume():
         conn.commit()
         cur.close()
         conn.close()
-    return jsonify(timer_response(get_timer_state_row()))
+        # Read state within lock
+        row = get_timer_state_row()
+        response = timer_response(row)
+    return jsonify(response)
 
 
 @app.route("/api/timer/stop", methods=["POST"])
@@ -1604,25 +1618,32 @@ def api_timer_stop():
         row = get_timer_state_row()
         elapsed = get_timer_elapsed(row)
         elapsed_min = elapsed / 60.0
-        if save and row.get("assignment_title") and elapsed_min > 0.5:
-            conn = get_db()
-            cur = conn.cursor()
-            cur.execute("""
+        try:
+            if save and row.get("assignment_title") and elapsed_min > 0.5:
+                conn = get_db()
+                try:
+                    cur = conn.cursor()
+                    cur.execute("""
 INSERT INTO completions (assignment_title, class_name, duration_minutes, estimate_minutes, timed)
 VALUES (%s, %s, %s, %s, TRUE)""",
-                        (row["assignment_title"], row.get("class_name", ""),
-                         round(elapsed_min, 2), float(row.get("estimate_minutes") or 30)))
-            conn.commit()
-            cur.close()
-            conn.close()
-        conn2 = get_db()
-        cur2 = conn2.cursor()
-        cur2.execute("""
+                                (row["assignment_title"], row.get("class_name", ""),
+                                 round(elapsed_min, 2), float(row.get("estimate_minutes") or 30)))
+                    conn.commit()
+                finally:
+                    cur.close()
+                    conn.close()
+        finally:
+            # Always reset timer state, even if completion insertion fails
+            conn2 = get_db()
+            try:
+                cur2 = conn2.cursor()
+                cur2.execute("""
 UPDATE timer_state SET active=FALSE, paused_at=NULL, started_at=NULL,
 accumulated_seconds=0, assignment_uid='', assignment_title='', class_name='' WHERE id=1""")
-        conn2.commit()
-        cur2.close()
-        conn2.close()
+                conn2.commit()
+            finally:
+                cur2.close()
+                conn2.close()
     return jsonify({"saved": save, "elapsed_minutes": round(elapsed_min, 2)})
 
 
