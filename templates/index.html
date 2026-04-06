@@ -225,6 +225,47 @@ letter-spacing: -0.02em; color: var(--text); text-align: center; margin: 12px 0 
 .timer-focus-fill.over { background: linear-gradient(90deg, var(--amber), var(--red)); }
 .timer-focus-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
 .timer-focus-actions .btn { min-width: 88px; }
+
+/* ── FULLSCREEN TIMER ── */
+.timer-fullscreen {
+position: fixed; inset: 0; background: var(--bg); z-index: 200;
+display: flex; flex-direction: column; align-items: center; justify-content: center;
+padding: 24px; transition: opacity 0.3s;
+}
+.timer-fullscreen.hidden { display: none; }
+.timer-fullscreen-close {
+position: absolute; top: 20px; left: 20px;
+background: none; border: none; font-size: 32px; color: var(--text2);
+cursor: pointer; padding: 8px; display: flex; align-items: center; justify-content: center;
+-webkit-tap-highlight-color: transparent; width: 48px; height: 48px;
+}
+.timer-fullscreen-close:active { opacity: 0.6; }
+.timer-fullscreen-content {
+display: flex; flex-direction: column; align-items: center; gap: 32px;
+}
+.timer-fullscreen-svg-container {
+position: relative; width: 280px; height: 280px; display: flex; align-items: center; justify-content: center;
+}
+.timer-fullscreen-ring {
+width: 100%; height: 100%; filter: drop-shadow(0 4px 12px rgba(0,0,0,0.1));
+}
+.timer-fullscreen-ring-bg {
+fill: none; stroke: var(--surface3); stroke-width: 8;
+}
+.timer-fullscreen-ring-progress {
+fill: none; stroke: var(--green); stroke-width: 8; stroke-linecap: round;
+stroke-dasharray: 565.48; stroke-dashoffset: 565.48;
+transform-origin: center; transform: rotate(-90deg);
+transition: stroke-dashoffset 0.3s ease-out;
+}
+.timer-fullscreen-clock {
+position: absolute; font-family: 'DM Sans', sans-serif; font-size: 72px; font-weight: 700;
+font-variant-numeric: tabular-nums; color: var(--text); letter-spacing: -0.02em;
+}
+.timer-fullscreen-meta {
+font-size: 16px; color: var(--text2); text-align: center;
+}
+
 .briefing-footer { display: flex; justify-content: flex-end; margin-top: 12px; }
 .refresh-btn {
 background: none; border: none; color: #0052cc;
@@ -1113,6 +1154,24 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   </div>
 </div>
 
+<!-- FULLSCREEN TIMER MODAL -->
+<div class="timer-fullscreen hidden" id="timer-fullscreen">
+  <button class="timer-fullscreen-close" onclick="closeTimerFullscreen()" aria-label="Close fullscreen timer">×</button>
+
+  <div class="timer-fullscreen-content">
+    <div class="timer-fullscreen-svg-container">
+      <svg class="timer-fullscreen-ring" viewBox="0 0 200 200">
+        <!-- Background circle -->
+        <circle cx="100" cy="100" r="90" class="timer-fullscreen-ring-bg"></circle>
+        <!-- Progress circle -->
+        <circle cx="100" cy="100" r="90" class="timer-fullscreen-ring-progress" id="timer-fullscreen-ring"></circle>
+      </svg>
+      <div class="timer-fullscreen-clock" id="timer-fullscreen-clock">0</div>
+    </div>
+    <div class="timer-fullscreen-meta" id="timer-fullscreen-meta"></div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════
 // STATE
@@ -1769,7 +1828,7 @@ function renderNotifications(allAsgn) {
     html += '<div class="notif-row"><span class="notif-icon">&#128680;</span><div class="notif-text"><span class="notif-title">' + overdue.length + ' overdue</span><br>' + overdue.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + '</div></div>';
   }
   if (dueToday.length > 0) {
-    html += '<div class="notif-row"><span class="notif-icon">&#9888;</span><div class="notif-text"><span class="notif-title">' + dueToday.length + ' due today</span><br>' + dueToday.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + (dueToday.length > 2 ? '...' : '') + '</div></div>';
+    html += '<div class="notif-row" style="cursor:pointer" onclick="openDueTodayAssignments(' + JSON.stringify(dueToday) + ')"><span class="notif-icon">⏰</span><div class="notif-text"><span class="notif-title">' + dueToday.length + ' due today</span><br>' + dueToday.slice(0,2).map(function(a){ return esc(a.title); }).join(', ') + (dueToday.length > 2 ? '...' : '') + '</div></div>';
   }
   if (bigNotStarted.length > 0) {
     html += '<div class="notif-row"><span class="notif-icon">&#128161;</span><div class="notif-text"><span class="notif-title">Not started yet</span><br>' + bigNotStarted.slice(0,2).map(function(a){ return esc(a.title) + ' (' + Math.round(a.estimate_minutes) + ' min)'; }).join(', ') + '</div></div>';
@@ -1948,6 +2007,40 @@ function markDoneFromDetail() {
   markDone(null, a.uid, a.title, a.class_name, mins);
 }
 
+function openDueTodayAssignments(dueTodayList) {
+  if (!dueTodayList || dueTodayList.length === 0) return;
+
+  if (dueTodayList.length === 1) {
+    // Single assignment: open detail sheet directly
+    openAsgnDetail(dueTodayList[0].uid);
+  } else {
+    // Multiple assignments: show list modal
+    var html = '<div style="padding:16px;max-height:400px;overflow-y:auto">';
+    dueTodayList.forEach(function(a) {
+      var timeStr = a.estimate_minutes ? Math.round(a.estimate_minutes) + ' min' : '?';
+      html += '<div onclick="openAsgnDetail(\'' + escq(a.uid) + '\')" style="padding:12px;margin-bottom:8px;background:var(--surface2);border-radius:10px;cursor:pointer;border:1px solid var(--border)">' +
+        '<div style="font-weight:600;color:var(--text);margin-bottom:4px">' + esc(a.title) + '</div>' +
+        '<div style="font-size:13px;color:var(--text2)">' + esc(a.class_name || '') + ' · ' + esc(a.due_display || '') + ' · ' + timeStr + '</div>' +
+        '</div>';
+    });
+    html += '</div>';
+
+    var backdrop = document.getElementById('sheet-backdrop');
+    var detailSheet = document.getElementById('asgn-detail-sheet');
+
+    if (detailSheet) {
+      detailSheet.innerHTML = '<div class="sheet-handle"></div>' +
+        '<div class="sheet-title">Due Today</div>' +
+        '<div class="sheet-sub">Select an assignment to view details</div>' +
+        html +
+        '<div id="asgn-detail-actions"></div>';
+    }
+
+    if (backdrop) backdrop.classList.add('open');
+    if (detailSheet) detailSheet.classList.add('open');
+  }
+}
+
 // ══════════════════════════════════════════
 // TIMER
 // ══════════════════════════════════════════
@@ -2022,12 +2115,15 @@ function updateTimerFocusDisplay() {
     fillEl.style.width = pct + '%';
     fillEl.className = 'timer-focus-fill' + (overEst ? ' over' : '');
   }
+  // Also update fullscreen timer if open
+  updateTimerFullscreenDisplay();
   if (actionsEl && timerFocusPausedUi !== paused) {
     timerFocusPausedUi = paused;
     var uq = escq(activeTimer.assignment_uid || '');
     var tq = escq(activeTimer.assignment_title || '');
     var cq = escq(activeTimer.class_name || '');
     actionsEl.innerHTML =
+      '<button type="button" class="btn btn-outline" onclick="openTimerFullscreen()">Fullscreen</button>' +
       (paused
         ? '<button type="button" class="btn btn-primary" onclick="resumeTimerFromFocus(event)">Resume</button>'
         : '<button type="button" class="btn btn-pause" onclick="pauseTimerFromFocus(event)">Pause</button>') +
@@ -2049,6 +2145,48 @@ function resumeTimerFromFocus(e) {
 function stopTimerFromFocus(e, save, uid, title, className) {
   if (e) e.stopPropagation();
   stopTimer(e, save, uid, title, className);
+}
+
+// ── Fullscreen Timer Functions ──
+function openTimerFullscreen() {
+  var fullscreen = document.getElementById('timer-fullscreen');
+  if (fullscreen) fullscreen.classList.remove('hidden');
+  updateTimerFullscreenDisplay();
+}
+
+function closeTimerFullscreen() {
+  var fullscreen = document.getElementById('timer-fullscreen');
+  if (fullscreen) fullscreen.classList.add('hidden');
+}
+
+function updateTimerFullscreenDisplay() {
+  if (!activeTimer || !activeTimer.active) {
+    closeTimerFullscreen();
+    return;
+  }
+
+  var clockEl = document.getElementById('timer-fullscreen-clock');
+  var ringEl = document.getElementById('timer-fullscreen-ring');
+  var metaEl = document.getElementById('timer-fullscreen-meta');
+  if (!clockEl || !ringEl) return;
+
+  var elapsedMin = getSmoothElapsedMinutes();
+  var est = activeTimer.estimate_minutes || 30;
+  var progress = Math.min(elapsedMin / est, 1.0); // Cap at 1.0 (100%)
+  var paused = !!activeTimer.paused;
+
+  // Update minutes display (MM only)
+  clockEl.textContent = Math.floor(elapsedMin);
+
+  // Update progress ring (565.48 is circumference of radius 90)
+  var circumference = 2 * Math.PI * 90;
+  var strokeDashoffset = circumference * (1 - progress);
+  ringEl.style.strokeDashoffset = strokeDashoffset;
+
+  // Update meta text
+  if (metaEl) {
+    metaEl.textContent = activeTimer.assignment_title + ' · ' + Math.round(est) + ' min goal' + (paused ? ' · paused' : '');
+  }
 }
 
 function startTimer(e, uid, title, className, estimate) {
