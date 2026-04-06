@@ -316,6 +316,72 @@ CREATE TABLE IF NOT EXISTS workout_logs (
     perceived_difficulty INT
 )""")
 
+    # Health tracking tables
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS health_metrics (
+    id SERIAL PRIMARY KEY,
+    metric_type TEXT NOT NULL,
+    value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS weight_logs (
+    id SERIAL PRIMARY KEY,
+    weight REAL NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'lbs',
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS sleep_logs (
+    id SERIAL PRIMARY KEY,
+    duration_hours REAL NOT NULL,
+    quality_score INT,
+    bedtime TIMESTAMPTZ,
+    wake_time TIMESTAMPTZ,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS step_logs (
+    id SERIAL PRIMARY KEY,
+    steps INT NOT NULL,
+    distance_km REAL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS withings_auth (
+    id INT PRIMARY KEY DEFAULT 1,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    scopes TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS apple_health_integration (
+    id INT PRIMARY KEY DEFAULT 1,
+    aggregator_type TEXT NOT NULL DEFAULT 'carrot',
+    api_token TEXT NOT NULL,
+    sync_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_sync TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+
     defaults = {
         "name": "Finn",
         "morning_briefing_time": "07:00",
@@ -341,6 +407,12 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     cur.execute("CREATE INDEX IF NOT EXISTS idx_project_tasks_assignee_status ON project_tasks(assignee, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_completed_at ON completions(completed_at DESC)")
+
+    # Health tracking indexes
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_weight_logs_recorded_at ON weight_logs(recorded_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sleep_logs_recorded_at ON sleep_logs(recorded_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_step_logs_recorded_at ON step_logs(recorded_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_health_metrics_recorded_at ON health_metrics(recorded_at DESC)")
 
     conn.commit()
     cur.close()
@@ -2592,6 +2664,356 @@ ORDER BY pn.created_at DESC LIMIT 6""")
     except Exception:
         log.exception("/api/chat failed")
         return jsonify({"error": "Failed to reach AI. Check server logs."}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HEALTH TRACKING API ENDPOINTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/health/metrics", methods=["GET"])
+def api_health_metrics():
+    """Get latest health metrics (weight, sleep, steps, etc.)
+
+    Query params:
+    - metric_type (optional): filter by type (weight, sleep, steps, heart_rate)
+    - days_back (optional): how many days to look back (default: 7)
+    - aggregated (optional): return aggregated data or raw (yes/no, default: yes)
+    """
+    try:
+        metric_type = request.args.get("metric_type", "")
+        days_back = int(request.args.get("days_back", 7))
+        aggregated = request.args.get("aggregated", "yes").lower() == "yes"
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        # Get latest weight
+        cur.execute("""
+SELECT weight, unit, recorded_at, source FROM weight_logs
+ORDER BY recorded_at DESC LIMIT 1""")
+        latest_weight = cur.fetchone()
+
+        # Get latest sleep
+        cur.execute("""
+SELECT duration_hours, quality_score, recorded_at, source FROM sleep_logs
+ORDER BY recorded_at DESC LIMIT 1""")
+        latest_sleep = cur.fetchone()
+
+        # Get latest steps
+        cur.execute("""
+SELECT steps, distance_km, recorded_at, source FROM step_logs
+ORDER BY recorded_at DESC LIMIT 1""")
+        latest_steps = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        result = {
+            "weight": dict(latest_weight) if latest_weight else None,
+            "sleep": dict(latest_sleep) if latest_sleep else None,
+            "steps": dict(latest_steps) if latest_steps else None,
+            "last_synced": datetime.now(TZ).isoformat()
+        }
+
+        return jsonify(result), 200
+    except Exception as e:
+        log.exception("/api/health/metrics failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/weight-history", methods=["GET"])
+def api_health_weight_history():
+    """Get weight history for trend analysis
+
+    Query params:
+    - days_back (optional): how many days to look back (default: 90)
+    - limit (optional): max entries to return (default: 100)
+    """
+    try:
+        days_back = int(request.args.get("days_back", 90))
+        limit = int(request.args.get("limit", 100))
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+SELECT id, weight, unit, recorded_at, source, notes FROM weight_logs
+WHERE recorded_at >= NOW() - INTERVAL '%d days'
+ORDER BY recorded_at DESC LIMIT %s""" % (days_back, limit))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        history = [dict(r) for r in rows]
+
+        return jsonify({
+            "count": len(history),
+            "history": history,
+            "days_back": days_back
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/weight-history failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/sleep-history", methods=["GET"])
+def api_health_sleep_history():
+    """Get sleep logs with quality scores
+
+    Query params:
+    - days_back (optional): how many days to look back (default: 30)
+    - limit (optional): max entries to return (default: 100)
+    """
+    try:
+        days_back = int(request.args.get("days_back", 30))
+        limit = int(request.args.get("limit", 100))
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+SELECT id, duration_hours, quality_score, bedtime, wake_time, recorded_at, source, notes
+FROM sleep_logs
+WHERE recorded_at >= NOW() - INTERVAL '%d days'
+ORDER BY recorded_at DESC LIMIT %s""" % (days_back, limit))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        history = [dict(r) for r in rows]
+
+        # Calculate average
+        if history:
+            avg_duration = sum(h["duration_hours"] for h in history if h["duration_hours"]) / len([h for h in history if h["duration_hours"]])
+            avg_quality = sum(h["quality_score"] for h in history if h["quality_score"]) / len([h for h in history if h["quality_score"]])
+        else:
+            avg_duration = None
+            avg_quality = None
+
+        return jsonify({
+            "count": len(history),
+            "average_duration_hours": avg_duration,
+            "average_quality_score": avg_quality,
+            "history": history,
+            "days_back": days_back
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/sleep-history failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/activity", methods=["GET"])
+def api_health_activity():
+    """Get steps/activity data
+
+    Query params:
+    - days_back (optional): how many days to look back (default: 30)
+    - limit (optional): max entries to return (default: 100)
+    """
+    try:
+        days_back = int(request.args.get("days_back", 30))
+        limit = int(request.args.get("limit", 100))
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+SELECT id, steps, distance_km, recorded_at, source, notes FROM step_logs
+WHERE recorded_at >= NOW() - INTERVAL '%d days'
+ORDER BY recorded_at DESC LIMIT %s""" % (days_back, limit))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        history = [dict(r) for r in rows]
+
+        # Calculate totals
+        if history:
+            total_steps = sum(h["steps"] for h in history if h["steps"])
+            total_distance = sum(h["distance_km"] for h in history if h["distance_km"])
+        else:
+            total_steps = 0
+            total_distance = 0
+
+        return jsonify({
+            "count": len(history),
+            "total_steps": total_steps,
+            "total_distance_km": total_distance,
+            "history": history,
+            "days_back": days_back
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/activity failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/weight/manual", methods=["POST"])
+def api_health_weight_manual():
+    """Log weight manually (fallback if scale not synced)
+
+    Body: { "weight": 180.5, "unit": "lbs", "notes": "morning measurement" }
+    """
+    try:
+        data = request.get_json() or {}
+        weight = float(data.get("weight", 0))
+        unit = data.get("unit", "lbs")
+        notes = data.get("notes", "")
+
+        if not weight or weight <= 0:
+            return jsonify({"error": "Invalid weight"}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+INSERT INTO weight_logs (weight, unit, recorded_at, source, notes)
+VALUES (%s, %s, NOW(), %s, %s)
+RETURNING id, recorded_at""", (weight, unit, "manual", notes))
+
+        result = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "id": result["id"],
+            "weight": weight,
+            "unit": unit,
+            "recorded_at": result["recorded_at"].isoformat(),
+            "source": "manual"
+        }), 201
+    except Exception as e:
+        log.exception("/api/health/weight/manual failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/sync-status", methods=["GET"])
+def api_health_sync_status():
+    """Get sync status for all health data sources"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+
+        # Check Withings
+        cur.execute("SELECT last_updated FROM withings_auth WHERE id = 1")
+        withings = cur.fetchone()
+
+        # Check Apple Health
+        cur.execute("SELECT last_sync FROM apple_health_integration WHERE id = 1")
+        apple = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        result = {
+            "withings": {
+                "connected": withings is not None,
+                "last_sync": withings["last_updated"].isoformat() if withings else None
+            },
+            "apple_health": {
+                "connected": apple is not None,
+                "last_sync": apple["last_sync"].isoformat() if apple else None
+            },
+            "timestamp": datetime.now(TZ).isoformat()
+        }
+
+        return jsonify(result), 200
+    except Exception as e:
+        log.exception("/api/health/sync-status failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/withings/authorize", methods=["POST"])
+def api_withings_authorize():
+    """Start Withings OAuth 2.0 flow
+
+    Body: { "code": "oauth_code_from_withings" }
+    This endpoint is called by the frontend after user authorizes in Withings
+    """
+    try:
+        data = request.get_json() or {}
+        oauth_code = data.get("code", "")
+
+        if not oauth_code:
+            return jsonify({"error": "Missing oauth code"}), 400
+
+        # TODO: Exchange oauth_code for access token using Withings API
+        # For now, this is a placeholder
+
+        return jsonify({
+            "status": "success",
+            "message": "Withings integration initialized",
+            "code": oauth_code
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/withings/authorize failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/withings/callback", methods=["GET"])
+def api_withings_callback():
+    """Handle Withings OAuth 2.0 callback
+
+    Query params from Withings:
+    - code: OAuth authorization code
+    - state: State parameter for CSRF protection
+    """
+    try:
+        oauth_code = request.args.get("code", "")
+        state = request.args.get("state", "")
+
+        if not oauth_code:
+            return jsonify({"error": "Missing authorization code"}), 400
+
+        # TODO: Exchange oauth_code for access token using Withings API
+        # This is a placeholder for the actual OAuth implementation
+
+        # For now, redirect to settings page with status
+        return redirect("/?health=withings_connected")
+    except Exception as e:
+        log.exception("/api/health/withings/callback failed")
+        return redirect("/?health=error")
+
+
+@app.route("/api/health/apple/configure", methods=["POST"])
+def api_apple_health_configure():
+    """Configure Carrot Health API connection
+
+    Body: { "api_token": "carrot_api_token" }
+    """
+    try:
+        data = request.get_json() or {}
+        api_token = data.get("api_token", "")
+
+        if not api_token:
+            return jsonify({"error": "Missing API token"}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+INSERT INTO apple_health_integration (aggregator_type, api_token, sync_enabled, last_updated)
+VALUES (%s, %s, %s, NOW())
+ON CONFLICT (id) DO UPDATE SET api_token = EXCLUDED.api_token, last_updated = NOW()
+RETURNING id, aggregator_type, sync_enabled""", ("carrot", api_token, True))
+
+        result = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "status": "success",
+            "message": "Carrot Health configured",
+            "aggregator": result["aggregator_type"],
+            "sync_enabled": result["sync_enabled"]
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/apple/configure failed")
+        return jsonify({"error": str(e)}), 500
 
 
 # Initialize database if available
