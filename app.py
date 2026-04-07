@@ -2555,6 +2555,7 @@ def api_config_post():
     allowed = {
         "name", "morning_briefing_time", "timer_cutoff_multiplier", "anthropic_api_key",
         "weekly_recap_advisor", "formal_signoff_name", "timezone",
+        "google_fit_client_id", "google_fit_client_secret",
     }
     updates = {k: str(v)[:2000] for k, v in data.items() if k in allowed}
     if updates:
