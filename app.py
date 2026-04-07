@@ -3093,7 +3093,7 @@ def get_withings_oauth_url(redirect_uri):
 
     # Withings OAuth URL (using withingsmed endpoints)
     oauth_url = (
-        f"https://account.withingsmed.net/oauth2_user/authorize2?"
+        f"https://account.withingsmed.com/oauth2_user/authorize2?"
         f"response_type=code&"
         f"client_id={client_id}&"
         f"redirect_uri={quote(redirect_uri, safe='')}&"
@@ -3112,7 +3112,7 @@ def exchange_withings_code_for_token(code, redirect_uri):
         raise ValueError("Withings credentials not configured")
 
     # Exchange code for token (using withingsmed endpoints)
-    token_url = "https://account.withingsmed.net/oauth2_user/access_token"
+    token_url = "https://account.withingsmed.com/oauth2_user/access_token"
 
     payload = {
         "action": "requesttoken",
@@ -3180,7 +3180,7 @@ def refresh_withings_token():
         return False
 
     try:
-        token_url = "https://account.withingsmed.net/oauth2_user/access_token"
+        token_url = "https://account.withingsmed.com/oauth2_user/access_token"
 
         payload = {
             "action": "requesttoken",
