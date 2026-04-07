@@ -2038,7 +2038,7 @@ function buildAsgnCard(a, isActive) {
 
   var isQuiz = isQuizOrTest(a.title);
   var sideButtons = isActive ? '' :
-    '<div class="asgn-card-btns" onclick="event.stopPropagation()">' +
+    '<div class="asgn-card-btns">' +
     (isQuiz
       ? '<button class="btn btn-done" data-action="mark-taken" data-uid="' + uid + '" data-title="' + esc(a.title) + '" data-class="' + esc(a.class_name) + '">Taken</button>'
       : '<button class="btn btn-primary" data-action="start-timer" data-uid="' + uid + '" data-title="' + esc(a.title) + '" data-class="' + esc(a.class_name) + '">Start</button>' +
