@@ -3420,6 +3420,34 @@ def api_google_fit_authorize():
     Frontend should redirect user to this URL
     """
     try:
+        # Debug: Check if credentials are configured
+        cfg = get_config()
+        client_id = cfg.get("google_fit_client_id", "")
+        client_secret = cfg.get("google_fit_client_secret", "")
+
+        log.info(f"Google Fit authorize - Client ID configured: {bool(client_id)}, Client Secret configured: {bool(client_secret)}")
+
+        if not client_id:
+            log.error("Google Fit Client ID not configured in database")
+            return jsonify({
+                "error": "Google Fit not configured. Client ID is missing. Please add credentials to config.",
+                "debug": {
+                    "client_id_set": False,
+                    "client_secret_set": bool(client_secret),
+                    "config_keys": list(cfg.keys())
+                }
+            }), 400
+
+        if not client_secret:
+            log.error("Google Fit Client Secret not configured in database")
+            return jsonify({
+                "error": "Google Fit not fully configured. Client Secret is missing.",
+                "debug": {
+                    "client_id_set": True,
+                    "client_secret_set": False
+                }
+            }), 400
+
         # Determine redirect URI based on request origin
         if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
             redirect_uri = "http://localhost:5000/api/health/google-fit/callback"
@@ -3435,7 +3463,9 @@ def api_google_fit_authorize():
         }), 200
     except Exception as e:
         log.exception("/api/health/google-fit/authorize failed")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({
+            "error": f"Failed to generate OAuth URL: {str(e)}"
+        }), 500
 
 
 @app.route("/api/health/google-fit/callback", methods=["GET"])
