@@ -2712,7 +2712,7 @@ def sync_withings_data():
         # Fetch weight data (measure type 1 = weight in kg)
         try:
             weight_response = requests.get(
-                "https://wbsapi.withingsmed.com/v2/measure",
+                "https://wbsapi.us.withingsmed.net/v2/measure",
                 params={"meastypes": "1", "action": "getmeas"},
                 headers=headers
             )
@@ -2742,7 +2742,7 @@ ON CONFLICT DO NOTHING""", (
         # Fetch sleep data
         try:
             sleep_response = requests.get(
-                "https://wbsapi.withingsmed.com/v2/sleep",
+                "https://wbsapi.us.withingsmed.net/v2/sleep",
                 params={"action": "getsummary", "lastupdate": int((datetime.now(TZ) - timedelta(days=7)).timestamp())},
                 headers=headers
             )
@@ -2773,7 +2773,7 @@ ON CONFLICT DO NOTHING""", (
         # Fetch activity/steps data (measure type 16 = steps)
         try:
             steps_response = requests.get(
-                "https://wbsapi.withingsmed.com/v2/measure",
+                "https://wbsapi.us.withingsmed.net/v2/measure",
                 params={"meastypes": "16", "action": "getmeas"},
                 headers=headers
             )
