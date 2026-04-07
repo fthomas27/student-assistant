@@ -4,6 +4,7 @@ import logging
 import threading
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
+from urllib.parse import urlencode, quote
 
 import psycopg2
 import psycopg2.extras
@@ -3090,14 +3091,14 @@ def get_withings_oauth_url(redirect_uri):
     if not client_id:
         raise ValueError("Withings Client ID not configured")
 
-    # Withings OAuth URL
-    oauth_url = (
-        f"https://account.withings.com/oauth2_user/authorize2?"
-        f"response_type=code&"
-        f"client_id={client_id}&"
-        f"redirect_uri={redirect_uri}&"
-        f"scope=user.info,user.metrics,user.activity"
-    )
+    # Withings OAuth URL with properly URL-encoded parameters
+    params = {
+        "response_type": "code",
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "scope": "user.info,user.metrics,user.activity"
+    }
+    oauth_url = "https://account.withings.com/oauth2_user/authorize2?" + urlencode(params)
     return oauth_url
 
 
