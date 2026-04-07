@@ -402,8 +402,6 @@ CREATE TABLE IF NOT EXISTS google_fit_auth (
         "anthropic_api_key": "",
         "weekly_recap_advisor": "Mr. Goldberg",
         "formal_signoff_name": "Finley Thomas",
-        "withings_client_id": "",
-        "withings_client_secret": "",
         "google_fit_client_id": "",
         "google_fit_client_secret": "",
     }
