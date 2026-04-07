@@ -431,6 +431,12 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     cur.execute("CREATE INDEX IF NOT EXISTS idx_step_logs_recorded_at ON step_logs(recorded_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_health_metrics_recorded_at ON health_metrics(recorded_at DESC)")
 
+    # Ensure unique constraints for health logs to prevent duplicates during sync
+    # ON CONFLICT DO NOTHING requires unique constraints to be effective
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_weight_logs_unique ON weight_logs(recorded_at, source)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sleep_logs_unique ON sleep_logs(recorded_at, source)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_step_logs_unique ON step_logs(recorded_at, source)")
+
     conn.commit()
     cur.close()
     conn.close()
@@ -2569,6 +2575,26 @@ def api_config_post():
         if "morning_briefing_time" in updates:
             schedule_briefing()
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/health/google-fit/check-config", methods=["GET"])
+def api_google_fit_check_config():
+    """Debug endpoint to check if Google Fit credentials are configured"""
+    try:
+        cfg = get_config()
+        client_id = cfg.get("google_fit_client_id", "")
+        client_secret = cfg.get("google_fit_client_secret", "")
+
+        return jsonify({
+            "client_id_configured": bool(client_id),
+            "client_id_value": client_id[:20] + "..." if client_id else "",
+            "client_secret_configured": bool(client_secret),
+            "client_secret_value": client_secret[:20] + "..." if client_secret else "",
+            "all_config_keys": list(cfg.keys())
+        }), 200
+    except Exception as e:
+        log.exception("check-config failed")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/chat", methods=["POST"])
