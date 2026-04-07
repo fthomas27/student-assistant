@@ -384,6 +384,17 @@ CREATE TABLE IF NOT EXISTS apple_health_integration (
     last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
 )""")
 
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS google_fit_auth (
+    id INT PRIMARY KEY DEFAULT 1,
+    access_token TEXT,
+    refresh_token TEXT,
+    expires_at TIMESTAMPTZ,
+    scopes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_updated TIMESTAMPTZ DEFAULT NOW()
+)""")
+
     defaults = {
         "name": "Finn",
         "morning_briefing_time": "07:00",
@@ -393,6 +404,8 @@ CREATE TABLE IF NOT EXISTS apple_health_integration (
         "formal_signoff_name": "Finley Thomas",
         "withings_client_id": "",
         "withings_client_secret": "",
+        "google_fit_client_id": "",
+        "google_fit_client_secret": "",
     }
     for k, v in defaults.items():
         cur.execute("""
@@ -1020,17 +1033,13 @@ def schedule_briefing():
     # Process recurring tasks daily at midnight
     scheduler.add_job(_process_recurring_tasks, "cron", hour=0, minute=0,
                       id="process_recurring_tasks", replace_existing=True)
-    # Sync Withings data every 4 hours
-    scheduler.add_job(sync_withings_data, "interval", hours=4,
-                      id="sync_withings_data", replace_existing=True)
-    # Sync Health Auto Export data every 30 minutes
-    scheduler.add_job(sync_health_auto_export_data, "interval", minutes=30,
-                      id="sync_health_auto_export_data", replace_existing=True)
+    # Sync Google Fit data every 30 minutes
+    scheduler.add_job(sync_google_fit_data, "interval", minutes=30,
+                      id="sync_google_fit_data", replace_existing=True)
     log.info("Briefing scheduled for %02d:%02d Mountain", hour, minute)
     log.info("Evening debrief scheduled for 18:30 Mountain")
     log.info("Recurring tasks processor scheduled for 00:00 Mountain")
-    log.info("Withings data sync scheduled for every 4 hours")
-    log.info("Health Auto Export data sync scheduled for every 30 minutes")
+    log.info("Google Fit data sync scheduled for every 30 minutes")
 
 
 def get_timer_state_row():
@@ -2691,127 +2700,224 @@ ORDER BY pn.created_at DESC LIMIT 6""")
 # WITHINGS DATA SYNC FUNCTIONS
 # ──────────────────────────────────────────────────────────────────────────────
 
-def sync_health_auto_export_data():
-    """Fetch latest data from Health Auto Export TCP server
+# ──────────────────────────────────────────────────────────────────────────────
+# GOOGLE FIT DATA SYNC FUNCTIONS
+# ──────────────────────────────────────────────────────────────────────────────
 
-    Connects to Health Auto Export running on 192.168.6.251:9000
+def fetch_google_fit_steps(access_token, start_time_ms, end_time_ms):
+    """Fetch step count data from Google Fit API for a date range"""
+    try:
+        url = "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate"
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        payload = {
+            "aggregateBy": [{
+                "dataTypeName": "com.google.step_count.delta"
+            }],
+            "bucketByTime": {"durationMillis": 86400000},  # 1 day buckets
+            "startTimeMillis": start_time_ms,
+            "endTimeMillis": end_time_ms
+        }
+
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.status_code != 200:
+            log.warning(f"Google Fit steps fetch failed: {response.status_code} - {response.text}")
+            return []
+
+        data = response.json()
+        buckets = data.get("bucket", [])
+        results = []
+
+        for bucket in buckets:
+            if bucket.get("dataset"):
+                for dataset in bucket.get("dataset", []):
+                    for point in dataset.get("point", []):
+                        steps = 0
+                        for value in point.get("value", []):
+                            steps += value.get("intVal", 0)
+
+                        if steps > 0:
+                            recorded_at_ms = int(point.get("startTimeNanos", 0)) // 1000000
+                            recorded_at = datetime.fromtimestamp(recorded_at_ms / 1000, tz=TZ)
+                            results.append({
+                                "steps": steps,
+                                "recorded_at": recorded_at
+                            })
+
+        return results
+    except Exception as e:
+        log.warning(f"Error fetching Google Fit steps: {e}")
+        return []
+
+
+def fetch_google_fit_weight(access_token, start_time_ms, end_time_ms):
+    """Fetch weight data from Google Fit API for a date range"""
+    try:
+        url = "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate"
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        payload = {
+            "aggregateBy": [{
+                "dataTypeName": "com.google.weight"
+            }],
+            "bucketByTime": {"durationMillis": 86400000},  # 1 day buckets
+            "startTimeMillis": start_time_ms,
+            "endTimeMillis": end_time_ms
+        }
+
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.status_code != 200:
+            log.warning(f"Google Fit weight fetch failed: {response.status_code} - {response.text}")
+            return []
+
+        data = response.json()
+        buckets = data.get("bucket", [])
+        results = []
+
+        for bucket in buckets:
+            if bucket.get("dataset"):
+                for dataset in bucket.get("dataset", []):
+                    for point in dataset.get("point", []):
+                        weight_kg = 0
+                        for value in point.get("value", []):
+                            weight_kg = value.get("fpVal", 0)  # Weight is in kg
+
+                        if weight_kg > 0:
+                            recorded_at_ms = int(point.get("startTimeNanos", 0)) // 1000000
+                            recorded_at = datetime.fromtimestamp(recorded_at_ms / 1000, tz=TZ)
+                            results.append({
+                                "weight_kg": weight_kg,
+                                "recorded_at": recorded_at
+                            })
+
+        return results
+    except Exception as e:
+        log.warning(f"Error fetching Google Fit weight: {e}")
+        return []
+
+
+def fetch_google_fit_sleep(access_token, start_time_ms, end_time_ms):
+    """Fetch sleep data from Google Fit API for a date range"""
+    try:
+        url = "https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate"
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        payload = {
+            "aggregateBy": [{
+                "dataTypeName": "com.google.sleep.segment"
+            }],
+            "bucketByTime": {"durationMillis": 86400000},  # 1 day buckets
+            "startTimeMillis": start_time_ms,
+            "endTimeMillis": end_time_ms
+        }
+
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.status_code != 200:
+            log.warning(f"Google Fit sleep fetch failed: {response.status_code} - {response.text}")
+            return []
+
+        data = response.json()
+        buckets = data.get("bucket", [])
+        results = []
+
+        for bucket in buckets:
+            if bucket.get("dataset"):
+                for dataset in bucket.get("dataset", []):
+                    sleep_duration_ms = 0
+                    sleep_start_ms = None
+                    sleep_end_ms = None
+
+                    for point in dataset.get("point", []):
+                        for value in point.get("value", []):
+                            # Sleep state: 72 = asleep, 71 = awake
+                            state = value.get("intVal", 0)
+                            if state == 72:  # Asleep
+                                start_ns = int(point.get("startTimeNanos", 0))
+                                end_ns = int(point.get("endTimeNanos", 0))
+                                sleep_duration_ms += (end_ns - start_ns) // 1000000
+
+                                if sleep_start_ms is None:
+                                    sleep_start_ms = start_ns // 1000000
+                                sleep_end_ms = end_ns // 1000000
+
+                    if sleep_duration_ms > 0:
+                        duration_hours = sleep_duration_ms / (1000 * 3600)
+                        recorded_at = datetime.fromtimestamp(sleep_end_ms / 1000, tz=TZ)
+                        results.append({
+                            "duration_hours": duration_hours,
+                            "recorded_at": recorded_at
+                        })
+
+        return results
+    except Exception as e:
+        log.warning(f"Error fetching Google Fit sleep: {e}")
+        return []
+
+
+def sync_google_fit_data():
+    """Fetch latest data from Google Fit and store in database
+
     This runs every 30 minutes via APScheduler
     """
     try:
-        HOST = "192.168.6.251"
-        PORT = 9000
-        TIMEOUT = 10
+        conn = get_db()
+        cur = conn.cursor()
 
-        log.info("Connecting to Health Auto Export server...")
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(TIMEOUT)
+        # Check if Google Fit is connected
+        cur.execute("SELECT access_token FROM google_fit_auth WHERE id = 1")
+        auth_row = cur.fetchone()
 
-        try:
-            sock.connect((HOST, PORT))
-            log.info("Connected to Health Auto Export server")
-
-            # Receive data from server
-            data = b""
-            while True:
-                try:
-                    chunk = sock.recv(4096)
-                    if not chunk:
-                        break
-                    data += chunk
-                except socket.timeout:
-                    break
-
-            sock.close()
-
-            if not data:
-                log.warning("No data received from Health Auto Export")
-                return
-
-            # Parse the received data
-            data_str = data.decode('utf-8', errors='ignore')
-            log.info(f"Received {len(data_str)} bytes from Health Auto Export")
-
-            # Try to parse as JSON lines format (each line is a JSON object)
-            conn = get_db()
-            cur = conn.cursor()
-
-            for line in data_str.strip().split('\n'):
-                if not line.strip():
-                    continue
-
-                try:
-                    entry = json.loads(line)
-                    process_health_export_entry(cur, entry)
-                except json.JSONDecodeError:
-                    log.warning(f"Could not parse JSON: {line[:100]}")
-                    continue
-
-            # Update last_sync timestamp
-            cur.execute("""
-UPDATE apple_health_integration
-SET last_sync = NOW()
-WHERE id = 1""")
-
-            conn.commit()
+        if not auth_row or not auth_row["access_token"]:
+            log.info("Google Fit not connected, skipping sync")
             cur.close()
             conn.close()
-
-            log.info("Health Auto Export data sync completed successfully")
-
-        except socket.timeout:
-            log.warning(f"Timeout connecting to Health Auto Export server at {HOST}:{PORT}")
-        except ConnectionRefusedError:
-            log.warning(f"Health Auto Export server not running at {HOST}:{PORT}")
-        except Exception as e:
-            log.exception(f"Error connecting to Health Auto Export: {e}")
-        finally:
-            try:
-                sock.close()
-            except:
-                pass
-
-    except Exception as e:
-        log.exception(f"Error syncing Health Auto Export data: {e}")
-
-
-def process_health_export_entry(cur, entry):
-    """Process a single health data entry from Health Auto Export"""
-    try:
-        data_type = entry.get("type", "").lower()
-        value = entry.get("value")
-        unit = entry.get("unit", "")
-        timestamp = entry.get("timestamp") or entry.get("date") or entry.get("recorded_at")
-
-        if not timestamp:
             return
 
-        # Convert timestamp to datetime if it's a number
-        if isinstance(timestamp, (int, float)):
-            recorded_at = datetime.fromtimestamp(timestamp, tz=TZ)
-        else:
-            recorded_at = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
-            if recorded_at.tzinfo is None:
-                recorded_at = recorded_at.replace(tzinfo=TZ)
+        # Refresh token if needed
+        if not refresh_google_fit_token():
+            log.warning("Failed to refresh Google Fit token")
+            cur.close()
+            conn.close()
+            return
 
-        # Process based on data type
-        if "weight" in data_type or "mass" in data_type:
-            if value is not None:
-                weight_kg = float(value)
+        # Get fresh token from database
+        cur.execute("SELECT access_token FROM google_fit_auth WHERE id = 1")
+        auth_row = cur.fetchone()
+        access_token = auth_row["access_token"]
+
+        # Get data from last 30 days
+        now = datetime.now(TZ)
+        start_time = now - timedelta(days=30)
+        start_time_ms = int(start_time.timestamp() * 1000)
+        end_time_ms = int(now.timestamp() * 1000)
+
+        # Fetch weight data
+        try:
+            weights = fetch_google_fit_weight(access_token, start_time_ms, end_time_ms)
+            for weight_data in weights:
+                weight_kg = weight_data["weight_kg"]
+                recorded_at = weight_data["recorded_at"]
                 cur.execute("""
 INSERT INTO weight_logs (weight, unit, recorded_at, source, notes)
 VALUES (%s, %s, %s, %s, %s)
 ON CONFLICT DO NOTHING""", (
                     weight_kg,
-                    unit or "kg",
+                    "kg",
                     recorded_at,
-                    "apple_health",
-                    f"Weight from Apple Health: {weight_kg} {unit}"
+                    "google_fit",
+                    f"Weight from Google Fit: {weight_kg:.2f} kg"
                 ))
-                log.info(f"Synced weight from Apple Health: {weight_kg} {unit}")
+            if weights:
+                log.info(f"Synced {len(weights)} weight entries from Google Fit")
+        except Exception as e:
+            log.warning(f"Failed to sync weight from Google Fit: {e}")
 
-        elif "step" in data_type:
-            if value is not None:
-                steps = int(value)
+        # Fetch steps data
+        try:
+            steps_list = fetch_google_fit_steps(access_token, start_time_ms, end_time_ms)
+            for steps_data in steps_list:
+                steps = steps_data["steps"]
+                recorded_at = steps_data["recorded_at"]
                 cur.execute("""
 INSERT INTO step_logs (steps, distance_km, recorded_at, source, notes)
 VALUES (%s, %s, %s, %s, %s)
@@ -2819,17 +2925,20 @@ ON CONFLICT DO NOTHING""", (
                     steps,
                     None,
                     recorded_at,
-                    "apple_health",
-                    f"Steps from Apple Health: {steps}"
+                    "google_fit",
+                    f"Steps from Google Fit: {steps}"
                 ))
-                log.info(f"Synced steps from Apple Health: {steps}")
+            if steps_list:
+                log.info(f"Synced {len(steps_list)} step entries from Google Fit")
+        except Exception as e:
+            log.warning(f"Failed to sync steps from Google Fit: {e}")
 
-        elif "sleep" in data_type:
-            if value is not None:
-                # Value could be in minutes or hours
-                duration_value = float(value)
-                # Assume if > 24, it's in minutes
-                duration_hours = duration_value / 60 if duration_value > 24 else duration_value
+        # Fetch sleep data
+        try:
+            sleep_list = fetch_google_fit_sleep(access_token, start_time_ms, end_time_ms)
+            for sleep_data in sleep_list:
+                duration_hours = sleep_data["duration_hours"]
+                recorded_at = sleep_data["recorded_at"]
                 cur.execute("""
 INSERT INTO sleep_logs (duration_hours, quality_score, recorded_at, source, notes)
 VALUES (%s, %s, %s, %s, %s)
@@ -2837,139 +2946,13 @@ ON CONFLICT DO NOTHING""", (
                     duration_hours,
                     None,
                     recorded_at,
-                    "apple_health",
-                    f"Sleep from Apple Health: {duration_hours:.1f} hours"
+                    "google_fit",
+                    f"Sleep from Google Fit: {duration_hours:.1f} hours"
                 ))
-                log.info(f"Synced sleep from Apple Health: {duration_hours:.1f} hours")
-
-
-    except Exception as e:
-        log.warning(f"Error processing health entry: {e}")
-
-
-def sync_withings_data():
-    """Fetch latest data from Withings and store in database
-
-    This runs every 4 hours via APScheduler
-    """
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-
-        # Check if Withings is connected
-        cur.execute("SELECT access_token FROM withings_auth WHERE id = 1")
-        auth_row = cur.fetchone()
-
-        if not auth_row or not auth_row["access_token"]:
-            log.info("Withings not connected, skipping sync")
-            cur.close()
-            conn.close()
-            return
-
-        # Refresh token if needed
-        if not refresh_withings_token():
-            log.warning("Failed to refresh Withings token")
-            cur.close()
-            conn.close()
-            return
-
-        # Get fresh token from database
-        cur.execute("SELECT access_token FROM withings_auth WHERE id = 1")
-        auth_row = cur.fetchone()
-        access_token = auth_row["access_token"]
-
-        headers = {"Authorization": f"Bearer {access_token}"}
-
-        # Fetch weight data (measure type 1 = weight in kg)
-        try:
-            weight_response = requests.get(
-                "https://wbsapi.us.withingsmed.net/v2/measure",
-                params={"meastypes": "1", "action": "getmeas"},
-                headers=headers
-            )
-            if weight_response.status_code == 200:
-                weight_data = weight_response.json()
-                if weight_data.get("status") == 0:
-                    measures = weight_data.get("body", {}).get("measures", [])
-                    if measures:
-                        latest_weight = measures[0]  # Most recent first
-                        weight_kg = latest_weight.get("value", 0) / 100000  # Withings stores in 0.00001 kg units
-                        recorded_at = datetime.fromtimestamp(latest_weight.get("date"), tz=TZ)
-
-                        cur.execute("""
-INSERT INTO weight_logs (weight, unit, recorded_at, source, notes)
-VALUES (%s, %s, %s, %s, %s)
-ON CONFLICT DO NOTHING""", (
-                            weight_kg,
-                            "kg",
-                            recorded_at,
-                            "withings",
-                            f"Weight from Withings: {weight_kg:.2f} kg"
-                        ))
-                        log.info(f"Synced weight from Withings: {weight_kg:.2f} kg")
+            if sleep_list:
+                log.info(f"Synced {len(sleep_list)} sleep entries from Google Fit")
         except Exception as e:
-            log.warning(f"Failed to sync weight from Withings: {e}")
-
-        # Fetch sleep data
-        try:
-            sleep_response = requests.get(
-                "https://wbsapi.us.withingsmed.net/v2/sleep",
-                params={"action": "getsummary", "lastupdate": int((datetime.now(TZ) - timedelta(days=7)).timestamp())},
-                headers=headers
-            )
-            if sleep_response.status_code == 200:
-                sleep_data = sleep_response.json()
-                if sleep_data.get("status") == 0:
-                    summaries = sleep_data.get("body", {}).get("series", [])
-                    if summaries:
-                        latest_sleep = summaries[-1]  # Most recent
-                        duration_seconds = latest_sleep.get("data", {}).get("sleep_duration", 0)
-                        duration_hours = duration_seconds / 3600 if duration_seconds else 0
-                        recorded_at = datetime.fromtimestamp(latest_sleep.get("enddate"), tz=TZ)
-
-                        cur.execute("""
-INSERT INTO sleep_logs (duration_hours, quality_score, recorded_at, source, notes)
-VALUES (%s, %s, %s, %s, %s)
-ON CONFLICT DO NOTHING""", (
-                            duration_hours,
-                            None,  # Withings sleep endpoint doesn't provide quality score
-                            recorded_at,
-                            "withings",
-                            f"Sleep from Withings: {duration_hours:.1f} hours"
-                        ))
-                        log.info(f"Synced sleep from Withings: {duration_hours:.1f} hours")
-        except Exception as e:
-            log.warning(f"Failed to sync sleep from Withings: {e}")
-
-        # Fetch activity/steps data (measure type 16 = steps)
-        try:
-            steps_response = requests.get(
-                "https://wbsapi.us.withingsmed.net/v2/measure",
-                params={"meastypes": "16", "action": "getmeas"},
-                headers=headers
-            )
-            if steps_response.status_code == 200:
-                steps_data = steps_response.json()
-                if steps_data.get("status") == 0:
-                    measures = steps_data.get("body", {}).get("measures", [])
-                    if measures:
-                        latest_steps = measures[0]
-                        steps = int(latest_steps.get("value", 0))
-                        recorded_at = datetime.fromtimestamp(latest_steps.get("date"), tz=TZ)
-
-                        cur.execute("""
-INSERT INTO step_logs (steps, distance_km, recorded_at, source, notes)
-VALUES (%s, %s, %s, %s, %s)
-ON CONFLICT DO NOTHING""", (
-                            steps,
-                            None,
-                            recorded_at,
-                            "withings",
-                            f"Steps from Withings: {steps}"
-                        ))
-                        log.info(f"Synced steps from Withings: {steps}")
-        except Exception as e:
-            log.warning(f"Failed to sync steps from Withings: {e}")
+            log.warning(f"Failed to sync sleep from Google Fit: {e}")
 
         conn.commit()
         cur.close()
@@ -2979,15 +2962,15 @@ ON CONFLICT DO NOTHING""", (
         conn = get_db()
         cur = conn.cursor()
         cur.execute("""
-UPDATE withings_auth SET last_updated = NOW() WHERE id = 1""")
+UPDATE google_fit_auth SET last_updated = NOW() WHERE id = 1""")
         conn.commit()
         cur.close()
         conn.close()
 
-        log.info("Withings data sync completed successfully")
+        log.info("Google Fit data sync completed successfully")
 
     except Exception as e:
-        log.exception(f"Error syncing Withings data: {e}")
+        log.exception(f"Error syncing Google Fit data: {e}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3221,25 +3204,17 @@ def api_health_sync_status():
         conn = get_db()
         cur = conn.cursor()
 
-        # Check Withings
-        cur.execute("SELECT last_updated FROM withings_auth WHERE id = 1")
-        withings = cur.fetchone()
-
-        # Check Apple Health
-        cur.execute("SELECT last_sync FROM apple_health_integration WHERE id = 1")
-        apple = cur.fetchone()
+        # Check Google Fit
+        cur.execute("SELECT last_updated FROM google_fit_auth WHERE id = 1")
+        google_fit = cur.fetchone()
 
         cur.close()
         conn.close()
 
         result = {
-            "withings": {
-                "connected": withings is not None,
-                "last_sync": withings["last_updated"].isoformat() if withings else None
-            },
-            "apple_health": {
-                "connected": apple is not None,
-                "last_sync": apple["last_sync"].isoformat() if apple else None
+            "google_fit": {
+                "connected": google_fit is not None and google_fit.get("last_updated") is not None,
+                "last_sync": google_fit["last_updated"].isoformat() if google_fit and google_fit.get("last_updated") else None
             },
             "timestamp": datetime.now(TZ).isoformat()
         }
@@ -3251,64 +3226,71 @@ def api_health_sync_status():
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# WITHINGS OAUTH HELPER FUNCTIONS
+# GOOGLE FIT OAUTH HELPER FUNCTIONS
 # ──────────────────────────────────────────────────────────────────────────────
 
-def get_withings_oauth_url(redirect_uri):
-    """Generate Withings OAuth authorization URL"""
+def get_google_fit_oauth_url(redirect_uri):
+    """Generate Google Fit OAuth authorization URL"""
     from urllib.parse import quote
     cfg = get_config()
-    client_id = cfg.get("withings_client_id", "")
+    client_id = cfg.get("google_fit_client_id", "")
     if not client_id:
-        raise ValueError("Withings Client ID not configured")
+        raise ValueError("Google Fit Client ID not configured")
 
-    # Withings OAuth URL (using withingsmed endpoints)
+    # Google OAuth URL
+    scopes = [
+        "https://www.googleapis.com/auth/fitness.body_read",
+        "https://www.googleapis.com/auth/fitness.activity_read",
+        "https://www.googleapis.com/auth/fitness.sleep_read"
+    ]
+    scope_str = " ".join(scopes)
+
     oauth_url = (
-        f"https://account.withings.com/oauth2_user/authorize2?"
+        f"https://accounts.google.com/o/oauth2/v2/auth?"
         f"response_type=code&"
         f"client_id={client_id}&"
         f"redirect_uri={quote(redirect_uri, safe='')}&"
-        f"scope=user.info,user.metrics,user.activity"
+        f"scope={quote(scope_str, safe='')}&"
+        f"access_type=offline&"
+        f"prompt=consent"
     )
     return oauth_url
 
 
-def exchange_withings_code_for_token(code, redirect_uri):
-    """Exchange Withings authorization code for access token"""
+def exchange_google_fit_code_for_token(code, redirect_uri):
+    """Exchange Google authorization code for access token"""
     cfg = get_config()
-    client_id = cfg.get("withings_client_id", "")
-    client_secret = cfg.get("withings_client_secret", "")
+    client_id = cfg.get("google_fit_client_id", "")
+    client_secret = cfg.get("google_fit_client_secret", "")
 
     if not client_id or not client_secret:
-        raise ValueError("Withings credentials not configured")
+        raise ValueError("Google Fit credentials not configured")
 
-    # Exchange code for token (using withingsmed endpoints)
-    token_url = "https://account.withings.com/oauth2_user/access_token"
+    # Exchange code for token
+    token_url = "https://oauth2.googleapis.com/token"
 
     payload = {
-        "action": "requesttoken",
         "grant_type": "authorization_code",
+        "code": code,
         "client_id": client_id,
         "client_secret": client_secret,
-        "code": code,
         "redirect_uri": redirect_uri
     }
 
     response = requests.post(token_url, data=payload)
     if response.status_code != 200:
-        raise Exception(f"Withings token exchange failed: {response.text}")
+        raise Exception(f"Google Fit token exchange failed: {response.text}")
 
     data = response.json()
-    if data.get("status") != 0:
-        raise Exception(f"Withings error: {data.get('error', 'Unknown error')}")
+    if "error" in data:
+        raise Exception(f"Google Fit error: {data.get('error_description', data.get('error'))}")
 
-    body = data.get("body", {})
-    access_token = body.get("access_token")
-    refresh_token = body.get("refresh_token")
-    expires_in = body.get("expires_in", 3600)
+    access_token = data.get("access_token")
+    refresh_token = data.get("refresh_token")
+    expires_in = data.get("expires_in", 3600)
 
     if not access_token:
-        raise Exception("No access token received from Withings")
+        raise Exception("No access token received from Google")
 
     expires_at = datetime.now(TZ) + timedelta(seconds=expires_in)
 
@@ -3319,12 +3301,12 @@ def exchange_withings_code_for_token(code, redirect_uri):
     }
 
 
-def refresh_withings_token():
-    """Refresh expired Withings access token"""
+def refresh_google_fit_token():
+    """Refresh expired Google Fit access token"""
     conn = get_db()
     cur = conn.cursor()
 
-    cur.execute("SELECT access_token, refresh_token, expires_at FROM withings_auth WHERE id = 1")
+    cur.execute("SELECT access_token, refresh_token, expires_at FROM google_fit_auth WHERE id = 1")
     row = cur.fetchone()
 
     if not row:
@@ -3334,104 +3316,108 @@ def refresh_withings_token():
 
     # Check if token is still valid
     expires_at = row["expires_at"]
-    if expires_at > datetime.now(TZ):
+    if expires_at and expires_at > datetime.now(TZ):
         cur.close()
         conn.close()
         return True  # Token still valid
 
-    # Token expired, refresh it
+    # Token expired or doesn't exist, refresh it
+    refresh_token = row["refresh_token"]
+    if not refresh_token:
+        cur.close()
+        conn.close()
+        log.error("No refresh token available for Google Fit")
+        return False
+
     cfg = get_config()
-    client_id = cfg.get("withings_client_id", "")
-    client_secret = cfg.get("withings_client_secret", "")
+    client_id = cfg.get("google_fit_client_id", "")
+    client_secret = cfg.get("google_fit_client_secret", "")
 
     if not client_id or not client_secret:
         cur.close()
         conn.close()
-        log.error("Cannot refresh Withings token: credentials not configured")
+        log.error("Cannot refresh Google Fit token: credentials not configured")
         return False
 
     try:
-        token_url = "https://account.withings.com/oauth2_user/access_token"
+        token_url = "https://oauth2.googleapis.com/token"
 
         payload = {
-            "action": "requesttoken",
             "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
             "client_id": client_id,
-            "client_secret": client_secret,
-            "refresh_token": row["refresh_token"]
+            "client_secret": client_secret
         }
 
         response = requests.post(token_url, data=payload)
         if response.status_code != 200:
-            log.error(f"Withings token refresh failed: {response.text}")
+            log.error(f"Google Fit token refresh failed: {response.text}")
             cur.close()
             conn.close()
             return False
 
         data = response.json()
-        if data.get("status") != 0:
-            log.error(f"Withings refresh error: {data.get('error')}")
+        if "error" in data:
+            log.error(f"Google Fit refresh error: {data.get('error_description')}")
             cur.close()
             conn.close()
             return False
 
-        body = data.get("body", {})
-        new_access_token = body.get("access_token")
-        new_refresh_token = body.get("refresh_token")
-        expires_in = body.get("expires_in", 3600)
+        new_access_token = data.get("access_token")
+        expires_in = data.get("expires_in", 3600)
         new_expires_at = datetime.now(TZ) + timedelta(seconds=expires_in)
 
-        # Update database with new tokens
+        # Update database with new token
         cur.execute("""
-UPDATE withings_auth
-SET access_token = %s, refresh_token = %s, expires_at = %s, last_updated = NOW()
-WHERE id = 1""", (new_access_token, new_refresh_token, new_expires_at))
+UPDATE google_fit_auth
+SET access_token = %s, expires_at = %s, last_updated = NOW()
+WHERE id = 1""", (new_access_token, new_expires_at))
 
         conn.commit()
         cur.close()
         conn.close()
 
-        log.info("Withings token refreshed successfully")
+        log.info("Google Fit token refreshed successfully")
         return True
 
     except Exception as e:
-        log.exception(f"Error refreshing Withings token: {e}")
+        log.exception(f"Error refreshing Google Fit token: {e}")
         cur.close()
         conn.close()
         return False
 
 
-@app.route("/api/health/withings/authorize", methods=["GET"])
-def api_withings_authorize():
-    """Get Withings OAuth authorization URL
+@app.route("/api/health/google-fit/authorize", methods=["GET"])
+def api_google_fit_authorize():
+    """Get Google Fit OAuth authorization URL
 
-    Returns: { "oauth_url": "https://account.withings.com/oauth2_user/authorize2?..." }
+    Returns: { "oauth_url": "https://accounts.google.com/o/oauth2/v2/auth?..." }
     Frontend should redirect user to this URL
     """
     try:
         # Determine redirect URI based on request origin
         if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
-            redirect_uri = "http://localhost:5000/api/health/withings/callback"
+            redirect_uri = "http://localhost:5000/api/health/google-fit/callback"
         else:
             # Production: use HTTPS
-            redirect_uri = f"https://{request.host}/api/health/withings/callback"
+            redirect_uri = f"https://{request.host}/api/health/google-fit/callback"
 
-        oauth_url = get_withings_oauth_url(redirect_uri)
+        oauth_url = get_google_fit_oauth_url(redirect_uri)
 
         return jsonify({
             "oauth_url": oauth_url,
             "redirect_uri": redirect_uri
         }), 200
     except Exception as e:
-        log.exception("/api/health/withings/authorize failed")
+        log.exception("/api/health/google-fit/authorize failed")
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/health/withings/callback", methods=["GET"])
-def api_withings_callback():
-    """Handle Withings OAuth 2.0 callback
+@app.route("/api/health/google-fit/callback", methods=["GET"])
+def api_google_fit_callback():
+    """Handle Google Fit OAuth 2.0 callback
 
-    Query params from Withings:
+    Query params from Google:
     - code: OAuth authorization code
     - state: State parameter for CSRF protection
     """
@@ -3440,24 +3426,31 @@ def api_withings_callback():
         state = request.args.get("state", "")
 
         if not oauth_code:
-            log.error("Missing authorization code in Withings callback")
+            log.error("Missing authorization code in Google Fit callback")
             return redirect("/?health=error")
 
         # Determine redirect URI
         if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
-            redirect_uri = "http://localhost:5000/api/health/withings/callback"
+            redirect_uri = "http://localhost:5000/api/health/google-fit/callback"
         else:
-            redirect_uri = f"https://{request.host}/api/health/withings/callback"
+            redirect_uri = f"https://{request.host}/api/health/google-fit/callback"
 
         # Exchange code for token
-        token_data = exchange_withings_code_for_token(oauth_code, redirect_uri)
+        token_data = exchange_google_fit_code_for_token(oauth_code, redirect_uri)
 
         # Store tokens in database
         conn = get_db()
         cur = conn.cursor()
 
+        scopes = [
+            "https://www.googleapis.com/auth/fitness.body_read",
+            "https://www.googleapis.com/auth/fitness.activity_read",
+            "https://www.googleapis.com/auth/fitness.sleep_read"
+        ]
+        scope_str = " ".join(scopes)
+
         cur.execute("""
-INSERT INTO withings_auth (id, access_token, refresh_token, expires_at, scopes, last_updated)
+INSERT INTO google_fit_auth (id, access_token, refresh_token, expires_at, scopes, last_updated)
 VALUES (1, %s, %s, %s, %s, NOW())
 ON CONFLICT (id) DO UPDATE SET
     access_token = EXCLUDED.access_token,
@@ -3467,20 +3460,20 @@ ON CONFLICT (id) DO UPDATE SET
             token_data["access_token"],
             token_data["refresh_token"],
             token_data["expires_at"],
-            "user.info,user.metrics,user.activity"
+            scope_str
         ))
 
         conn.commit()
         cur.close()
         conn.close()
 
-        log.info("Withings OAuth successful - tokens stored")
+        log.info("Google Fit OAuth successful - tokens stored")
 
         # Redirect to app with success message
-        return redirect("/?health=withings_connected")
+        return redirect("/?health=google_fit_connected")
 
     except Exception as e:
-        log.exception("/api/health/withings/callback failed")
+        log.exception("/api/health/google-fit/callback failed")
         return redirect("/?health=error")
 
 
