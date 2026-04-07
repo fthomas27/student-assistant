@@ -431,6 +431,12 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     cur.execute("CREATE INDEX IF NOT EXISTS idx_step_logs_recorded_at ON step_logs(recorded_at DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_health_metrics_recorded_at ON health_metrics(recorded_at DESC)")
 
+    # Ensure unique constraints for health logs to prevent duplicates during sync
+    # ON CONFLICT DO NOTHING requires unique constraints to be effective
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_weight_logs_unique ON weight_logs(recorded_at, source)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sleep_logs_unique ON sleep_logs(recorded_at, source)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_step_logs_unique ON step_logs(recorded_at, source)")
+
     conn.commit()
     cur.close()
     conn.close()
