@@ -2,6 +2,8 @@ import os
 import time
 import logging
 import threading
+import socket
+import json
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 
@@ -1021,10 +1023,14 @@ def schedule_briefing():
     # Sync Withings data every 4 hours
     scheduler.add_job(sync_withings_data, "interval", hours=4,
                       id="sync_withings_data", replace_existing=True)
+    # Sync Health Auto Export data every 30 minutes
+    scheduler.add_job(sync_health_auto_export_data, "interval", minutes=30,
+                      id="sync_health_auto_export_data", replace_existing=True)
     log.info("Briefing scheduled for %02d:%02d Mountain", hour, minute)
     log.info("Evening debrief scheduled for 18:30 Mountain")
     log.info("Recurring tasks processor scheduled for 00:00 Mountain")
     log.info("Withings data sync scheduled for every 4 hours")
+    log.info("Health Auto Export data sync scheduled for every 30 minutes")
 
 
 def get_timer_state_row():
@@ -2675,6 +2681,156 @@ ORDER BY pn.created_at DESC LIMIT 6""")
 # ──────────────────────────────────────────────────────────────────────────────
 # WITHINGS DATA SYNC FUNCTIONS
 # ──────────────────────────────────────────────────────────────────────────────
+
+def sync_health_auto_export_data():
+    """Fetch latest data from Health Auto Export TCP server
+
+    Connects to Health Auto Export running on 192.168.6.251:9000
+    This runs every 30 minutes via APScheduler
+    """
+    try:
+        HOST = "192.168.6.251"
+        PORT = 9000
+        TIMEOUT = 10
+
+        log.info("Connecting to Health Auto Export server...")
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(TIMEOUT)
+
+        try:
+            sock.connect((HOST, PORT))
+            log.info("Connected to Health Auto Export server")
+
+            # Receive data from server
+            data = b""
+            while True:
+                try:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+                except socket.timeout:
+                    break
+
+            sock.close()
+
+            if not data:
+                log.warning("No data received from Health Auto Export")
+                return
+
+            # Parse the received data
+            data_str = data.decode('utf-8', errors='ignore')
+            log.info(f"Received {len(data_str)} bytes from Health Auto Export")
+
+            # Try to parse as JSON lines format (each line is a JSON object)
+            conn = get_db()
+            cur = conn.cursor()
+
+            for line in data_str.strip().split('\n'):
+                if not line.strip():
+                    continue
+
+                try:
+                    entry = json.loads(line)
+                    process_health_export_entry(cur, entry)
+                except json.JSONDecodeError:
+                    log.warning(f"Could not parse JSON: {line[:100]}")
+                    continue
+
+            conn.commit()
+            cur.close()
+            conn.close()
+
+            log.info("Health Auto Export data sync completed successfully")
+
+        except socket.timeout:
+            log.warning(f"Timeout connecting to Health Auto Export server at {HOST}:{PORT}")
+        except ConnectionRefusedError:
+            log.warning(f"Health Auto Export server not running at {HOST}:{PORT}")
+        except Exception as e:
+            log.exception(f"Error connecting to Health Auto Export: {e}")
+        finally:
+            try:
+                sock.close()
+            except:
+                pass
+
+    except Exception as e:
+        log.exception(f"Error syncing Health Auto Export data: {e}")
+
+
+def process_health_export_entry(cur, entry):
+    """Process a single health data entry from Health Auto Export"""
+    try:
+        data_type = entry.get("type", "").lower()
+        value = entry.get("value")
+        unit = entry.get("unit", "")
+        timestamp = entry.get("timestamp") or entry.get("date") or entry.get("recorded_at")
+
+        if not timestamp:
+            return
+
+        # Convert timestamp to datetime if it's a number
+        if isinstance(timestamp, (int, float)):
+            recorded_at = datetime.fromtimestamp(timestamp, tz=TZ)
+        else:
+            recorded_at = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+            if recorded_at.tzinfo is None:
+                recorded_at = recorded_at.replace(tzinfo=TZ)
+
+        # Process based on data type
+        if "weight" in data_type or "mass" in data_type:
+            if value is not None:
+                weight_kg = float(value)
+                cur.execute("""
+INSERT INTO weight_logs (weight, unit, recorded_at, source, notes)
+VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT DO NOTHING""", (
+                    weight_kg,
+                    unit or "kg",
+                    recorded_at,
+                    "apple_health",
+                    f"Weight from Apple Health: {weight_kg} {unit}"
+                ))
+                log.info(f"Synced weight from Apple Health: {weight_kg} {unit}")
+
+        elif "step" in data_type:
+            if value is not None:
+                steps = int(value)
+                cur.execute("""
+INSERT INTO step_logs (steps, distance_km, recorded_at, source, notes)
+VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT DO NOTHING""", (
+                    steps,
+                    None,
+                    recorded_at,
+                    "apple_health",
+                    f"Steps from Apple Health: {steps}"
+                ))
+                log.info(f"Synced steps from Apple Health: {steps}")
+
+        elif "sleep" in data_type:
+            if value is not None:
+                # Value could be in minutes or hours
+                duration_value = float(value)
+                # Assume if > 24, it's in minutes
+                duration_hours = duration_value / 60 if duration_value > 24 else duration_value
+                cur.execute("""
+INSERT INTO sleep_logs (duration_hours, quality_score, recorded_at, source, notes)
+VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT DO NOTHING""", (
+                    duration_hours,
+                    None,
+                    recorded_at,
+                    "apple_health",
+                    f"Sleep from Apple Health: {duration_hours:.1f} hours"
+                ))
+                log.info(f"Synced sleep from Apple Health: {duration_hours:.1f} hours")
+
+
+    except Exception as e:
+        log.warning(f"Error processing health entry: {e}")
+
 
 def sync_withings_data():
     """Fetch latest data from Withings and store in database
