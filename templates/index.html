@@ -120,6 +120,18 @@ padding: 14px 16px; margin-top: 14px; font-size: 15px; line-height: 1.7; color: 
 font-size: 13px; color: var(--text); padding: 8px 0; border-bottom: 1px solid var(--border);
 }
 
+/* ── HEALTH TAB ── */
+.health-metric-chart {
+width: 100%;
+margin-top: 12px;
+}
+#health-weight-value, #health-sleep-value, #health-steps-value {
+display: block;
+}
+#health-weight-trend, #health-sleep-avg, #health-steps-avg {
+display: block;
+}
+
 /* ── TAB BAR ── */
 .tab-bar {
 height: var(--tab-h);
@@ -857,70 +869,59 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
 
 <!-- ══ TAB 4: WORKOUT ══ -->
 <div class="tab-panel" id="tab-workout">
+  <!-- Health Tab Content -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding:0 16px">
+    <div style="flex:1">
+      <div id="health-sync-status" style="font-size:12px;color:var(--text3)">Last synced: —</div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button type="button" class="btn btn-outline" id="health-connect-btn" style="font-size:12px;padding:6px 10px;display:none" onclick="connectWithings()">Connect Withings</button>
+      <button type="button" class="btn btn-outline" id="health-sync-btn" style="font-size:12px;padding:6px 10px" onclick="manualSyncHealth()">Sync Now</button>
+    </div>
+  </div>
+
+  <!-- Weight Card -->
   <div class="card">
-    <div class="card-title">Today’s workout</div>
-    <p class="workout-intro">
-      Answer the two questions below, then generate a plan. The next session automatically rotates:
-      <strong style="color:var(--text2)">Back → Biceps &amp; Triceps → Core / Cardio → Legs → Shoulders</strong>
-      (each time you tap generate, not by calendar day). The coach learns from your past sessions and notes.
-    </p>
-    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:14px">
-      <div style="font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px">Next focus (this session)</div>
-      <div id="workout-next-focus" style="font-size:17px;font-weight:600;color:var(--text)">—</div>
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">⚖️</span>
+      <span>Weight</span>
     </div>
-    <div class="field-label" style="margin-bottom:6px">How hard of a workout are we doing today?</div>
-    <div class="workout-intensity-readout" id="workout-intensity-readout">5 / 10</div>
-    <div class="workout-slider-row">
-      <input type="range" id="workout-intensity" min="1" max="10" value="5" oninput="syncWorkoutIntensityLabel()">
+    <div id="health-weight-container" style="text-align:center;padding:16px 0">
+      <div style="font-size:28px;font-weight:700;color:var(--text)" id="health-weight-value">—</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:4px" id="health-weight-trend">—</div>
     </div>
-    <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:4px">
-      <span>Easy</span><span>All out</span>
-    </div>
-    <div class="field-label" style="margin-top:16px;margin-bottom:8px">Where are you training?</div>
-    <div class="workout-loc-row">
-      <button type="button" class="seg-btn selected" id="workout-loc-home" data-loc="home" onclick="selectWorkoutLocation(this)">Home gym</button>
-      <button type="button" class="seg-btn" id="workout-loc-rec" data-loc="rec" onclick="selectWorkoutLocation(this)">Rec gym</button>
-    </div>
-    <p style="font-size:11px;color:var(--text3);line-height:1.45;margin:0 0 14px">
-      <strong>Home gym</strong> = dumbbells up to <strong>35 lb</strong> each plus bodyweight.
-      <strong>Rec gym</strong> = full gym equipment.
-    </p>
-    <button type="button" class="btn btn-primary" style="width:100%" id="workout-generate-btn" onclick="generateWorkoutPlan()">Create my workout</button>
-    <div id="workout-generate-err" style="font-size:12px;color:var(--red);margin-top:10px;display:none"></div>
+    <canvas id="health-weight-chart" class="health-metric-chart" height="100"></canvas>
   </div>
-  <div class="card" id="workout-plan-card" style="display:none">
-    <div class="card-title">Your plan</div>
-    <div class="workout-plan-box briefing-text" id="workout-plan-body"></div>
-    <div style="margin-top:14px;display:flex;gap:8px">
-      <button type="button" class="btn btn-outline" style="flex:1" onclick="regenerateWorkout()" id="workout-regenerate-btn">Change it up</button>
-      <button type="button" class="btn btn-outline" style="flex:1" onclick="markWorkoutDone()">Done</button>
-    </div>
-    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
-      <div class="field-label" style="margin-bottom:6px">Help the coach learn (optional)</div>
-      <p style="font-size:11px;color:var(--text3);margin:0 0 8px">How did this session feel after you finished?</p>
-      <div class="workout-intensity-readout" id="workout-felt-readout" style="font-size:15px">—</div>
-      <div class="workout-slider-row">
-        <input type="range" id="workout-felt" min="1" max="10" value="5" oninput="syncWorkoutFeltLabel()">
-      </div>
-      <textarea class="field-input" id="workout-feedback-notes" rows="2" placeholder="e.g. shoulders felt tight, want more core next time…" style="margin-top:10px"></textarea>
-      <button type="button" class="btn btn-outline" style="width:100%;margin-top:10px" onclick="saveWorkoutFeedback()">Save feedback for next time</button>
-      <div id="workout-feedback-saved" style="font-size:12px;color:var(--green);margin-top:8px;display:none">Saved.</div>
-    </div>
-  </div>
+
+  <!-- Sleep Card -->
   <div class="card">
-    <div class="card-title">Log what you did</div>
-    <p style="font-size:12px;color:var(--text3);line-height:1.45;margin-bottom:12px">
-      Describe a workout you completed. The AI will categorize and format it.
-    </p>
-    <textarea class="field-input" id="workout-custom-desc" rows="3" placeholder="e.g. 5x5 squats, 3x8 leg press, 10 min treadmill, hamstring stretches…" style="margin-bottom:10px"></textarea>
-    <button type="button" class="btn btn-primary" style="width:100%" id="workout-custom-log-btn" onclick="logCustomWorkout()">Log this workout</button>
-    <div id="workout-custom-err" style="font-size:12px;color:var(--red);margin-top:10px;display:none"></div>
-    <div id="workout-custom-success" style="font-size:12px;color:var(--green);margin-top:10px;display:none">Workout logged!</div>
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">😴</span>
+      <span>Sleep</span>
+    </div>
+    <div id="health-sleep-container" style="text-align:center;padding:16px 0">
+      <div style="font-size:28px;font-weight:700;color:var(--text)" id="health-sleep-value">—</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:4px" id="health-sleep-avg">—</div>
+    </div>
+    <canvas id="health-sleep-chart" class="health-metric-chart" height="100"></canvas>
   </div>
-  <div class="section-label">Recent sessions</div>
-  <div id="workout-history-list" class="card" style="padding:12px 16px">
-    <div class="shimmer"></div>
-    <div class="shimmer" style="width:75%"></div>
+
+  <!-- Steps/Activity Card -->
+  <div class="card">
+    <div class="card-title" style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:18px">👟</span>
+      <span>Activity</span>
+    </div>
+    <div id="health-steps-container" style="text-align:center;padding:16px 0">
+      <div style="font-size:28px;font-weight:700;color:var(--text)" id="health-steps-value">—</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:4px" id="health-steps-avg">—</div>
+    </div>
+    <canvas id="health-steps-chart" class="health-metric-chart" height="100"></canvas>
+  </div>
+
+  <div id="health-loading" style="display:none;text-align:center;padding:20px;color:var(--text3)">
+    <div class="shimmer" style="height:20px;margin-bottom:10px"></div>
+    <div class="shimmer" style="height:20px;width:80%"></div>
   </div>
 </div>
 
@@ -958,7 +959,7 @@ cursor: pointer; font-family: 'DM Sans', sans-serif;
   <button class="tab-item" onclick="switchTab(1)" id="tab-btn-1"><span class="tab-icon">✅</span><span class="tab-label">Tasks</span></button>
   <button class="tab-item" onclick="switchTab(2)" id="tab-btn-2"><span class="tab-icon">📁</span><span class="tab-label">Projects</span></button>
   <button class="tab-item" onclick="switchTab(3)" id="tab-btn-3"><span class="tab-icon">📅</span><span class="tab-label">Cal</span></button>
-  <button class="tab-item" onclick="switchTab(4)" id="tab-btn-4"><span class="tab-icon">💪</span><span class="tab-label">Lift</span></button>
+  <button class="tab-item" onclick="switchTab(4)" id="tab-btn-4"><span class="tab-icon">❤️</span><span class="tab-label">Health</span></button>
   <button class="tab-item" onclick="switchTab(5)" id="tab-btn-5"><span class="tab-icon">🤖</span><span class="tab-label">AI</span></button>
 </nav>
 
@@ -1440,7 +1441,7 @@ function switchTab(idx) {
   if (idx === 1) loadTasks();
   if (idx === 2) loadProjects();
   if (idx === 3) loadCalendar();
-  if (idx === 4) loadWorkoutTab();
+  if (idx === 4) loadHealthTab();
   if (idx === 5) loadAvailability();
 }
 
@@ -4090,6 +4091,235 @@ if (diffMin < 60) return diffMin + 'm ago';
 if (diffHr < 24) return diffHr + 'h ago';
 if (diffDay < 7) return diffDay + 'd ago';
 return formatDateShort(isoStr.substring(0,10));
+}
+
+// ══════════════════════════════════════════
+// HEALTH TAB
+// ══════════════════════════════════════════
+
+var healthCharts = {};
+
+function loadHealthTab() {
+  checkWithingsStatus();
+  loadHealthMetrics();
+  loadHealthCharts();
+}
+
+function checkWithingsStatus() {
+  fetch('/api/health/sync-status')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var connectBtn = document.getElementById('health-connect-btn');
+      var syncStatus = document.getElementById('health-sync-status');
+
+      if (data.withings && data.withings.connected) {
+        connectBtn.style.display = 'none';
+        if (data.withings.last_sync) {
+          syncStatus.textContent = 'Last synced: ' + formatRelative(data.withings.last_sync);
+        }
+      } else {
+        connectBtn.style.display = 'inline-block';
+        syncStatus.textContent = 'Withings not connected';
+      }
+    })
+    .catch(function(e) {
+      console.error('Error checking Withings status:', e);
+    });
+}
+
+function connectWithings() {
+  fetch('/api/health/withings/authorize')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.oauth_url) {
+        window.location.href = data.oauth_url;
+      }
+    })
+    .catch(function(e) {
+      alert('Error connecting to Withings. Check console.');
+      console.error(e);
+    });
+}
+
+function loadHealthMetrics() {
+  fetch('/api/health/metrics')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      // Weight
+      if (data.weight) {
+        var weightKg = parseFloat(data.weight.weight);
+        var weightLbs = (weightKg * 2.20462).toFixed(1);
+        document.getElementById('health-weight-value').textContent = weightLbs + ' lbs';
+        document.getElementById('health-weight-trend').textContent = '(' + data.weight.unit + ': ' + weightKg.toFixed(2) + ')';
+      }
+
+      // Sleep
+      if (data.sleep) {
+        var sleepHours = parseFloat(data.sleep.duration_hours).toFixed(1);
+        document.getElementById('health-sleep-value').textContent = sleepHours + ' hrs';
+        var quality = data.sleep.quality_score ? '(Quality: ' + data.sleep.quality_score + '/10)' : '';
+        document.getElementById('health-sleep-avg').textContent = quality || 'Last night';
+      }
+
+      // Steps
+      if (data.steps) {
+        var steps = parseInt(data.steps.steps);
+        document.getElementById('health-steps-value').textContent = steps.toLocaleString() + ' steps';
+        var distance = data.steps.distance_km ? parseFloat(data.steps.distance_km).toFixed(1) + ' km' : '';
+        document.getElementById('health-steps-avg').textContent = distance || 'Today';
+      }
+    })
+    .catch(function(e) {
+      console.error('Error loading health metrics:', e);
+    });
+}
+
+function loadHealthCharts() {
+  loadWeightChart();
+  loadSleepChart();
+  loadStepsChart();
+}
+
+function loadWeightChart() {
+  fetch('/api/health/weight-history?days_back=30&limit=30')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.history || data.history.length === 0) return;
+
+      var history = data.history.reverse();
+      var labels = history.map(function(h) {
+        return formatDateShort(h.recorded_at.substring(0, 10));
+      });
+      var values = history.map(function(h) {
+        return (parseFloat(h.weight) * 2.20462).toFixed(1);
+      });
+
+      drawSimpleChart('health-weight-chart', labels, values, '#0052cc', 'lbs');
+    })
+    .catch(function(e) {
+      console.error('Error loading weight chart:', e);
+    });
+}
+
+function loadSleepChart() {
+  fetch('/api/health/sleep-history?days_back=30&limit=30')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.history || data.history.length === 0) return;
+
+      var history = data.history.reverse();
+      var labels = history.map(function(h) {
+        return formatDateShort(h.recorded_at.substring(0, 10));
+      });
+      var values = history.map(function(h) {
+        return parseFloat(h.duration_hours).toFixed(1);
+      });
+
+      drawSimpleChart('health-sleep-chart', labels, values, '#4CAF50', 'hrs');
+    })
+    .catch(function(e) {
+      console.error('Error loading sleep chart:', e);
+    });
+}
+
+function loadStepsChart() {
+  fetch('/api/health/activity?days_back=30&limit=30')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.history || data.history.length === 0) return;
+
+      var history = data.history.reverse();
+      var labels = history.map(function(h) {
+        return formatDateShort(h.recorded_at.substring(0, 10));
+      });
+      var values = history.map(function(h) {
+        return Math.round(parseInt(h.steps) / 1000); // convert to thousands for readability
+      });
+
+      drawSimpleChart('health-steps-chart', labels, values, '#FF9800', 'k steps');
+    })
+    .catch(function(e) {
+      console.error('Error loading steps chart:', e);
+    });
+}
+
+function drawSimpleChart(canvasId, labels, values, color, unit) {
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  var ctx = canvas.getContext('2d');
+  var width = canvas.offsetWidth;
+  var height = canvas.offsetHeight;
+  canvas.width = width;
+  canvas.height = height;
+
+  if (!values || values.length === 0) return;
+
+  var padding = 40;
+  var chartWidth = width - padding * 2;
+  var chartHeight = height - padding * 2;
+
+  var maxVal = Math.max.apply(null, values.map(parseFloat));
+  var minVal = Math.min.apply(null, values.map(parseFloat));
+  var range = maxVal - minVal || 1;
+
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(padding, padding, chartWidth, chartHeight);
+
+  ctx.strokeStyle = '#ddd';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding, padding);
+  ctx.lineTo(padding, padding + chartHeight);
+  ctx.lineTo(padding + chartWidth, padding + chartHeight);
+  ctx.stroke();
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+
+  for (var i = 0; i < values.length; i++) {
+    var x = padding + (i / (values.length - 1 || 1)) * chartWidth;
+    var y = padding + chartHeight - ((parseFloat(values[i]) - minVal) / range) * chartHeight;
+
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+
+  ctx.stroke();
+
+  ctx.fillStyle = color;
+  for (var i = 0; i < values.length; i++) {
+    var x = padding + (i / (values.length - 1 || 1)) * chartWidth;
+    var y = padding + chartHeight - ((parseFloat(values[i]) - minVal) / range) * chartHeight;
+    ctx.beginPath();
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function manualSyncHealth() {
+  var btn = document.getElementById('health-sync-btn');
+  btn.disabled = true;
+  btn.textContent = 'Syncing...';
+
+  fetch('/api/health/sync', { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      setTimeout(function() {
+        btn.disabled = false;
+        btn.textContent = 'Sync Now';
+        checkWithingsStatus();
+        loadHealthMetrics();
+        loadHealthCharts();
+      }, 2000);
+    })
+    .catch(function(e) {
+      console.error('Error syncing health data:', e);
+      btn.disabled = false;
+      btn.textContent = 'Sync Now';
+      alert('Sync failed. Check console.');
+    });
 }
 </script>
 
