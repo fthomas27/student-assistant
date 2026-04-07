@@ -3392,6 +3392,13 @@ except Exception as e:
 try:
     _withings_id = os.environ.get("WITHINGS_CLIENT_ID", "")
     _withings_secret = os.environ.get("WITHINGS_CLIENT_SECRET", "")
+
+    # Hardcoded for testing (TODO: remove these later)
+    if not _withings_id:
+        _withings_id = "a9b16f55ef618b7466ee78dd39c9b23049f14e374e51c3609099efa7a1bbd706"
+    if not _withings_secret:
+        _withings_secret = "57c23641f216b3105a5747454af2ae1158e34998e38513013ebae2267a7afc72"
+
     if _withings_id and _withings_secret:
         set_config({
             "withings_client_id": _withings_id,
