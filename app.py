@@ -2712,7 +2712,7 @@ def sync_withings_data():
         # Fetch weight data (measure type 1 = weight in kg)
         try:
             weight_response = requests.get(
-                "https://api.withings.com/v2/measure",
+                "https://wbsapi.us.withingsmed.net/v2/measure",
                 params={"meastypes": "1", "action": "getmeas"},
                 headers=headers
             )
@@ -2742,7 +2742,7 @@ ON CONFLICT DO NOTHING""", (
         # Fetch sleep data
         try:
             sleep_response = requests.get(
-                "https://api.withings.com/v2/sleep",
+                "https://wbsapi.us.withingsmed.net/v2/sleep",
                 params={"action": "getsummary", "lastupdate": int((datetime.now(TZ) - timedelta(days=7)).timestamp())},
                 headers=headers
             )
@@ -2773,7 +2773,7 @@ ON CONFLICT DO NOTHING""", (
         # Fetch activity/steps data (measure type 16 = steps)
         try:
             steps_response = requests.get(
-                "https://api.withings.com/v2/measure",
+                "https://wbsapi.us.withingsmed.net/v2/measure",
                 params={"meastypes": "16", "action": "getmeas"},
                 headers=headers
             )
@@ -3090,9 +3090,9 @@ def get_withings_oauth_url(redirect_uri):
     if not client_id:
         raise ValueError("Withings Client ID not configured")
 
-    # Withings OAuth URL
+    # Withings OAuth URL (use withingsmed.net for US region)
     oauth_url = (
-        f"https://account.withings.com/oauth2_user/authorize2?"
+        f"https://account.withingsmed.net/oauth2_user/authorize2?"
         f"response_type=code&"
         f"client_id={client_id}&"
         f"redirect_uri={redirect_uri}&"
@@ -3110,8 +3110,8 @@ def exchange_withings_code_for_token(code, redirect_uri):
     if not client_id or not client_secret:
         raise ValueError("Withings credentials not configured")
 
-    # Exchange code for token
-    token_url = "https://account.withings.com/oauth2_user/access_token"
+    # Exchange code for token (use withingsmed.net for US region)
+    token_url = "https://account.withingsmed.net/oauth2_user/access_token"
 
     payload = {
         "action": "requesttoken",
@@ -3179,7 +3179,7 @@ def refresh_withings_token():
         return False
 
     try:
-        token_url = "https://account.withings.com/oauth2_user/access_token"
+        token_url = "https://account.withingsmed.net/oauth2_user/access_token"
 
         payload = {
             "action": "requesttoken",
