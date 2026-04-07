@@ -3578,15 +3578,13 @@ def api_health_sync():
     instead of waiting for the automatic sync
     """
     try:
-        # Sync Apple Health Auto Export data immediately
-        threading.Thread(target=sync_health_auto_export_data, daemon=True).start()
-        # Also sync Withings if configured
-        threading.Thread(target=sync_withings_data, daemon=True).start()
+        # Sync Google Fit data immediately
+        threading.Thread(target=sync_google_fit_data, daemon=True).start()
 
         return jsonify({
             "status": "syncing",
             "message": "Health data sync started in background",
-            "sources": ["apple_health", "withings"]
+            "sources": ["google_fit"]
         }), 202
     except Exception as e:
         log.exception("/api/health/sync failed")
