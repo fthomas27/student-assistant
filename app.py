@@ -2737,6 +2737,12 @@ def sync_health_auto_export_data():
                     log.warning(f"Could not parse JSON: {line[:100]}")
                     continue
 
+            # Update last_sync timestamp
+            cur.execute("""
+UPDATE apple_health_integration
+SET last_sync = NOW()
+WHERE id = 1""")
+
             conn.commit()
             cur.close()
             conn.close()
