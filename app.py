@@ -316,6 +316,72 @@ CREATE TABLE IF NOT EXISTS workout_logs (
     perceived_difficulty INT
 )""")
 
+    # Health tracking tables
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS health_metrics (
+    id SERIAL PRIMARY KEY,
+    metric_type TEXT NOT NULL,
+    value REAL NOT NULL,
+    unit TEXT NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS weight_logs (
+    id SERIAL PRIMARY KEY,
+    weight REAL NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'lbs',
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS sleep_logs (
+    id SERIAL PRIMARY KEY,
+    duration_hours REAL NOT NULL,
+    quality_score INT,
+    bedtime TIMESTAMPTZ,
+    wake_time TIMESTAMPTZ,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS step_logs (
+    id SERIAL PRIMARY KEY,
+    steps INT NOT NULL,
+    distance_km REAL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    source TEXT NOT NULL,
+    notes TEXT NOT NULL DEFAULT ''
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS withings_auth (
+    id INT PRIMARY KEY DEFAULT 1,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    scopes TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS apple_health_integration (
+    id INT PRIMARY KEY DEFAULT 1,
+    aggregator_type TEXT NOT NULL DEFAULT 'carrot',
+    api_token TEXT NOT NULL,
+    sync_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    last_sync TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+
     defaults = {
         "name": "Finn",
         "morning_briefing_time": "07:00",
@@ -323,6 +389,8 @@ CREATE TABLE IF NOT EXISTS workout_logs (
         "anthropic_api_key": "",
         "weekly_recap_advisor": "Mr. Goldberg",
         "formal_signoff_name": "Finley Thomas",
+        "withings_client_id": "",
+        "withings_client_secret": "",
     }
     for k, v in defaults.items():
         cur.execute("""
@@ -341,6 +409,12 @@ ON CONFLICT (key) DO NOTHING""", (k, v))
     cur.execute("CREATE INDEX IF NOT EXISTS idx_project_tasks_assignee_status ON project_tasks(assignee, status)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_completions_completed_at ON completions(completed_at DESC)")
+
+    # Health tracking indexes
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_weight_logs_recorded_at ON weight_logs(recorded_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_sleep_logs_recorded_at ON sleep_logs(recorded_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_step_logs_recorded_at ON step_logs(recorded_at DESC)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_health_metrics_recorded_at ON health_metrics(recorded_at DESC)")
 
     conn.commit()
     cur.close()
@@ -944,9 +1018,13 @@ def schedule_briefing():
     # Process recurring tasks daily at midnight
     scheduler.add_job(_process_recurring_tasks, "cron", hour=0, minute=0,
                       id="process_recurring_tasks", replace_existing=True)
+    # Sync Withings data every 4 hours
+    scheduler.add_job(sync_withings_data, "interval", hours=4,
+                      id="sync_withings_data", replace_existing=True)
     log.info("Briefing scheduled for %02d:%02d Mountain", hour, minute)
     log.info("Evening debrief scheduled for 18:30 Mountain")
     log.info("Recurring tasks processor scheduled for 00:00 Mountain")
+    log.info("Withings data sync scheduled for every 4 hours")
 
 
 def get_timer_state_row():
@@ -2594,6 +2672,705 @@ ORDER BY pn.created_at DESC LIMIT 6""")
         return jsonify({"error": "Failed to reach AI. Check server logs."}), 500
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# WITHINGS DATA SYNC FUNCTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+def sync_withings_data():
+    """Fetch latest data from Withings and store in database
+
+    This runs every 4 hours via APScheduler
+    """
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+
+        # Check if Withings is connected
+        cur.execute("SELECT access_token FROM withings_auth WHERE id = 1")
+        auth_row = cur.fetchone()
+
+        if not auth_row or not auth_row["access_token"]:
+            log.info("Withings not connected, skipping sync")
+            cur.close()
+            conn.close()
+            return
+
+        # Refresh token if needed
+        if not refresh_withings_token():
+            log.warning("Failed to refresh Withings token")
+            cur.close()
+            conn.close()
+            return
+
+        # Get fresh token from database
+        cur.execute("SELECT access_token FROM withings_auth WHERE id = 1")
+        auth_row = cur.fetchone()
+        access_token = auth_row["access_token"]
+
+        headers = {"Authorization": f"Bearer {access_token}"}
+
+        # Fetch weight data (measure type 1 = weight in kg)
+        try:
+            weight_response = requests.get(
+                "https://api.withings.com/v2/measure",
+                params={"meastypes": "1", "action": "getmeas"},
+                headers=headers
+            )
+            if weight_response.status_code == 200:
+                weight_data = weight_response.json()
+                if weight_data.get("status") == 0:
+                    measures = weight_data.get("body", {}).get("measures", [])
+                    if measures:
+                        latest_weight = measures[0]  # Most recent first
+                        weight_kg = latest_weight.get("value", 0) / 100000  # Withings stores in 0.00001 kg units
+                        recorded_at = datetime.fromtimestamp(latest_weight.get("date"), tz=TZ)
+
+                        cur.execute("""
+INSERT INTO weight_logs (weight, unit, recorded_at, source, notes)
+VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT DO NOTHING""", (
+                            weight_kg,
+                            "kg",
+                            recorded_at,
+                            "withings",
+                            f"Weight from Withings: {weight_kg:.2f} kg"
+                        ))
+                        log.info(f"Synced weight from Withings: {weight_kg:.2f} kg")
+        except Exception as e:
+            log.warning(f"Failed to sync weight from Withings: {e}")
+
+        # Fetch sleep data
+        try:
+            sleep_response = requests.get(
+                "https://api.withings.com/v2/sleep",
+                params={"action": "getsummary", "lastupdate": int((datetime.now(TZ) - timedelta(days=7)).timestamp())},
+                headers=headers
+            )
+            if sleep_response.status_code == 200:
+                sleep_data = sleep_response.json()
+                if sleep_data.get("status") == 0:
+                    summaries = sleep_data.get("body", {}).get("series", [])
+                    if summaries:
+                        latest_sleep = summaries[-1]  # Most recent
+                        duration_seconds = latest_sleep.get("data", {}).get("sleep_duration", 0)
+                        duration_hours = duration_seconds / 3600 if duration_seconds else 0
+                        recorded_at = datetime.fromtimestamp(latest_sleep.get("enddate"), tz=TZ)
+
+                        cur.execute("""
+INSERT INTO sleep_logs (duration_hours, quality_score, recorded_at, source, notes)
+VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT DO NOTHING""", (
+                            duration_hours,
+                            None,  # Withings sleep endpoint doesn't provide quality score
+                            recorded_at,
+                            "withings",
+                            f"Sleep from Withings: {duration_hours:.1f} hours"
+                        ))
+                        log.info(f"Synced sleep from Withings: {duration_hours:.1f} hours")
+        except Exception as e:
+            log.warning(f"Failed to sync sleep from Withings: {e}")
+
+        # Fetch activity/steps data (measure type 16 = steps)
+        try:
+            steps_response = requests.get(
+                "https://api.withings.com/v2/measure",
+                params={"meastypes": "16", "action": "getmeas"},
+                headers=headers
+            )
+            if steps_response.status_code == 200:
+                steps_data = steps_response.json()
+                if steps_data.get("status") == 0:
+                    measures = steps_data.get("body", {}).get("measures", [])
+                    if measures:
+                        latest_steps = measures[0]
+                        steps = int(latest_steps.get("value", 0))
+                        recorded_at = datetime.fromtimestamp(latest_steps.get("date"), tz=TZ)
+
+                        cur.execute("""
+INSERT INTO step_logs (steps, distance_km, recorded_at, source, notes)
+VALUES (%s, %s, %s, %s, %s)
+ON CONFLICT DO NOTHING""", (
+                            steps,
+                            None,
+                            recorded_at,
+                            "withings",
+                            f"Steps from Withings: {steps}"
+                        ))
+                        log.info(f"Synced steps from Withings: {steps}")
+        except Exception as e:
+            log.warning(f"Failed to sync steps from Withings: {e}")
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        # Update last sync time
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+UPDATE withings_auth SET last_updated = NOW() WHERE id = 1""")
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        log.info("Withings data sync completed successfully")
+
+    except Exception as e:
+        log.exception(f"Error syncing Withings data: {e}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HEALTH TRACKING API ENDPOINTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/health/metrics", methods=["GET"])
+def api_health_metrics():
+    """Get latest health metrics (weight, sleep, steps, etc.)
+
+    Query params:
+    - metric_type (optional): filter by type (weight, sleep, steps, heart_rate)
+    - days_back (optional): how many days to look back (default: 7)
+    - aggregated (optional): return aggregated data or raw (yes/no, default: yes)
+    """
+    try:
+        metric_type = request.args.get("metric_type", "")
+        days_back = int(request.args.get("days_back", 7))
+        aggregated = request.args.get("aggregated", "yes").lower() == "yes"
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        # Get latest weight
+        cur.execute("""
+SELECT weight, unit, recorded_at, source FROM weight_logs
+ORDER BY recorded_at DESC LIMIT 1""")
+        latest_weight = cur.fetchone()
+
+        # Get latest sleep
+        cur.execute("""
+SELECT duration_hours, quality_score, recorded_at, source FROM sleep_logs
+ORDER BY recorded_at DESC LIMIT 1""")
+        latest_sleep = cur.fetchone()
+
+        # Get latest steps
+        cur.execute("""
+SELECT steps, distance_km, recorded_at, source FROM step_logs
+ORDER BY recorded_at DESC LIMIT 1""")
+        latest_steps = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        result = {
+            "weight": dict(latest_weight) if latest_weight else None,
+            "sleep": dict(latest_sleep) if latest_sleep else None,
+            "steps": dict(latest_steps) if latest_steps else None,
+            "last_synced": datetime.now(TZ).isoformat()
+        }
+
+        return jsonify(result), 200
+    except Exception as e:
+        log.exception("/api/health/metrics failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/weight-history", methods=["GET"])
+def api_health_weight_history():
+    """Get weight history for trend analysis
+
+    Query params:
+    - days_back (optional): how many days to look back (default: 90)
+    - limit (optional): max entries to return (default: 100)
+    """
+    try:
+        days_back = int(request.args.get("days_back", 90))
+        limit = int(request.args.get("limit", 100))
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+SELECT id, weight, unit, recorded_at, source, notes FROM weight_logs
+WHERE recorded_at >= NOW() - INTERVAL '%d days'
+ORDER BY recorded_at DESC LIMIT %s""" % (days_back, limit))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        history = [dict(r) for r in rows]
+
+        return jsonify({
+            "count": len(history),
+            "history": history,
+            "days_back": days_back
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/weight-history failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/sleep-history", methods=["GET"])
+def api_health_sleep_history():
+    """Get sleep logs with quality scores
+
+    Query params:
+    - days_back (optional): how many days to look back (default: 30)
+    - limit (optional): max entries to return (default: 100)
+    """
+    try:
+        days_back = int(request.args.get("days_back", 30))
+        limit = int(request.args.get("limit", 100))
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+SELECT id, duration_hours, quality_score, bedtime, wake_time, recorded_at, source, notes
+FROM sleep_logs
+WHERE recorded_at >= NOW() - INTERVAL '%d days'
+ORDER BY recorded_at DESC LIMIT %s""" % (days_back, limit))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        history = [dict(r) for r in rows]
+
+        # Calculate average
+        if history:
+            avg_duration = sum(h["duration_hours"] for h in history if h["duration_hours"]) / len([h for h in history if h["duration_hours"]])
+            avg_quality = sum(h["quality_score"] for h in history if h["quality_score"]) / len([h for h in history if h["quality_score"]])
+        else:
+            avg_duration = None
+            avg_quality = None
+
+        return jsonify({
+            "count": len(history),
+            "average_duration_hours": avg_duration,
+            "average_quality_score": avg_quality,
+            "history": history,
+            "days_back": days_back
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/sleep-history failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/activity", methods=["GET"])
+def api_health_activity():
+    """Get steps/activity data
+
+    Query params:
+    - days_back (optional): how many days to look back (default: 30)
+    - limit (optional): max entries to return (default: 100)
+    """
+    try:
+        days_back = int(request.args.get("days_back", 30))
+        limit = int(request.args.get("limit", 100))
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+SELECT id, steps, distance_km, recorded_at, source, notes FROM step_logs
+WHERE recorded_at >= NOW() - INTERVAL '%d days'
+ORDER BY recorded_at DESC LIMIT %s""" % (days_back, limit))
+
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        history = [dict(r) for r in rows]
+
+        # Calculate totals
+        if history:
+            total_steps = sum(h["steps"] for h in history if h["steps"])
+            total_distance = sum(h["distance_km"] for h in history if h["distance_km"])
+        else:
+            total_steps = 0
+            total_distance = 0
+
+        return jsonify({
+            "count": len(history),
+            "total_steps": total_steps,
+            "total_distance_km": total_distance,
+            "history": history,
+            "days_back": days_back
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/activity failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/weight/manual", methods=["POST"])
+def api_health_weight_manual():
+    """Log weight manually (fallback if scale not synced)
+
+    Body: { "weight": 180.5, "unit": "lbs", "notes": "morning measurement" }
+    """
+    try:
+        data = request.get_json() or {}
+        weight = float(data.get("weight", 0))
+        unit = data.get("unit", "lbs")
+        notes = data.get("notes", "")
+
+        if not weight or weight <= 0:
+            return jsonify({"error": "Invalid weight"}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+INSERT INTO weight_logs (weight, unit, recorded_at, source, notes)
+VALUES (%s, %s, NOW(), %s, %s)
+RETURNING id, recorded_at""", (weight, unit, "manual", notes))
+
+        result = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "id": result["id"],
+            "weight": weight,
+            "unit": unit,
+            "recorded_at": result["recorded_at"].isoformat(),
+            "source": "manual"
+        }), 201
+    except Exception as e:
+        log.exception("/api/health/weight/manual failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/sync-status", methods=["GET"])
+def api_health_sync_status():
+    """Get sync status for all health data sources"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+
+        # Check Withings
+        cur.execute("SELECT last_updated FROM withings_auth WHERE id = 1")
+        withings = cur.fetchone()
+
+        # Check Apple Health
+        cur.execute("SELECT last_sync FROM apple_health_integration WHERE id = 1")
+        apple = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        result = {
+            "withings": {
+                "connected": withings is not None,
+                "last_sync": withings["last_updated"].isoformat() if withings else None
+            },
+            "apple_health": {
+                "connected": apple is not None,
+                "last_sync": apple["last_sync"].isoformat() if apple else None
+            },
+            "timestamp": datetime.now(TZ).isoformat()
+        }
+
+        return jsonify(result), 200
+    except Exception as e:
+        log.exception("/api/health/sync-status failed")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WITHINGS OAUTH HELPER FUNCTIONS
+# ──────────────────────────────────────────────────────────────────────────────
+
+def get_withings_oauth_url(redirect_uri):
+    """Generate Withings OAuth authorization URL"""
+    cfg = get_config()
+    client_id = cfg.get("withings_client_id", "")
+    if not client_id:
+        raise ValueError("Withings Client ID not configured")
+
+    # Withings OAuth URL
+    oauth_url = (
+        f"https://account.withings.com/oauth2_user/authorize2?"
+        f"response_type=code&"
+        f"client_id={client_id}&"
+        f"redirect_uri={redirect_uri}&"
+        f"scope=user.info,user.metrics,user.activity"
+    )
+    return oauth_url
+
+
+def exchange_withings_code_for_token(code, redirect_uri):
+    """Exchange Withings authorization code for access token"""
+    cfg = get_config()
+    client_id = cfg.get("withings_client_id", "")
+    client_secret = cfg.get("withings_client_secret", "")
+
+    if not client_id or not client_secret:
+        raise ValueError("Withings credentials not configured")
+
+    # Exchange code for token
+    token_url = "https://account.withings.com/oauth2_user/access_token"
+
+    payload = {
+        "action": "requesttoken",
+        "grant_type": "authorization_code",
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "code": code,
+        "redirect_uri": redirect_uri
+    }
+
+    response = requests.post(token_url, data=payload)
+    if response.status_code != 200:
+        raise Exception(f"Withings token exchange failed: {response.text}")
+
+    data = response.json()
+    if data.get("status") != 0:
+        raise Exception(f"Withings error: {data.get('error', 'Unknown error')}")
+
+    body = data.get("body", {})
+    access_token = body.get("access_token")
+    refresh_token = body.get("refresh_token")
+    expires_in = body.get("expires_in", 3600)
+
+    if not access_token:
+        raise Exception("No access token received from Withings")
+
+    expires_at = datetime.now(TZ) + timedelta(seconds=expires_in)
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": expires_at
+    }
+
+
+def refresh_withings_token():
+    """Refresh expired Withings access token"""
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("SELECT access_token, refresh_token, expires_at FROM withings_auth WHERE id = 1")
+    row = cur.fetchone()
+
+    if not row:
+        cur.close()
+        conn.close()
+        return False
+
+    # Check if token is still valid
+    expires_at = row["expires_at"]
+    if expires_at > datetime.now(TZ):
+        cur.close()
+        conn.close()
+        return True  # Token still valid
+
+    # Token expired, refresh it
+    cfg = get_config()
+    client_id = cfg.get("withings_client_id", "")
+    client_secret = cfg.get("withings_client_secret", "")
+
+    if not client_id or not client_secret:
+        cur.close()
+        conn.close()
+        log.error("Cannot refresh Withings token: credentials not configured")
+        return False
+
+    try:
+        token_url = "https://account.withings.com/oauth2_user/access_token"
+
+        payload = {
+            "action": "requesttoken",
+            "grant_type": "refresh_token",
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "refresh_token": row["refresh_token"]
+        }
+
+        response = requests.post(token_url, data=payload)
+        if response.status_code != 200:
+            log.error(f"Withings token refresh failed: {response.text}")
+            cur.close()
+            conn.close()
+            return False
+
+        data = response.json()
+        if data.get("status") != 0:
+            log.error(f"Withings refresh error: {data.get('error')}")
+            cur.close()
+            conn.close()
+            return False
+
+        body = data.get("body", {})
+        new_access_token = body.get("access_token")
+        new_refresh_token = body.get("refresh_token")
+        expires_in = body.get("expires_in", 3600)
+        new_expires_at = datetime.now(TZ) + timedelta(seconds=expires_in)
+
+        # Update database with new tokens
+        cur.execute("""
+UPDATE withings_auth
+SET access_token = %s, refresh_token = %s, expires_at = %s, last_updated = NOW()
+WHERE id = 1""", (new_access_token, new_refresh_token, new_expires_at))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        log.info("Withings token refreshed successfully")
+        return True
+
+    except Exception as e:
+        log.exception(f"Error refreshing Withings token: {e}")
+        cur.close()
+        conn.close()
+        return False
+
+
+@app.route("/api/health/withings/authorize", methods=["GET"])
+def api_withings_authorize():
+    """Get Withings OAuth authorization URL
+
+    Returns: { "oauth_url": "https://account.withings.com/oauth2_user/authorize2?..." }
+    Frontend should redirect user to this URL
+    """
+    try:
+        # Determine redirect URI based on request origin
+        if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+            redirect_uri = "http://localhost:5000/api/health/withings/callback"
+        else:
+            # Production: use HTTPS
+            redirect_uri = f"https://{request.host}/api/health/withings/callback"
+
+        oauth_url = get_withings_oauth_url(redirect_uri)
+
+        return jsonify({
+            "oauth_url": oauth_url,
+            "redirect_uri": redirect_uri
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/withings/authorize failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/withings/callback", methods=["GET"])
+def api_withings_callback():
+    """Handle Withings OAuth 2.0 callback
+
+    Query params from Withings:
+    - code: OAuth authorization code
+    - state: State parameter for CSRF protection
+    """
+    try:
+        oauth_code = request.args.get("code", "")
+        state = request.args.get("state", "")
+
+        if not oauth_code:
+            log.error("Missing authorization code in Withings callback")
+            return redirect("/?health=error")
+
+        # Determine redirect URI
+        if request.host.startswith("localhost") or request.host.startswith("127.0.0.1"):
+            redirect_uri = "http://localhost:5000/api/health/withings/callback"
+        else:
+            redirect_uri = f"https://{request.host}/api/health/withings/callback"
+
+        # Exchange code for token
+        token_data = exchange_withings_code_for_token(oauth_code, redirect_uri)
+
+        # Store tokens in database
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+INSERT INTO withings_auth (id, access_token, refresh_token, expires_at, scopes, last_updated)
+VALUES (1, %s, %s, %s, %s, NOW())
+ON CONFLICT (id) DO UPDATE SET
+    access_token = EXCLUDED.access_token,
+    refresh_token = EXCLUDED.refresh_token,
+    expires_at = EXCLUDED.expires_at,
+    last_updated = NOW()""", (
+            token_data["access_token"],
+            token_data["refresh_token"],
+            token_data["expires_at"],
+            "user.info,user.metrics,user.activity"
+        ))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        log.info("Withings OAuth successful - tokens stored")
+
+        # Redirect to app with success message
+        return redirect("/?health=withings_connected")
+
+    except Exception as e:
+        log.exception("/api/health/withings/callback failed")
+        return redirect("/?health=error")
+
+
+@app.route("/api/health/apple/configure", methods=["POST"])
+def api_apple_health_configure():
+    """Configure Carrot Health API connection
+
+    Body: { "api_token": "carrot_api_token" }
+    """
+    try:
+        data = request.get_json() or {}
+        api_token = data.get("api_token", "")
+
+        if not api_token:
+            return jsonify({"error": "Missing API token"}), 400
+
+        conn = get_db()
+        cur = conn.cursor()
+
+        cur.execute("""
+INSERT INTO apple_health_integration (aggregator_type, api_token, sync_enabled, last_updated)
+VALUES (%s, %s, %s, NOW())
+ON CONFLICT (id) DO UPDATE SET api_token = EXCLUDED.api_token, last_updated = NOW()
+RETURNING id, aggregator_type, sync_enabled""", ("carrot", api_token, True))
+
+        result = cur.fetchone()
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({
+            "status": "success",
+            "message": "Carrot Health configured",
+            "aggregator": result["aggregator_type"],
+            "sync_enabled": result["sync_enabled"]
+        }), 200
+    except Exception as e:
+        log.exception("/api/health/apple/configure failed")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/health/sync", methods=["POST"])
+def api_health_sync():
+    """Manually trigger health data sync from all sources
+
+    This endpoint allows the frontend to request an immediate sync
+    instead of waiting for the 4-hour automatic sync
+    """
+    try:
+        # Sync Withings data immediately
+        threading.Thread(target=sync_withings_data, daemon=True).start()
+
+        return jsonify({
+            "status": "syncing",
+            "message": "Health data sync started in background",
+            "sources": ["withings"]
+        }), 202
+    except Exception as e:
+        log.exception("/api/health/sync failed")
+        return jsonify({"error": str(e)}), 500
+
+
 # Initialize database if available
 try:
     init_db()
@@ -2609,6 +3386,19 @@ try:
         log.info("Seeded ANTHROPIC_API_KEY from environment into DB config")
 except Exception as e:
     log.warning(f"Could not seed API key: {e}")
+
+# Seed Withings credentials from env vars
+try:
+    _withings_id = os.environ.get("WITHINGS_CLIENT_ID", "")
+    _withings_secret = os.environ.get("WITHINGS_CLIENT_SECRET", "")
+    if _withings_id and _withings_secret:
+        set_config({
+            "withings_client_id": _withings_id,
+            "withings_client_secret": _withings_secret
+        })
+        log.info("Seeded Withings credentials from environment")
+except Exception as e:
+    log.warning(f"Could not seed Withings credentials: {e}")
 
 # Guard: only start scheduler and background briefing in the first/main worker.
 # With gunicorn --workers 1 this always runs. With multiple workers it only runs
