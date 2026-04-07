@@ -3578,15 +3578,13 @@ def api_health_sync():
     instead of waiting for the automatic sync
     """
     try:
-        # Sync Apple Health Auto Export data immediately
-        threading.Thread(target=sync_health_auto_export_data, daemon=True).start()
-        # Also sync Withings if configured
-        threading.Thread(target=sync_withings_data, daemon=True).start()
+        # Sync Google Fit data immediately
+        threading.Thread(target=sync_google_fit_data, daemon=True).start()
 
         return jsonify({
             "status": "syncing",
             "message": "Health data sync started in background",
-            "sources": ["apple_health", "withings"]
+            "sources": ["google_fit"]
         }), 202
     except Exception as e:
         log.exception("/api/health/sync failed")
@@ -3609,25 +3607,19 @@ try:
 except Exception as e:
     log.warning(f"Could not seed API key: {e}")
 
-# Seed Withings credentials from env vars
+# Seed Google Fit credentials from env vars
 try:
-    _withings_id = os.environ.get("WITHINGS_CLIENT_ID", "")
-    _withings_secret = os.environ.get("WITHINGS_CLIENT_SECRET", "")
+    _google_fit_id = os.environ.get("GOOGLE_FIT_CLIENT_ID", "")
+    _google_fit_secret = os.environ.get("GOOGLE_FIT_CLIENT_SECRET", "")
 
-    # Hardcoded for testing (TODO: remove these later)
-    if not _withings_id:
-        _withings_id = "a9b16f55ef618b7466ee78dd39c9b23049f14e374e51c3609099efa7a1bbd706"
-    if not _withings_secret:
-        _withings_secret = "57c23641f216b3105a5747454af2ae1158e34998e38513013ebae2267a7afc72"
-
-    if _withings_id and _withings_secret:
+    if _google_fit_id and _google_fit_secret:
         set_config({
-            "withings_client_id": _withings_id,
-            "withings_client_secret": _withings_secret
+            "google_fit_client_id": _google_fit_id,
+            "google_fit_client_secret": _google_fit_secret
         })
-        log.info("Seeded Withings credentials from environment")
+        log.info("Seeded Google Fit credentials from environment")
 except Exception as e:
-    log.warning(f"Could not seed Withings credentials: {e}")
+    log.warning(f"Could not seed Google Fit credentials: {e}")
 
 # Guard: only start scheduler and background briefing in the first/main worker.
 # With gunicorn --workers 1 this always runs. With multiple workers it only runs
