@@ -1100,6 +1100,15 @@ def logout():
     return redirect("/login")
 
 
+@app.route("/api/csrf-token")
+def api_csrf_token():
+    """Get CSRF token for form submissions"""
+    import secrets
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(32)
+    return jsonify({"csrf_token": session.get('csrf_token')})
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
