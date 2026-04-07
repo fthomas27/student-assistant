@@ -3527,16 +3527,18 @@ def api_health_sync():
     """Manually trigger health data sync from all sources
 
     This endpoint allows the frontend to request an immediate sync
-    instead of waiting for the 4-hour automatic sync
+    instead of waiting for the automatic sync
     """
     try:
-        # Sync Withings data immediately
+        # Sync Apple Health Auto Export data immediately
+        threading.Thread(target=sync_health_auto_export_data, daemon=True).start()
+        # Also sync Withings if configured
         threading.Thread(target=sync_withings_data, daemon=True).start()
 
         return jsonify({
             "status": "syncing",
             "message": "Health data sync started in background",
-            "sources": ["withings"]
+            "sources": ["apple_health", "withings"]
         }), 202
     except Exception as e:
         log.exception("/api/health/sync failed")
