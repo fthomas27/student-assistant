@@ -1364,7 +1364,7 @@ function switchTab(idx) {
   currentTab = idx;
   var wrapper = document.getElementById('tabs-wrapper');
   if (wrapper) {
-    wrapper.style.transform = 'translateX(' + (-idx * (100 / 6)) + '%)';
+    wrapper.style.transform = 'translateX(' + (-idx * (100 / 5)) + '%)';
   }
   document.querySelectorAll('.tab-item').forEach(function(el, i) { el.classList.toggle('active', i === idx); });
   if (idx === 1) loadTasks();
