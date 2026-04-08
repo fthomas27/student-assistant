@@ -949,7 +949,6 @@ def schedule_briefing():
     log.info("Briefing scheduled for %02d:%02d Mountain", hour, minute)
     log.info("Evening debrief scheduled for 18:30 Mountain")
     log.info("Recurring tasks processor scheduled for 00:00 Mountain")
-    log.info("Google Fit data sync scheduled for every 30 minutes")
 
 
 def get_timer_state_row():
@@ -2465,7 +2464,6 @@ def api_config_post():
     allowed = {
         "name", "morning_briefing_time", "timer_cutoff_multiplier", "anthropic_api_key",
         "weekly_recap_advisor", "formal_signoff_name", "timezone",
-        "google_fit_client_id", "google_fit_client_secret",
     }
     updates = {k: str(v)[:2000] for k, v in data.items() if k in allowed}
     if updates:
@@ -2632,20 +2630,6 @@ try:
         log.info("Seeded ANTHROPIC_API_KEY from environment into DB config")
 except Exception as e:
     log.warning(f"Could not seed API key: {e}")
-
-# Seed Google Fit credentials from env vars
-try:
-    _google_fit_id = os.environ.get("GOOGLE_FIT_CLIENT_ID", "")
-    _google_fit_secret = os.environ.get("GOOGLE_FIT_CLIENT_SECRET", "")
-
-    if _google_fit_id and _google_fit_secret:
-        set_config({
-            "google_fit_client_id": _google_fit_id,
-            "google_fit_client_secret": _google_fit_secret
-        })
-        log.info("Seeded Google Fit credentials from environment")
-except Exception as e:
-    log.warning(f"Could not seed Google Fit credentials: {e}")
 
 # Guard: only start scheduler and background briefing in the first/main worker.
 # With gunicorn --workers 1 this always runs. With multiple workers it only runs
