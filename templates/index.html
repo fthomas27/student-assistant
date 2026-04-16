@@ -13,28 +13,28 @@
 
 :root {
 --bg: #ffffff;
---surface: #f8f9fa;
---surface2: #f0f2f5;
---surface3: #e8eaed;
---border: rgba(0,0,0,0.1);
---border2: rgba(0,0,0,0.15);
+--surface: #fafbfc;
+--surface2: #f3f5f7;
+--surface3: #e8ecf1;
+--border: rgba(0,0,0,0.08);
+--border2: rgba(0,0,0,0.12);
 --text: #1a1a1a;
---text2: #404040;
---text3: #666666;
---accent: #0052cc;
---accent2: #0052cc;
---blue: #0052cc;
---gold: #ff9500;
---gold2: #ffb300;
---yellow: #ffea00;
---red: #d32f2f;
---amber: #ff9500;
---green: #2e7d32;
---purple: #7c3aed;
+--text2: #4a4a4a;
+--text3: #6b6b6b;
+--accent: #003d99;
+--accent2: #003d99;
+--blue: #003d99;
+--gold: #d97706;
+--gold2: #ea580c;
+--yellow: #eab308;
+--red: #dc2626;
+--amber: #d97706;
+--green: #059669;
+--purple: #6d28d9;
 --tab-h: 68px;
 --header-h: 58px;
---r: 16px;
---r-sm: 10px;
+--r: 12px;
+--r-sm: 8px;
 }
 
 body {
@@ -46,7 +46,8 @@ overflow: hidden;
 display: flex;
 flex-direction: column;
 font-weight: 400;
-letter-spacing: -0.003em;
+letter-spacing: -0.002em;
+line-height: 1.5;
 -webkit-font-smoothing: antialiased;
 }
 
@@ -118,28 +119,28 @@ display: flex; flex-direction: column; align-items: center; gap: 5px;
 cursor: pointer; padding: 8px 14px;
 border: none; background: none;
 -webkit-tap-highlight-color: transparent;
-transition: all 0.2s;
-border-radius: 12px;
+transition: all 0.3s ease;
+border-radius: 8px;
 }
 .tab-item:active { background: rgba(0,0,0,0.04); }
-.tab-icon { font-size: 22px; line-height: 1; transition: all 0.2s; filter: grayscale(1) opacity(0.45); }
-.tab-item.active .tab-icon { filter: none; transform: scale(1.1); }
+.tab-icon { font-size: 20px; line-height: 1; transition: all 0.3s ease; filter: grayscale(0.6) opacity(0.5); }
+.tab-item.active .tab-icon { filter: grayscale(0) opacity(1); transform: scale(1); }
 .tab-label { font-size: 10px; font-weight: 600; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; transition: color 0.15s; }
 .tab-item.active .tab-label { color: #0052cc; font-weight: 700; }
 
 /* ── CARDS ── */
 .card {
 background: var(--surface);
-border: 1px solid rgba(0,0,0,0.06);
-border-radius: var(--r);
+border: 1px solid var(--border);
+border-radius: 10px;
 padding: 18px;
 margin-bottom: 14px;
-box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-transition: box-shadow 0.2s, transform 0.2s;
+box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+transition: box-shadow 0.25s, border-color 0.25s;
 }
 .card:active {
-transform: scale(0.99);
-box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+border-color: var(--border2);
 }
 .card-title {
 font-size: 11px; font-weight: 700; color: #0052cc;
@@ -331,21 +332,21 @@ padding: 3px 7px; border-radius: 20px; flex-shrink: 0; margin-top: 2px;
 
 /* ── BUTTONS ── */
 .btn {
-border: none; border-radius: 12px; font-size: 13px; font-weight: 600;
-padding: 11px 18px; cursor: pointer; font-family: 'DM Sans', sans-serif;
+border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+padding: 10px 16px; cursor: pointer; font-family: 'DM Sans', sans-serif;
 -webkit-tap-highlight-color: transparent;
-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-letter-spacing: -0.003em;
+transition: all 0.25s ease;
+letter-spacing: -0.002em;
 }
-.btn:active { opacity: 0.85; transform: scale(0.98); }
-.btn-primary { background: var(--accent); color: #fff; flex: 1; font-size: 14px; font-weight: 600; box-shadow: 0 2px 8px rgba(0,82,204,0.2); }
-.btn-primary:active { box-shadow: 0 4px 12px rgba(0,82,204,0.3); }
-.btn-done { background: rgba(46,125,50,0.12); color: var(--green); flex: 1; border: 1px solid rgba(46,125,50,0.3); font-weight: 600; }
-.btn-pause { background: rgba(255,152,0,0.12); color: var(--amber); flex: 1; border: 1px solid rgba(255,152,0,0.3); font-weight: 600; }
-.btn-outline { background: var(--surface); color: var(--text); flex: 1; border: 1px solid rgba(0,0,0,0.08); font-weight: 600; }
+.btn:active { opacity: 0.88; }
+.btn-primary { background: var(--accent); color: #fff; flex: 1; font-size: 14px; font-weight: 600; box-shadow: 0 1px 3px rgba(0,61,153,0.15); }
+.btn-primary:active { box-shadow: 0 2px 6px rgba(0,61,153,0.25); }
+.btn-done { background: rgba(5,150,105,0.1); color: var(--green); flex: 1; border: 1px solid rgba(5,150,105,0.25); font-weight: 600; }
+.btn-pause { background: rgba(217,119,6,0.1); color: var(--amber); flex: 1; border: 1px solid rgba(217,119,6,0.25); font-weight: 600; }
+.btn-outline { background: var(--surface); color: var(--text); flex: 1; border: 1px solid var(--border); font-weight: 600; }
 .btn-outline:active { background: var(--surface2); }
-.btn-danger { background: rgba(211,47,47,0.12); color: var(--red); border: 1px solid rgba(211,47,47,0.3); font-weight: 600; }
-.btn-gold { background: rgba(255,152,0,0.12); color: var(--gold2); border: 1px solid rgba(255,152,0,0.3); font-weight: 600; }
+.btn-danger { background: rgba(220,38,38,0.1); color: var(--red); border: 1px solid rgba(220,38,38,0.25); font-weight: 600; }
+.btn-gold { background: rgba(217,119,6,0.1); color: var(--gold); border: 1px solid rgba(217,119,6,0.25); font-weight: 600; }
 
 /* ── TIMER ── */
 .timer-section { display: none; margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px; }
@@ -518,16 +519,16 @@ padding: 13px 16px; font-size: 15px; font-family: 'DM Sans', sans-serif;
 color: var(--text); outline: none; transition: all 0.2s;
 }
 .field-input:hover { border-color: rgba(0,0,0,0.12); }
-.field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,82,204,0.1); }
+.field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0,61,153,0.08); }
 .save-btn {
 width: 100%; box-sizing: border-box; background: var(--accent); color: #fff; border: none;
-border-radius: 12px; padding: 15px; font-size: 15px; font-weight: 600;
+border-radius: 8px; padding: 14px; font-size: 15px; font-weight: 600;
 cursor: pointer; margin-top: 12px; font-family: 'DM Sans', sans-serif;
-transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-box-shadow: 0 2px 8px rgba(0,82,204,0.2);
--webkit-tap-highlight-color: transparent; transition: opacity 0.15s;
+transition: all 0.25s ease;
+box-shadow: 0 1px 3px rgba(0,61,153,0.15);
+-webkit-tap-highlight-color: transparent;
 }
-.save-btn:active { opacity: 0.8; }
+.save-btn:active { opacity: 0.88; box-shadow: 0 2px 6px rgba(0,61,153,0.25); }
 .save-feedback { text-align: center; font-size: 13px; color: var(--green); margin-top: 10px; height: 18px; }
 
 /* ── FORM (add task / project) ── */
@@ -601,10 +602,10 @@ box-shadow: 0 20px 60px rgba(0,0,0,0.15);
 .dialog-title { font-family: 'DM Serif Display', serif; font-size: 24px; color: var(--text); margin-bottom: 10px; letter-spacing: -0.01em; }
 .dialog-sub { font-size: 15px; color: var(--text2); margin-bottom: 24px; line-height: 1.5; }
 .dialog-actions { display: flex; gap: 12px; }
-.btn-dialog-cancel { flex: 1; padding: 14px; font-size: 15px; font-weight: 600; border-radius: 12px; border: 1px solid rgba(0,0,0,0.08); background: var(--surface); color: var(--text); cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; transition: all 0.2s; }
+.btn-dialog-cancel { flex: 1; padding: 14px; font-size: 15px; font-weight: 600; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; transition: all 0.25s ease; }
 .btn-dialog-cancel:active { background: var(--surface2); }
-.btn-dialog-confirm { flex: 1; padding: 14px; font-size: 15px; font-weight: 600; border-radius: 12px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,82,204,0.2); }
-.btn-dialog-confirm:active { box-shadow: 0 4px 12px rgba(0,82,204,0.3); }
+.btn-dialog-confirm { flex: 1; padding: 14px; font-size: 15px; font-weight: 600; border-radius: 8px; border: none; background: var(--accent); color: #fff; cursor: pointer; font-family: 'DM Sans', sans-serif; -webkit-tap-highlight-color: transparent; transition: all 0.25s ease; box-shadow: 0 1px 3px rgba(0,61,153,0.15); }
+.btn-dialog-confirm:active { box-shadow: 0 2px 6px rgba(0,61,153,0.25); }
 
 /* ── EMPTY STATE ── */
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; text-align: center; gap: 8px; }
