@@ -100,25 +100,6 @@ flex-shrink: 0;
 overflow-y: auto; -webkit-overflow-scrolling: touch;
 padding: 14px 16px calc(var(--tab-h) + 16px);
 }
-.workout-intro { font-size: 14px; color: var(--text2); line-height: 1.5; margin-bottom: 14px; }
-.workout-slider-row { margin: 12px 0 6px; }
-.workout-slider-row input[type="range"] {
-width: 100%; height: 8px; border-radius: 4px; accent-color: var(--accent);
--webkit-appearance: none; appearance: none; background: var(--surface3);
-}
-.workout-slider-row input[type="range"]::-webkit-slider-thumb {
--webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--accent2); cursor: pointer;
-}
-.workout-intensity-readout { font-size: 18px; font-weight: 700; color: #0052cc; text-align: center; margin-bottom: 4px; }
-.workout-loc-row { display: flex; gap: 8px; margin: 14px 0; }
-.workout-loc-row .seg-btn { flex: 1; font-size: 12px; padding: 10px 6px; }
-.workout-plan-box {
-background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r);
-padding: 14px 16px; margin-top: 14px; font-size: 15px; line-height: 1.7; color: var(--text);
-}
-.workout-history-item {
-font-size: 13px; color: var(--text); padding: 8px 0; border-bottom: 1px solid var(--border);
-}
 
 /* ── TAB BAR ── */
 .tab-bar {
@@ -1130,8 +1111,6 @@ var timerSyncAtMs = 0;
 var timerFocusUserStarted = false;
 var timerFocusPausedUi = null;
 var timerFocusHydrated = false;
-var workoutLocationChoice = 'home';
-var currentWorkoutLogId = null;
 var cachedDebrief = { text: '', generatedAt: null };
 var cachedDueTodayList = [];
 window._calReminderTimers = window._calReminderTimers || {};
@@ -1298,7 +1277,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   updateHeaderDate();
   loadConfig();
-  syncWorkoutIntensityLabel();
   loadBriefing();
   loadHomeAssignments();
   loadCompletedToday();
@@ -3172,185 +3150,6 @@ function saveProjectPct(val) {
 if (!currentProjectId) return;
 fetch('/api/projects/' + currentProjectId, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ completion_pct: parseInt(val) }) })
 .then(function() { loadProjects(); });
-}
-
-// ══════════════════════════════════════════
-// WORKOUT
-// ══════════════════════════════════════════
-function syncWorkoutIntensityLabel() {
-  var el = document.getElementById('workout-intensity');
-  var out = document.getElementById('workout-intensity-readout');
-  if (el && out) out.textContent = el.value + ' / 10';
-}
-
-function syncWorkoutFeltLabel() {
-  var el = document.getElementById('workout-felt');
-  var out = document.getElementById('workout-felt-readout');
-  if (el && out) out.textContent = el.value + ' / 10 (afterwards)';
-}
-
-function selectWorkoutLocation(btn) {
-  document.querySelectorAll('#tab-workout .workout-loc-row .seg-btn').forEach(function(b) { b.classList.remove('selected'); });
-  btn.classList.add('selected');
-  workoutLocationChoice = btn.getAttribute('data-loc') || 'home';
-}
-
-function loadWorkoutTab() {
-  syncWorkoutIntensityLabel();
-  syncWorkoutFeltLabel();
-  fetch('/api/workout').then(function(r) { return r.json(); }).then(function(d) {
-    var nf = document.getElementById('workout-next-focus');
-    if (nf) nf.textContent = d.next_focus_label || '—';
-    var hist = document.getElementById('workout-history-list');
-    if (hist) {
-      var logs = d.recent_logs || [];
-      if (logs.length === 0) {
-        hist.innerHTML = '<div style="font-size:13px;color:var(--text3)">No sessions logged yet.</div>';
-      } else {
-        hist.innerHTML = logs.map(function(l) {
-          var loc = l.location === 'home' ? 'Home' : 'Rec';
-          var felt = l.perceived_difficulty != null ? ' · felt ' + l.perceived_difficulty + '/10' : '';
-          var note = l.user_notes ? ' — ' + esc(l.user_notes.substring(0, 100)) : '';
-          return '<div class="workout-history-item"><strong style="color:var(--text2)">' + esc(l.focus_label) + '</strong> · ' +
-            loc + ' · target ' + l.intensity + '/10' + felt + '<br><span style="opacity:0.85">' + esc(l.preview || '') + note + '</span></div>';
-        }).join('');
-      }
-    }
-  }).catch(function() {
-    var hist = document.getElementById('workout-history-list');
-    if (hist) hist.innerHTML = '<div style="color:var(--red);font-size:13px">Could not load workout data.</div>';
-  });
-}
-
-function generateWorkoutPlan() {
-  var btn = document.getElementById('workout-generate-btn');
-  var err = document.getElementById('workout-generate-err');
-  var intEl = document.getElementById('workout-intensity');
-  if (err) { err.style.display = 'none'; err.textContent = ''; }
-  if (btn) { btn.disabled = true; btn.textContent = 'Building plan…'; }
-  var intensity = intEl ? parseInt(intEl.value, 10) : 5;
-  fetch('/api/workout/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ intensity: intensity, location: workoutLocationChoice })
-  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
-  .then(function(res) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Create my workout'; }
-    if (!res.ok) {
-      if (err) { err.textContent = res.d.error || 'Failed'; err.style.display = 'block'; }
-      return;
-    }
-    currentWorkoutLogId = res.d.log_id;
-    var card = document.getElementById('workout-plan-card');
-    var body = document.getElementById('workout-plan-body');
-    if (body) body.innerHTML = renderMarkdown(res.d.plan || '', false);
-    if (card) card.style.display = 'block';
-    var saved = document.getElementById('workout-feedback-saved');
-    if (saved) saved.style.display = 'none';
-    var notesEl = document.getElementById('workout-feedback-notes');
-    if (notesEl) notesEl.value = '';
-    var felt = document.getElementById('workout-felt');
-    if (felt) { felt.value = String(intensity); syncWorkoutFeltLabel(); }
-    loadWorkoutTab();
-    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }).catch(function() {
-    if (btn) { btn.disabled = false; btn.textContent = 'Create my workout'; }
-    if (err) { err.textContent = 'Network error'; err.style.display = 'block'; }
-  });
-}
-
-function saveWorkoutFeedback() {
-  if (!currentWorkoutLogId) return;
-  var notes = document.getElementById('workout-feedback-notes');
-  var felt = document.getElementById('workout-felt');
-  fetch('/api/workout/log/' + currentWorkoutLogId, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      user_notes: notes ? notes.value.trim() : '',
-      perceived_difficulty: felt ? parseInt(felt.value, 10) : 5
-    })
-  }).then(function(r) {
-    if (r.ok) {
-      var s = document.getElementById('workout-feedback-saved');
-      if (s) { s.style.display = 'block'; setTimeout(function() { s.style.display = 'none'; }, 2500); }
-      loadWorkoutTab();
-    }
-  }).catch(function(){});
-}
-
-function logCustomWorkout() {
-  var desc = document.getElementById('workout-custom-desc');
-  var btn = document.getElementById('workout-custom-log-btn');
-  var err = document.getElementById('workout-custom-err');
-  var success = document.getElementById('workout-custom-success');
-
-  if (err) err.style.display = 'none';
-  if (success) success.style.display = 'none';
-
-  var description = desc ? desc.value.trim() : '';
-  if (!description) {
-    if (err) { err.textContent = 'Describe what you did'; err.style.display = 'block'; }
-    return;
-  }
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Logging…'; }
-
-  fetch('/api/workout/log-custom', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description: description })
-  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
-  .then(function(res) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Log this workout'; }
-    if (!res.ok) {
-      if (err) { err.textContent = res.d.error || 'Failed to log'; err.style.display = 'block'; }
-      return;
-    }
-    if (desc) desc.value = '';
-    if (success) { success.style.display = 'block'; setTimeout(function() { success.style.display = 'none'; }, 2500); }
-    loadWorkoutTab();
-  }).catch(function() {
-    if (btn) { btn.disabled = false; btn.textContent = 'Log this workout'; }
-    if (err) { err.textContent = 'Network error'; err.style.display = 'block'; }
-  });
-}
-
-function regenerateWorkout() {
-  if (!currentWorkoutLogId) return;
-  var btn = document.getElementById('workout-regenerate-btn');
-  var body = document.getElementById('workout-plan-body');
-
-  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
-
-  fetch('/api/workout/regenerate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ log_id: currentWorkoutLogId })
-  }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, d: d }; }); })
-  .then(function(res) {
-    if (btn) { btn.disabled = false; btn.textContent = 'Change it up'; }
-    if (!res.ok) {
-      if (btn) { btn.textContent = (res.d.error || 'Failed') + ' – try again'; }
-      return;
-    }
-    if (body) body.innerHTML = renderMarkdown(res.d.plan || '', false);
-    var saved = document.getElementById('workout-feedback-saved');
-    if (saved) saved.style.display = 'none';
-    if (body) body.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }).catch(function() {
-    if (btn) { btn.disabled = false; btn.textContent = 'Change it up'; btn.style.color = 'var(--red)'; }
-  });
-}
-
-function markWorkoutDone() {
-  if (!currentWorkoutLogId) return;
-  var card = document.getElementById('workout-plan-card');
-  if (card) card.style.display = 'none';
-  var customCard = document.getElementById('workout-custom-desc');
-  if (customCard) customCard.value = '';
-  currentWorkoutLogId = null;
-  loadWorkoutTab();
 }
 
 // ══════════════════════════════════════════
