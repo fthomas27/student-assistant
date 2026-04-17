@@ -1167,9 +1167,6 @@ def api_csrf_token():
 @app.route("/api/assignments")
 def api_assignments():
     try:
-        cal = fetch_ical(CANVAS_ICAL_URL)
-        if cal is None:
-            return jsonify({"assignments": [], "error": "Failed to fetch Canvas calendar."})
         conn = get_db()
         cur = conn.cursor()
         cur.execute("SELECT assignment_title FROM completions")
@@ -1178,19 +1175,93 @@ def api_assignments():
         custom_estimates = {r["uid"]: r["minutes"] for r in cur.fetchall()}
         cur.close()
         conn.close()
-        assignments = parse_canvas_assignments(cal)
+
         result = []
-        for a in assignments:
-            if a["title"] in completed_titles:
-                continue
-            uid = a.get("uid", "")
-            if uid in custom_estimates:
-                a["estimate_minutes"] = custom_estimates[uid]
-                a["estimate_custom"] = True
-            else:
-                a["estimate_minutes"] = estimate_assignment(a["title"], a["class_name"])
-                a["estimate_custom"] = False
-            result.append(a)
+
+        # Fetch from Canvas
+        if CANVAS_ICAL_URL:
+            cal = fetch_ical(CANVAS_ICAL_URL)
+            if cal:
+                assignments = parse_canvas_assignments(cal)
+                for a in assignments:
+                    if a["title"] not in completed_titles:
+                        uid = a.get("uid", "")
+                        if uid in custom_estimates:
+                            a["estimate_minutes"] = custom_estimates[uid]
+                            a["estimate_custom"] = True
+                        else:
+                            a["estimate_minutes"] = estimate_assignment(a["title"], a["class_name"])
+                            a["estimate_custom"] = False
+                        a["source"] = "Canvas"
+                        result.append(a)
+
+        # Fetch from Personal calendar
+        if PERSONAL_ICAL_URL:
+            try:
+                cal = fetch_ical(PERSONAL_ICAL_URL)
+                if cal:
+                    from icalendar import Calendar
+                    from recurring_ical_events import of
+                    from datetime import datetime as dt
+
+                    today = dt.now().date()
+                    start = dt(today.year, today.month, today.day)
+                    end = dt(today.year + 1, today.month, today.day)
+
+                    events = of(cal).between(start, end)
+                    for event in events:
+                        title = event.get("SUMMARY", "Untitled Event")
+                        if title not in completed_titles:
+                            due_dt = event.get("DTSTART")
+                            due_str = due_dt.strftime("%Y-%m-%d %H:%M") if hasattr(due_dt, 'strftime') else str(due_dt)
+
+                            result.append({
+                                "title": title,
+                                "class_name": "Personal",
+                                "due_display": due_str,
+                                "due_iso": due_str.split()[0] if due_str else "",
+                                "source": "Personal Calendar",
+                                "estimate_minutes": 30,
+                                "estimate_custom": False
+                            })
+            except Exception as e:
+                log.warning(f"Failed to fetch personal calendar: {e}")
+
+        # Fetch from Sports calendar
+        if SPORTS_ICAL_URL:
+            try:
+                cal = fetch_ical(SPORTS_ICAL_URL)
+                if cal:
+                    from icalendar import Calendar
+                    from recurring_ical_events import of
+                    from datetime import datetime as dt
+
+                    today = dt.now().date()
+                    start = dt(today.year, today.month, today.day)
+                    end = dt(today.year + 1, today.month, today.day)
+
+                    events = of(cal).between(start, end)
+                    for event in events:
+                        title = event.get("SUMMARY", "Untitled Event")
+                        if title not in completed_titles:
+                            due_dt = event.get("DTSTART")
+                            due_str = due_dt.strftime("%Y-%m-%d %H:%M") if hasattr(due_dt, 'strftime') else str(due_dt)
+
+                            result.append({
+                                "title": title,
+                                "class_name": "Sports",
+                                "due_display": due_str,
+                                "due_iso": due_str.split()[0] if due_str else "",
+                                "source": "Sports Calendar",
+                                "estimate_minutes": 60,
+                                "estimate_custom": False
+                            })
+            except Exception as e:
+                log.warning(f"Failed to fetch sports calendar: {e}")
+
+        # Sort by due date
+        result.sort(key=lambda x: x.get("due_iso", "9999-12-31"))
+
         cfg = get_config()
         return jsonify({"assignments": result, "timezone": cfg.get("timezone", "America/Denver")})
     except Exception:
