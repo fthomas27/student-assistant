@@ -318,6 +318,101 @@ CREATE TABLE IF NOT EXISTS workout_logs (
     perceived_difficulty INT
 )""")
 
+    -- Jarvis voice assistant tables
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS conversations (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ,
+    context_summary TEXT,
+    total_exchanges INT NOT NULL DEFAULT 0
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    conversation_id INT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    confidence_score REAL DEFAULT 1.0
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS user_memories (
+    id SERIAL PRIMARY KEY,
+    memory_text TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    confidence REAL NOT NULL DEFAULT 0.8,
+    usage_count INT NOT NULL DEFAULT 0,
+    last_used TIMESTAMPTZ
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS notes (
+    id SERIAL PRIMARY KEY,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    importance INT NOT NULL DEFAULT 0,
+    last_accessed TIMESTAMPTZ,
+    voice_confidence REAL DEFAULT 1.0
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS note_tags (
+    id SERIAL PRIMARY KEY,
+    note_id INT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    auto_generated BOOLEAN NOT NULL DEFAULT TRUE
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS voice_commands (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    transcription TEXT NOT NULL,
+    intent TEXT,
+    ha_action BOOLEAN NOT NULL DEFAULT FALSE,
+    success BOOLEAN NOT NULL DEFAULT TRUE
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS daily_briefings (
+    id SERIAL PRIMARY KEY,
+    briefing_date DATE NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    spoken_at TIMESTAMPTZ,
+    duration_seconds INT
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS reminders (
+    id SERIAL PRIMARY KEY,
+    reminder_type TEXT NOT NULL,
+    due_date DATE NOT NULL,
+    sent BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS home_assistant_devices (
+    id SERIAL PRIMARY KEY,
+    entity_id TEXT NOT NULL UNIQUE,
+    entity_name TEXT NOT NULL,
+    device_type TEXT NOT NULL,
+    last_state TEXT,
+    last_updated TIMESTAMPTZ
+)""")
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_note_tags_note ON note_tags(note_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memories_category ON user_memories(category)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_briefings_date ON daily_briefings(briefing_date)")
+
     defaults = {
         "name": "Finn",
         "morning_briefing_time": "07:00",
@@ -325,6 +420,14 @@ CREATE TABLE IF NOT EXISTS workout_logs (
         "anthropic_api_key": "",
         "weekly_recap_advisor": "Mr. Goldberg",
         "formal_signoff_name": "Finley Thomas",
+        "voice_enabled": "true",
+        "voice_wake_word": "jarvis",
+        "elevenlabs_api_key": "",
+        "openai_api_key": "",
+        "ha_url": "",
+        "ha_token": "",
+        "jarvis_voice_id": "callum",
+        "timezone": "America/Denver",
     }
     for k, v in defaults.items():
         cur.execute("""
