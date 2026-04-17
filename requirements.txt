@@ -7,3 +7,14 @@ requests
 pytz
 psycopg2-binary
 gunicorn
+python-socketio
+python-engineio
+openai
+porcupine-client
+faster-whisper
+pyttsx3
+python-dotenv
+numpy
+scipy
+sounddevice
+soundfile

@@ -318,6 +318,101 @@ CREATE TABLE IF NOT EXISTS workout_logs (
     perceived_difficulty INT
 )""")
 
+    -- Jarvis voice assistant tables
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS conversations (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ,
+    context_summary TEXT,
+    total_exchanges INT NOT NULL DEFAULT 0
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    conversation_id INT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    confidence_score REAL DEFAULT 1.0
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS user_memories (
+    id SERIAL PRIMARY KEY,
+    memory_text TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    confidence REAL NOT NULL DEFAULT 0.8,
+    usage_count INT NOT NULL DEFAULT 0,
+    last_used TIMESTAMPTZ
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS notes (
+    id SERIAL PRIMARY KEY,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'general',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    importance INT NOT NULL DEFAULT 0,
+    last_accessed TIMESTAMPTZ,
+    voice_confidence REAL DEFAULT 1.0
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS note_tags (
+    id SERIAL PRIMARY KEY,
+    note_id INT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    auto_generated BOOLEAN NOT NULL DEFAULT TRUE
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS voice_commands (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    transcription TEXT NOT NULL,
+    intent TEXT,
+    ha_action BOOLEAN NOT NULL DEFAULT FALSE,
+    success BOOLEAN NOT NULL DEFAULT TRUE
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS daily_briefings (
+    id SERIAL PRIMARY KEY,
+    briefing_date DATE NOT NULL UNIQUE,
+    content TEXT NOT NULL,
+    spoken_at TIMESTAMPTZ,
+    duration_seconds INT
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS reminders (
+    id SERIAL PRIMARY KEY,
+    reminder_type TEXT NOT NULL,
+    due_date DATE NOT NULL,
+    sent BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)""")
+
+    cur.execute("""
+CREATE TABLE IF NOT EXISTS home_assistant_devices (
+    id SERIAL PRIMARY KEY,
+    entity_id TEXT NOT NULL UNIQUE,
+    entity_name TEXT NOT NULL,
+    device_type TEXT NOT NULL,
+    last_state TEXT,
+    last_updated TIMESTAMPTZ
+)""")
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_note_tags_note ON note_tags(note_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memories_category ON user_memories(category)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_briefings_date ON daily_briefings(briefing_date)")
+
     defaults = {
         "name": "Finn",
         "morning_briefing_time": "07:00",
@@ -325,6 +420,14 @@ CREATE TABLE IF NOT EXISTS workout_logs (
         "anthropic_api_key": "",
         "weekly_recap_advisor": "Mr. Goldberg",
         "formal_signoff_name": "Finley Thomas",
+        "voice_enabled": "true",
+        "voice_wake_word": "jarvis",
+        "elevenlabs_api_key": "",
+        "openai_api_key": "",
+        "ha_url": "",
+        "ha_token": "",
+        "jarvis_voice_id": "callum",
+        "timezone": "America/Denver",
     }
     for k, v in defaults.items():
         cur.execute("""
@@ -2651,6 +2754,370 @@ ORDER BY pn.created_at DESC LIMIT 6""")
 # ──────────────────────────────────────────────────────────────────────────────
 # GOOGLE FIT DATA SYNC FUNCTIONS
 # ──────────────────────────────────────────────────────────────────────────────
+
+# ──────────────────────────────────────────────────────────────────────────────
+# JARVIS VOICE ASSISTANT ROUTES
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/voice/text", methods=["POST"])
+def api_voice_text():
+    """Process a text command for Jarvis (already transcribed voice or text input)."""
+    try:
+        data = request.json or {}
+        text = data.get('text', '')
+
+        if not text:
+            return jsonify({"error": "text parameter required"}), 400
+
+        # Import here to avoid circular imports
+        from conversation_manager import ConversationManager
+        from memory_manager import MemoryManager
+        from tts_handler import TTSHandler
+
+        db = get_db()
+        conv_manager = ConversationManager(db)
+        memory_manager = MemoryManager(db)
+        tts = TTSHandler()
+
+        # Get or create conversation
+        conv_id = conv_manager.get_current_conversation_id()
+        if not conv_id:
+            conv_id = conv_manager.start_conversation()
+
+        # Get relevant memories
+        keywords = text.split()
+        memories = memory_manager.suggest_memories_for_context(keywords, limit=5)
+
+        # Get response from Claude
+        response = conv_manager.get_jarvis_response(text, conv_id, user_memories=memories)
+
+        # Synthesize audio (optional - include in response)
+        try:
+            audio_bytes = tts.synthesize(response)
+            audio_hex = audio_bytes.hex() if audio_bytes else None
+        except:
+            audio_hex = None
+
+        return jsonify({
+            "success": True,
+            "text": text,
+            "response": response,
+            "conversation_id": conv_id,
+            "audio": audio_hex
+        })
+
+    except Exception as e:
+        log.error(f"Voice text error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/voice/briefing", methods=["GET"])
+def api_voice_briefing():
+    """Get morning briefing from Jarvis."""
+    try:
+        from conversation_manager import ConversationManager
+        from memory_manager import MemoryManager
+        from tts_handler import TTSHandler
+
+        db = get_db()
+        conv_manager = ConversationManager(db)
+        memory_manager = MemoryManager(db)
+        tts = TTSHandler()
+
+        conv_id = conv_manager.start_conversation()
+        memories = memory_manager.get_top_memories(5)
+
+        briefing = conv_manager.get_jarvis_response(
+            "Give me my morning briefing with today's calendar events, assignments due, and any important reminders.",
+            conv_id,
+            user_memories=memories
+        )
+
+        try:
+            audio_bytes = tts.synthesize(briefing)
+            audio_hex = audio_bytes.hex() if audio_bytes else None
+        except:
+            audio_hex = None
+
+        return jsonify({
+            "success": True,
+            "briefing": briefing,
+            "audio": audio_hex,
+            "conversation_id": conv_id
+        })
+
+    except Exception as e:
+        log.error(f"Voice briefing error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/voice/end-conversation", methods=["POST"])
+def api_voice_end_conversation():
+    """End the current conversation and extract memories."""
+    try:
+        from conversation_manager import ConversationManager
+
+        db = get_db()
+        conv_manager = ConversationManager(db)
+
+        conv_id = conv_manager.get_current_conversation_id()
+        if conv_id:
+            conv_manager.end_conversation(conv_id)
+            conv_manager.current_conversation_id = None
+            return jsonify({"success": True, "conversation_id": conv_id})
+
+        return jsonify({"success": False, "error": "No active conversation"})
+
+    except Exception as e:
+        log.error(f"End conversation error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# NOTES API ROUTES
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/notes", methods=["POST"])
+def api_create_note():
+    """Create a new note."""
+    try:
+        from note_manager import NoteManager
+
+        data = request.json or {}
+        content = data.get('content', '')
+        category = data.get('category')
+        importance = data.get('importance', 0)
+
+        if not content:
+            return jsonify({"error": "content required"}), 400
+
+        db = get_db()
+        note_manager = NoteManager(db)
+
+        if not category:
+            category = note_manager.auto_categorize(content)
+
+        note_id = note_manager.create_note(content, category=category, importance=importance)
+
+        return jsonify({
+            "success": True,
+            "note_id": note_id,
+            "category": category
+        }), 201
+
+    except Exception as e:
+        log.error(f"Create note error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/notes/<int:note_id>", methods=["GET"])
+def api_get_note(note_id):
+    """Get a single note."""
+    try:
+        from note_manager import NoteManager
+
+        db = get_db()
+        note_manager = NoteManager(db)
+
+        note = note_manager.get_note_with_tags(note_id)
+        if not note:
+            return jsonify({"error": f"Note {note_id} not found"}), 404
+
+        note_manager.access_note(note_id)
+        return jsonify({"success": True, "note": note})
+
+    except Exception as e:
+        log.error(f"Get note error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/notes", methods=["GET"])
+def api_list_notes():
+    """List notes with optional filtering."""
+    try:
+        from note_manager import NoteManager
+
+        category = request.args.get('category')
+        sort_by = request.args.get('sort', 'recent')
+        limit = int(request.args.get('limit', 50))
+
+        db = get_db()
+        note_manager = NoteManager(db)
+
+        if category:
+            notes = note_manager.get_notes_by_category(category, limit=limit)
+        else:
+            notes = note_manager.get_all_notes(limit=limit, sort_by=sort_by)
+
+        return jsonify({
+            "success": True,
+            "count": len(notes),
+            "notes": notes
+        })
+
+    except Exception as e:
+        log.error(f"List notes error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/notes/search", methods=["GET"])
+def api_search_notes():
+    """Search notes by query."""
+    try:
+        from note_manager import NoteManager
+
+        query = request.args.get('q', '')
+        limit = int(request.args.get('limit', 50))
+
+        if not query:
+            return jsonify({"error": "query parameter required"}), 400
+
+        db = get_db()
+        note_manager = NoteManager(db)
+
+        notes = note_manager.search_notes(query, limit=limit)
+        return jsonify({
+            "success": True,
+            "query": query,
+            "count": len(notes),
+            "notes": notes
+        })
+
+    except Exception as e:
+        log.error(f"Search notes error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/notes/<int:note_id>", methods=["PUT"])
+def api_update_note(note_id):
+    """Update a note."""
+    try:
+        from note_manager import NoteManager
+
+        data = request.json or {}
+        content = data.get('content')
+        category = data.get('category')
+        importance = data.get('importance')
+
+        db = get_db()
+        note_manager = NoteManager(db)
+
+        note_manager.update_note(note_id, content=content, category=category, importance=importance)
+        return jsonify({"success": True, "note_id": note_id})
+
+    except Exception as e:
+        log.error(f"Update note error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/notes/<int:note_id>", methods=["DELETE"])
+def api_delete_note(note_id):
+    """Delete a note."""
+    try:
+        from note_manager import NoteManager
+
+        db = get_db()
+        note_manager = NoteManager(db)
+
+        note_manager.delete_note(note_id)
+        return jsonify({"success": True, "note_id": note_id})
+
+    except Exception as e:
+        log.error(f"Delete note error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HOME ASSISTANT API ROUTES
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/ha/devices", methods=["GET"])
+def api_ha_devices():
+    """Get list of Home Assistant devices."""
+    try:
+        from ha_client import HAClient
+        from app import get_config
+
+        config = get_config()
+        ha_url = config.get("ha_url", "")
+        ha_token = config.get("ha_token", "")
+
+        if not ha_url or not ha_token:
+            return jsonify({"error": "Home Assistant not configured"}), 400
+
+        ha = HAClient(ha_url, ha_token)
+        devices = ha.get_devices()
+
+        return jsonify({
+            "success": True,
+            "count": len(devices),
+            "devices": devices
+        })
+
+    except Exception as e:
+        log.error(f"HA devices error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ha/control", methods=["POST"])
+def api_ha_control():
+    """Control a Home Assistant device or service."""
+    try:
+        from ha_client import HAClient
+        from app import get_config
+
+        data = request.json or {}
+        domain = data.get('domain', '')
+        service = data.get('service', '')
+        service_data = data.get('data', {})
+
+        if not domain or not service:
+            return jsonify({"error": "domain and service required"}), 400
+
+        config = get_config()
+        ha_url = config.get("ha_url", "")
+        ha_token = config.get("ha_token", "")
+
+        if not ha_url or not ha_token:
+            return jsonify({"error": "Home Assistant not configured"}), 400
+
+        ha = HAClient(ha_url, ha_token)
+        success = ha.call_service(domain, service, service_data)
+
+        return jsonify({"success": success, "domain": domain, "service": service})
+
+    except Exception as e:
+        log.error(f"HA control error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/ha/status", methods=["GET"])
+def api_ha_status():
+    """Get Home Assistant status summary."""
+    try:
+        from ha_client import HAClient
+        from app import get_config
+
+        config = get_config()
+        ha_url = config.get("ha_url", "")
+        ha_token = config.get("ha_token", "")
+
+        if not ha_url or not ha_token:
+            return jsonify({"error": "Home Assistant not configured"}), 400
+
+        ha = HAClient(ha_url, ha_token)
+        status = ha.get_ha_status_summary()
+        health = ha.health_check()
+
+        return jsonify({
+            "success": True,
+            "health": health,
+            "status": status
+        })
+
+    except Exception as e:
+        log.error(f"HA status error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 # Initialize database if available
