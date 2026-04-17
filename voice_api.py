@@ -82,9 +82,9 @@ class VoiceAPI:
         keywords = text.split()
         memories = self.memory_manager.suggest_memories_for_context(keywords, limit=5)
 
-        # Step 4: Get response from Claude
+        # Step 4: Get response from Claude (with decision-making superpowers)
         try:
-            response = self.conv_manager.get_jarvis_response(
+            response = self.conv_manager.get_jarvis_response_with_decisions(
                 text,
                 conv_id,
                 user_memories=memories
@@ -191,7 +191,7 @@ class VoiceAPI:
                 conv_id = self.conv_manager.start_conversation()
 
             # Request briefing from Claude
-            briefing = self.conv_manager.get_jarvis_response(
+            briefing = self.conv_manager.get_jarvis_response_with_decisions(
                 "Give me my morning briefing. Include my calendar, tasks, and any important reminders.",
                 conv_id,
                 user_memories=self.memory_manager.get_top_memories(5)
