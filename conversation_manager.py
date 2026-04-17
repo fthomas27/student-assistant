@@ -116,6 +116,14 @@ class ConversationManager:
         max_tokens: int = 1024
     ) -> str:
         """Get a response from Claude with Jarvis personality."""
+        # Use Jarvis tools by default if none provided
+        if tools is None:
+            try:
+                from jarvis_tools import get_jarvis_tools
+                tools = get_jarvis_tools()
+            except ImportError:
+                tools = None
+
         # Get conversation history
         history = self.get_conversation_history(conversation_id, limit=10)
 
@@ -330,6 +338,14 @@ Always be truthful and admit what you don't know."""
         max_tokens: int = 1024
     ) -> str:
         """Enhanced get_jarvis_response that handles decisions specially with extended thinking for complex decisions."""
+
+        # Use Jarvis tools by default if none provided
+        if tools is None:
+            try:
+                from jarvis_tools import get_jarvis_tools
+                tools = get_jarvis_tools()
+            except ImportError:
+                tools = None
 
         # Check if this is a decision moment
         is_decision = self.detect_decision_moment(user_message)
