@@ -1896,44 +1896,6 @@ FROM completions WHERE completed_at >= %s ORDER BY completed_at DESC""", (today_
     return jsonify({"completions": rows})
 
 
-@app.route("/api/uncomplete", methods=["POST"])
-def api_uncomplete():
-    """Remove a completion record to 'undo' marking an assignment as done.
-
-    The time logged (duration_minutes) is preserved in the database but the
-    assignment will reappear in the active assignments list.
-    """
-    data = request.get_json(force=True) or {}
-    title = str(data.get("title", ""))[:300]
-    class_name = str(data.get("class_name", ""))[:100]
-
-    if not title:
-        return jsonify({"error": "title required"}), 400
-
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-
-        # Delete the most recent completion record for this assignment from today
-        today_start = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-        cur.execute("""
-DELETE FROM completions
-WHERE assignment_title = %s
-  AND class_name = %s
-  AND completed_at >= %s
-ORDER BY completed_at DESC
-LIMIT 1""", (title, class_name, today_start))
-
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        return jsonify({"status": "ok"})
-    except Exception as e:
-        log.exception("Error uncompleting assignment")
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route("/api/availability")
 def api_availability():
     """Return today's school schedule and free time windows."""

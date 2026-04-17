@@ -2555,10 +2555,9 @@ function loadCompletedToday() {
     badge.textContent = completedToday.length;
     list.innerHTML = completedToday.map(function(c) {
       var dur = c.timed && c.duration_minutes > 0 ? Math.round(c.duration_minutes) + ' min' : 'Done';
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--border);font-size:13px;gap:8px">' +
-        '<span style="font-weight:500;color:var(--text2);flex:1">' + esc(c.assignment_title) + '</span>' +
-        '<span style="color:var(--green);font-weight:600;white-space:nowrap">' + dur + '</span>' +
-        '<button class="btn btn-outline" style="font-size:11px;padding:4px 8px" onclick="undoneAssignment(\'' + esc(c.assignment_title).replace(/'/g, "\\'") + '\', \'' + esc(c.class_name).replace(/'/g, "\\'") + '\')">Undo</button></div>';
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--border);font-size:13px">' +
+        '<span style="font-weight:500;color:var(--text2)">' + esc(c.assignment_title) + '</span>' +
+        '<span style="color:var(--green);font-weight:600">' + dur + '</span></div>';
     }).join('');
   }).catch(function(err){
     logError('loadCompletedToday', err);
@@ -2568,25 +2567,6 @@ function loadCompletedToday() {
 function toggleCompletedToday() {
   var list = document.getElementById('completed-today-list');
   list.style.maxHeight = list.style.maxHeight === '0px' || !list.style.maxHeight ? '600px' : '0px';
-}
-
-function undoneAssignment(title, className) {
-  if (!confirm('Undo completion for "' + title + '"? Time logged will be preserved.')) return;
-  fetch('/api/uncomplete', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: title, class_name: className }) })
-    .then(function(r) { return r.json(); })
-    .then(function(d) {
-      if (d.status === 'ok') {
-        loadHomeAssignments();
-        loadCompletedToday();
-      } else {
-        alert('Error: ' + (d.error || 'Unknown error'));
-      }
-    })
-    .catch(function(err) {
-      console.error('Error undoing completion:', err);
-      alert('Failed to undo completion. Check console for details.');
-    });
 }
 
 // ══════════════════════════════════════════
