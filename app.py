@@ -427,6 +427,15 @@ CREATE TABLE IF NOT EXISTS home_assistant_devices (
     created_at TIMESTAMPTZ DEFAULT NOW()
 )""")
 
+    cur.execute("""CREATE TABLE IF NOT EXISTS documents (
+    id SERIAL PRIMARY KEY,
+    filename TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_type VARCHAR(50),
+    file_size INTEGER,
+    uploaded_at TIMESTAMPTZ DEFAULT NOW()
+)""")
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category)")
@@ -436,6 +445,7 @@ CREATE TABLE IF NOT EXISTS home_assistant_devices (
     cur.execute("CREATE INDEX IF NOT EXISTS idx_decision_records_type ON decision_records(decision_type)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_decision_records_conversation ON decision_records(conversation_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_decision_lessons_decision ON decision_lessons(decision_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_uploaded ON documents(uploaded_at DESC)")
 
     defaults = {
         "name": "Finn",
@@ -3242,6 +3252,172 @@ def api_similar_past_decisions():
 
     except Exception as e:
         log.error(f"Similar past decisions error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# JARVIS UI & DOCUMENT MANAGEMENT ROUTES
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/", methods=["GET"])
+def jarvis_home():
+    """Serve the Jarvis UI."""
+    return render_template("jarvis.html")
+
+
+@app.route("/jarvis", methods=["GET"])
+def jarvis_interface():
+    """Serve the Jarvis UI (alternate route)."""
+    return render_template("jarvis.html")
+
+
+@app.route("/api/documents/upload", methods=["POST"])
+def api_upload_document():
+    """Upload a document for context in conversations."""
+    try:
+        from document_manager import DocumentManager
+
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
+
+        # Check file size (10MB max)
+        file.seek(0, 2)
+        file_size = file.tell()
+        file.seek(0)
+
+        if file_size > 10 * 1024 * 1024:
+            return jsonify({"error": "File too large (max 10MB)"}), 400
+
+        # Read file content
+        file_content = file.read()
+
+        # Save document
+        db = get_db()
+        doc_manager = DocumentManager(db)
+
+        success, doc_id, error = doc_manager.save_document(
+            file_content,
+            file.filename,
+            file.content_type
+        )
+
+        if not success:
+            return jsonify({"error": error}), 500
+
+        return jsonify({
+            "success": True,
+            "id": doc_id,
+            "filename": file.filename,
+            "size": file_size
+        })
+
+    except Exception as e:
+        log.error(f"Document upload error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/documents", methods=["GET"])
+def api_get_documents():
+    """Get list of uploaded documents."""
+    try:
+        from document_manager import DocumentManager
+
+        db = get_db()
+        doc_manager = DocumentManager(db)
+
+        documents = doc_manager.get_documents(limit=50)
+
+        return jsonify({
+            "success": True,
+            "count": len(documents),
+            "documents": documents
+        })
+
+    except Exception as e:
+        log.error(f"Get documents error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/documents/<int:doc_id>", methods=["DELETE"])
+def api_delete_document(doc_id):
+    """Delete a document."""
+    try:
+        from document_manager import DocumentManager
+
+        db = get_db()
+        doc_manager = DocumentManager(db)
+
+        success = doc_manager.delete_document(doc_id)
+
+        if not success:
+            return jsonify({"error": "Document not found"}), 404
+
+        return jsonify({"success": True, "doc_id": doc_id})
+
+    except Exception as e:
+        log.error(f"Delete document error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat_with_documents():
+    """Chat endpoint with document context support."""
+    try:
+        from conversation_manager import ConversationManager
+        from document_manager import DocumentManager
+
+        data = request.json or {}
+        message = data.get("message", "")
+        doc_ids = data.get("documents", [])
+
+        if not message and not doc_ids:
+            return jsonify({"error": "message or documents required"}), 400
+
+        db = get_db()
+
+        # Get or create conversation
+        conv_manager = ConversationManager(db)
+        conv_id = conv_manager.get_current_conversation_id()
+
+        if not conv_id:
+            conv_id = conv_manager.start_conversation()
+
+        # Build document context
+        doc_context = ""
+        if doc_ids:
+            doc_manager = DocumentManager(db)
+            doc_context = doc_manager.build_document_context(doc_ids)
+
+        # Build full message with document context
+        full_message = message
+        if doc_context:
+            full_message = f"Documents to analyze:\n{doc_context}\n\nUser message: {message}"
+
+        # Get memories
+        from memory_manager import MemoryManager
+        memory_manager = MemoryManager(db)
+        memories = memory_manager.get_top_memories(5)
+
+        # Get Jarvis response with decision-making
+        response = conv_manager.get_jarvis_response_with_decisions(
+            full_message,
+            conv_id,
+            user_memories=memories
+        )
+
+        return jsonify({
+            "success": True,
+            "response": response,
+            "conversation_id": conv_id,
+            "documents_analyzed": len(doc_ids)
+        })
+
+    except Exception as e:
+        log.error(f"Chat error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
