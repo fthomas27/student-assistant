@@ -544,6 +544,163 @@ Return ONLY the JSON array, no other text."""
         self.db.commit()
         log.info(f"Stored {len(extracted_memories)} extracted memories")
 
+    def record_decision(self, conversation_id: int, decision_summary: str, decision_type: str, stakeholders: List[str]) -> int:
+        """Record a decision for future learning and outcome tracking.
+
+        Returns decision record ID for later outcome updates.
+        """
+        cur = self.db.cursor()
+
+        try:
+            cur.execute("""
+                INSERT INTO decision_records (
+                    conversation_id, decision_summary, decision_type,
+                    stakeholders, created_at, outcome
+                )
+                VALUES (%s, %s, %s, %s, NOW(), %s)
+                RETURNING id
+            """, (
+                conversation_id,
+                decision_summary,
+                decision_type,
+                json.dumps(stakeholders),
+                None  # outcome unknown initially
+            ))
+
+            decision_id = cur.fetchone()[0]
+            self.db.commit()
+            log.info(f"Recorded decision {decision_id} of type {decision_type}")
+            return decision_id
+
+        except Exception as e:
+            log.error(f"Error recording decision: {e}")
+            return None
+
+    def report_decision_outcome(self, decision_id: int, outcome_summary: str, satisfaction: int = None):
+        """User reports back on how a past decision turned out.
+
+        Allows Jarvis to learn patterns and improve future decision guidance.
+        satisfaction: 1-5 scale (1=regret, 5=very satisfied)
+        """
+        if not decision_id:
+            return
+
+        cur = self.db.cursor()
+
+        try:
+            cur.execute("""
+                UPDATE decision_records
+                SET outcome = %s, satisfaction = %s, updated_at = NOW()
+                WHERE id = %s
+            """, (outcome_summary, satisfaction, decision_id))
+
+            self.db.commit()
+
+            # Extract lessons from the outcome
+            if satisfaction:
+                self._learn_from_decision_outcome(decision_id, outcome_summary, satisfaction)
+
+            log.info(f"Updated decision {decision_id} with outcome and satisfaction {satisfaction}")
+
+        except Exception as e:
+            log.error(f"Error reporting decision outcome: {e}")
+
+    def _learn_from_decision_outcome(self, decision_id: int, outcome_summary: str, satisfaction: int):
+        """Extract lessons from a decision outcome to improve future guidance."""
+        if not self.client:
+            return
+
+        try:
+            cur = self.db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("""
+                SELECT decision_summary, decision_type, stakeholders
+                FROM decision_records
+                WHERE id = %s
+            """, (decision_id,))
+
+            row = cur.fetchone()
+            if not row:
+                return
+
+            decision_info = dict(row)
+            stakeholders = json.loads(decision_info.get('stakeholders', '[]'))
+
+            # Use Claude to extract lessons
+            lesson_prompt = f"""Analyze this decision and its outcome to extract lessons:
+
+Decision ({decision_info['decision_type']}): {decision_info['decision_summary']}
+
+Outcome: {outcome_summary}
+
+User satisfaction: {satisfaction}/5
+
+What can we learn from this?
+Focus on: What risks materialized? What went better than expected? What would the user recommend to themselves?
+Return JSON: {{"lessons": ["...", "..."], "pattern": "...", "confidence": 0.0-1.0}}
+Return ONLY JSON, no other text."""
+
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=500,
+                messages=[{"role": "user", "content": lesson_prompt}]
+            )
+
+            response_text = response.content[0].text
+            lessons_data = json.loads(response_text)
+
+            # Store lessons
+            if lessons_data.get('lessons'):
+                for lesson in lessons_data['lessons']:
+                    cur.execute("""
+                        INSERT INTO decision_lessons (
+                            decision_id, lesson_text, pattern, confidence, created_at
+                        )
+                        VALUES (%s, %s, %s, %s, NOW())
+                    """, (
+                        decision_id,
+                        lesson,
+                        lessons_data.get('pattern'),
+                        lessons_data.get('confidence', 0.5)
+                    ))
+
+            self.db.commit()
+            log.info(f"Extracted {len(lessons_data.get('lessons', []))} lessons from decision {decision_id}")
+
+        except (json.JSONDecodeError, Exception) as e:
+            log.error(f"Error extracting lessons: {e}")
+
+    def get_similar_past_decisions(self, decision_type: str, limit: int = 3) -> List[Dict]:
+        """Retrieve similar past decisions to learn from patterns."""
+        cur = self.db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        try:
+            cur.execute("""
+                SELECT id, decision_summary, outcome, satisfaction, created_at
+                FROM decision_records
+                WHERE decision_type = %s AND outcome IS NOT NULL
+                ORDER BY updated_at DESC
+                LIMIT %s
+            """, (decision_type, limit))
+
+            similar = [dict(row) for row in cur.fetchall()]
+
+            # Enrich with lessons
+            for decision in similar:
+                cur.execute("""
+                    SELECT lesson_text, pattern, confidence
+                    FROM decision_lessons
+                    WHERE decision_id = %s
+                    ORDER BY confidence DESC
+                """, (decision['id'],))
+
+                decision['lessons'] = [dict(row) for row in cur.fetchall()]
+
+            return similar
+
+        except Exception as e:
+            log.error(f"Error retrieving similar decisions: {e}")
+            return []
+
     def end_conversation(self, conversation_id: int):
         """End the current conversation."""
         cur = self.db.cursor()
