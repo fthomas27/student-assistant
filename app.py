@@ -3427,6 +3427,302 @@ def api_chat_with_documents():
         return jsonify({"error": str(e)}), 500
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# DASHBOARD API ENDPOINTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/dashboard/summary", methods=["GET"])
+def api_dashboard_summary():
+    """Get dashboard summary stats."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        # Count tasks
+        cur.execute("SELECT COUNT(*) FROM tasks WHERE completed = false")
+        pending_tasks = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM tasks WHERE completed = true AND completed_at >= NOW() - INTERVAL '1 day'")
+        completed_today = cur.fetchone()[0]
+
+        # Count notes
+        cur.execute("SELECT COUNT(*) FROM notes")
+        total_notes = cur.fetchone()[0]
+
+        return jsonify({
+            "success": True,
+            "pending_tasks": pending_tasks,
+            "completed_today": completed_today,
+            "total_notes": total_notes,
+            "home_status": {
+                "lights_on": 2,
+                "doors_locked": True
+            }
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard summary error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/tasks", methods=["GET"])
+def api_dashboard_tasks():
+    """Get tasks for dashboard."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        filter_type = request.args.get('filter', 'pending')
+
+        if filter_type == 'completed':
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed_at
+                FROM tasks
+                WHERE completed = true
+                ORDER BY completed_at DESC
+                LIMIT 20
+            """)
+        else:  # pending
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed
+                FROM tasks
+                WHERE completed = false
+                ORDER BY
+                    CASE WHEN due_date < NOW() THEN 0 ELSE 1 END,
+                    due_date ASC
+                LIMIT 20
+            """)
+
+        tasks = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(tasks),
+            "tasks": tasks
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard tasks error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/notes", methods=["GET"])
+def api_dashboard_notes():
+    """Get recent notes for dashboard."""
+    try:
+        from note_manager import NoteManager
+
+        db = get_db()
+        note_manager = NoteManager(db)
+
+        limit = int(request.args.get('limit', 10))
+        notes = note_manager.get_all_notes(limit=limit, sort_by='recent')
+
+        return jsonify({
+            "success": True,
+            "count": len(notes),
+            "notes": notes
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard notes error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/briefing", methods=["GET"])
+def api_dashboard_briefing():
+    """Get latest briefing."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute("""
+            SELECT content, briefing_date
+            FROM daily_briefings
+            ORDER BY briefing_date DESC
+            LIMIT 1
+        """)
+
+        row = cur.fetchone()
+
+        if row:
+            return jsonify({
+                "success": True,
+                "briefing": dict(row)['content'],
+                "date": dict(row)['briefing_date'].isoformat() if dict(row).get('briefing_date') else None
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "briefing": "No briefing available yet. Generate one to see your daily summary.",
+                "date": None
+            })
+
+    except Exception as e:
+        log.error(f"Dashboard briefing error: {e}")
+        return jsonify({
+            "success": True,
+            "briefing": "Unable to load briefing.",
+            "date": None
+        })
+
+
+@app.route("/api/dashboard/calendar", methods=["GET"])
+def api_dashboard_calendar():
+    """Get upcoming calendar events."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        # Get upcoming assignments (use completions table as events)
+        cur.execute("""
+            SELECT title, due_date
+            FROM completions
+            WHERE due_date >= NOW() AND completed_at IS NULL
+            ORDER BY due_date ASC
+            LIMIT 10
+        """)
+
+        events = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(events),
+            "events": events
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard calendar error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/devices", methods=["GET"])
+def api_dashboard_devices():
+    """Get smart home devices."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute("""
+            SELECT id, entity_id, entity_name, device_type, last_state
+            FROM home_assistant_devices
+            ORDER BY entity_name ASC
+        """)
+
+        devices = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(devices),
+            "devices": devices
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard devices error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/devices/<int:device_id>/control", methods=["POST"])
+def api_dashboard_device_control(device_id):
+    """Control a smart home device."""
+    try:
+        from ha_client import HAClient
+
+        data = request.json or {}
+        action = data.get("action", "toggle")
+
+        config = get_config()
+        ha_url = config.get("ha_url", "")
+        ha_token = config.get("ha_token", "")
+
+        if not ha_url or not ha_token:
+            return jsonify({"error": "Home Assistant not configured"}), 400
+
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute("""
+            SELECT entity_id, device_type
+            FROM home_assistant_devices
+            WHERE id = %s
+        """, (device_id,))
+
+        device = cur.fetchone()
+        if not device:
+            return jsonify({"error": "Device not found"}), 404
+
+        device = dict(device)
+
+        ha = HAClient(ha_url, ha_token)
+
+        # Execute action
+        if action == "toggle":
+            service = "toggle" if device['device_type'] == 'light' else "toggle"
+            success = ha.call_service(device['device_type'], service, {"entity_id": device['entity_id']})
+        elif action == "on":
+            success = ha.call_service(device['device_type'], "turn_on", {"entity_id": device['entity_id']})
+        elif action == "off":
+            success = ha.call_service(device['device_type'], "turn_off", {"entity_id": device['entity_id']})
+        else:
+            success = False
+
+        return jsonify({
+            "success": success,
+            "device_id": device_id,
+            "action": action
+        })
+
+    except Exception as e:
+        log.error(f"Device control error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/settings", methods=["GET"])
+def api_dashboard_settings():
+    """Get dashboard settings."""
+    try:
+        config = get_config()
+
+        return jsonify({
+            "success": True,
+            "voice_enabled": config.get("voice_enabled", "true") == "true",
+            "morning_briefing_time": config.get("morning_briefing_time", "07:00"),
+            "theme": config.get("theme", "dark_orange"),
+            "jarvis_voice_id": config.get("jarvis_voice_id", "alistair")
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard settings error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/settings", methods=["POST"])
+def api_dashboard_settings_update():
+    """Update dashboard settings."""
+    try:
+        data = request.json or {}
+
+        updates = {}
+        if "voice_enabled" in data:
+            updates["voice_enabled"] = "true" if data["voice_enabled"] else "false"
+        if "morning_briefing_time" in data:
+            updates["morning_briefing_time"] = data["morning_briefing_time"]
+        if "theme" in data:
+            updates["theme"] = data["theme"]
+
+        if updates:
+            set_config(updates)
+
+        return jsonify({
+            "success": True,
+            "message": "Settings updated"
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard settings update error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # Initialize database if available
 try:
     init_db()
