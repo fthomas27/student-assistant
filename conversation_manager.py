@@ -231,6 +231,49 @@ Always be truthful and admit what you don't know."""
 
         return is_decision
 
+    def should_use_extended_thinking(self, user_message: str, decision_type: str = None) -> bool:
+        """Determine if extended thinking (deep reasoning) should be activated.
+
+        Extended thinking is used for:
+        - Life-changing decisions (career change, major relationship decisions)
+        - Decisions with high emotional stakes or multiple stakeholders
+        - Complex trade-offs requiring systematic analysis
+        - When user explicitly asks for deep thinking
+        """
+        message_lower = user_message.lower()
+
+        # Explicit requests for deep thinking
+        if any(phrase in message_lower for phrase in [
+            "think deeply", "really think", "tell me everything", "comprehensive",
+            "pros and cons", "serious decision", "help me think through"
+        ]):
+            return True
+
+        # High-stakes decision types
+        if decision_type:
+            high_stakes_types = ["career", "life_major", "interpersonal"]
+            if decision_type in high_stakes_types:
+                # Also check for complexity indicators
+                complexity_indicators = [
+                    "multiple", "conflicting", "trade-off", "tension",
+                    "worried", "anxious", "torn", "both"
+                ]
+                has_complexity = any(ind in message_lower for ind in complexity_indicators)
+                if has_complexity:
+                    return True
+
+        # Major life/career/interpersonal keywords with emotional intensity
+        major_keywords = ["career", "job", "quit", "leave", "relationship", "marry", "break up"]
+        emotional_keywords = ["worried", "anxious", "scared", "nervous", "torn", "conflicted"]
+
+        has_major = any(kw in message_lower for kw in major_keywords)
+        has_emotion = any(kw in message_lower for kw in emotional_keywords)
+
+        if has_major and has_emotion:
+            return True
+
+        return False
+
     def analyze_decision_context(self, user_message: str, conversation_id: int) -> Dict:
         """Analyze the decision being discussed."""
         if not self.decision_analyzer:
@@ -286,19 +329,26 @@ Always be truthful and admit what you don't know."""
         tools: List[Dict] = None,
         max_tokens: int = 1024
     ) -> str:
-        """Enhanced get_jarvis_response that handles decisions specially."""
+        """Enhanced get_jarvis_response that handles decisions specially with extended thinking for complex decisions."""
 
         # Check if this is a decision moment
         is_decision = self.detect_decision_moment(user_message)
 
         enhanced_context = ""
         system_prompt_addition = ""
+        use_extended_thinking = False
 
         if is_decision:
             # Analyze the decision
             analysis = self.analyze_decision_context(user_message, conversation_id)
             self.in_decision_mode = True
             self.current_decision_type = analysis.get('type')
+
+            # Determine if deep reasoning is needed
+            use_extended_thinking = self.should_use_extended_thinking(
+                user_message,
+                decision_type=self.current_decision_type
+            )
 
             # Build context for Claude about this decision
             if analysis.get('stakeholders'):
@@ -311,6 +361,10 @@ Always be truthful and admit what you don't know."""
             if analysis.get('probing_questions'):
                 system_prompt_addition += f"\n\nKey questions to explore naturally: {'; '.join(analysis['probing_questions'][:3])}"
 
+            # Add extended thinking notice to system prompt
+            if use_extended_thinking:
+                system_prompt_addition += f"\n\n[EXTENDED THINKING ACTIVATED] This is a complex {self.current_decision_type} decision. Take time to reason deeply about: consequences across time horizons, stakeholder impacts, reversibility, hidden assumptions, and what the user really wants vs. what they think they should do."
+
         # Use the base get_jarvis_response but with enhanced context
         return self._get_jarvis_response_with_context(
             user_message,
@@ -318,7 +372,8 @@ Always be truthful and admit what you don't know."""
             user_memories=user_memories,
             tools=tools,
             max_tokens=max_tokens,
-            system_addition=system_prompt_addition
+            system_addition=system_prompt_addition,
+            use_extended_thinking=use_extended_thinking
         )
 
     def _get_jarvis_response_with_context(
@@ -328,9 +383,10 @@ Always be truthful and admit what you don't know."""
         user_memories: List[str] = None,
         tools: List[Dict] = None,
         max_tokens: int = 1024,
-        system_addition: str = ""
+        system_addition: str = "",
+        use_extended_thinking: bool = False
     ) -> str:
-        """Internal method - same as get_jarvis_response but with optional system prompt addition."""
+        """Internal method - same as get_jarvis_response but with optional system prompt addition and extended thinking."""
         history = self.get_conversation_history(conversation_id, limit=10)
         context = self.build_context_for_claude(conversation_id, user_memories)
 
@@ -375,13 +431,27 @@ Always be truthful and admit what you don't know."""
 
         # Call Claude
         try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=system_prompt,
-                messages=messages,
-                tools=tools if tools else None
-            )
+            api_kwargs = {
+                "model": self.model,
+                "max_tokens": max_tokens,
+                "system": system_prompt,
+                "messages": messages,
+            }
+
+            # Add extended thinking for complex decisions
+            if use_extended_thinking:
+                api_kwargs["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": 10000
+                }
+                # Extended thinking needs larger max_tokens for response
+                api_kwargs["max_tokens"] = 16000
+
+            # Add tools if provided
+            if tools:
+                api_kwargs["tools"] = tools
+
+            response = self.client.messages.create(**api_kwargs)
 
             assistant_message = ""
             for block in response.content:
