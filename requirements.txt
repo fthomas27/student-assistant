@@ -14,7 +14,7 @@ openai
 
 # Voice & Audio (optional - gracefully degrades if not available)
 # pvporcupine  # Requires authentication from Picovoice console - install manually if needed
-elevenlabs
+elevenlabs>=1.0.0
 faster-whisper
 pyttsx3
 python-dotenv

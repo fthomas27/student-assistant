@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS workout_logs (
     perceived_difficulty INT
 )""")
 
-    -- Jarvis voice assistant tables
+    # Jarvis voice assistant tables
     cur.execute("""
 CREATE TABLE IF NOT EXISTS conversations (
     id SERIAL PRIMARY KEY,
