@@ -1096,7 +1096,7 @@
                 list.innerHTML = `
                     <div class="empty-state" style="height: auto; padding: 40px 20px;">
                         <div class="empty-icon">📚</div>
-                        <div>No assignments. Assignments sync from the main app.</div>
+                        <div>No assignments yet. Set up your calendar URLs to see assignments from Canvas, Personal, and Sports calendars.</div>
                     </div>
                 `;
                 return;
@@ -1106,12 +1106,14 @@
                 <div class="assignment-item">
                     <div class="assignment-header">
                         <div class="assignment-title">${escapeHtml(assignment.title)}</div>
+                        <div class="assignment-source" style="font-size: 0.75rem; color: #a0a0a0; margin-top: 4px;">
+                            ${assignment.source || assignment.class_name || 'Assignment'}
+                        </div>
                     </div>
                     <div class="assignment-due">
-                        Due: ${new Date(assignment.due_date).toLocaleDateString()}
-                        ${assignment.completed_at ? '✓ Completed' : ''}
+                        <strong>Due:</strong> ${assignment.due_display || 'TBD'}
                     </div>
-                    ${assignment.notes ? `<div class="assignment-note">${escapeHtml(assignment.notes)}</div>` : ''}
+                    ${assignment.estimate_minutes ? `<div class="assignment-estimate" style="font-size: 0.875rem; color: #f97316; margin-top: 4px;">⏱ ${assignment.estimate_minutes}min</div>` : ''}
                 </div>
             `).join('');
         }
