@@ -1,5 +1,6 @@
 """
 Conversation manager: Handles multi-turn context and Claude API integration for Jarvis.
+Now with decision-making superpowers for life/career/interpersonal decisions.
 """
 
 import os
@@ -23,6 +24,24 @@ class ConversationManager:
         self.model = "claude-sonnet-4-6"
         self.current_conversation_id: Optional[int] = None
         self.current_exchanges = 0
+
+        # Decision-making enhancements
+        self.in_decision_mode = False
+        self.current_decision_type = None
+        self.decision_stakeholders = []
+
+        # Initialize optional modules if available
+        try:
+            from decision_analyzer import DecisionAnalyzer
+            self.decision_analyzer = DecisionAnalyzer()
+        except ImportError:
+            self.decision_analyzer = None
+
+        try:
+            from web_search import WebSearch
+            self.web_search = WebSearch()
+        except ImportError:
+            self.web_search = None
 
     def start_conversation(self) -> int:
         """Start a new conversation session."""
@@ -103,20 +122,34 @@ class ConversationManager:
         # Build context
         context = self.build_context_for_claude(conversation_id, user_memories)
 
-        # System prompt for Jarvis personality
-        system_prompt = """You are Jarvis, a sophisticated and helpful personal AI assistant.
-Your personality is:
-- Professional but warm and friendly
-- British accent in speech (even though this is text, maintain that tone)
-- Helpful, proactive, and thoughtful
-- Occasionally witty, but never forced or annoying
-- Respectful of the user's time and preferences
-- Good at remembering context from previous conversations
+        # System prompt for Jarvis personality - now with decision-making focus
+        system_prompt = """You are Jarvis, a sophisticated personal AI assistant. You are their decision-making partner.
 
-You run smart home devices via Home Assistant, manage tasks and calendar, and keep detailed notes.
-You should be concise in responses (aim for 2-3 sentences for quick queries).
-For complex queries, ask if the user wants extended details or offer to dive deeper.
-Always be truthful and admit when you don't know something."""
+Your personality:
+- British accent in tone (professional, warm, occasionally witty)
+- Like a smart friend who knows them well
+- Conversational and natural - ask questions that feel like real conversation, not interrogation
+- You proactively help them think through decisions they're facing
+- You help them see risks and consequences they might miss
+
+How you help with decisions:
+- Listen for what they really want vs. what they think they should do
+- Ask clarifying questions naturally ("What does 'growing' mean to you specifically?")
+- Help them think through who else is affected and how
+- Surface hidden assumptions they're making
+- Map out consequences across different timeframes (immediate, 1yr, 5yr, 10yr)
+- Reference similar past decisions if relevant ("This reminds me of when you...")
+- Never tell them what to do - help them think better
+- Ask the hard questions: "What would you regret most if you do this?" "What would you regret if you don't?"
+
+Remember:
+- Their biggest blind spot: missing hidden risks and consequences
+- They often make life/career and interpersonal decisions
+- Reversibility matters (can they undo this if it goes wrong?)
+- People impacts matter most (how does this affect relationships?)
+
+You're concise with simple questions, but you go deep with complex decisions.
+Always be truthful and admit what you don't know."""
 
         # Format messages for Claude
         messages = []
@@ -152,6 +185,211 @@ Always be truthful and admit when you don't know something."""
                     break
 
             # Add messages to database
+            self.add_message(conversation_id, "user", user_message)
+            self.add_message(conversation_id, "assistant", assistant_message)
+
+            # Update exchange count
+            cur = self.db.cursor()
+            cur.execute("""
+                UPDATE conversations
+                SET total_exchanges = total_exchanges + 1
+                WHERE id = %s
+            """, (conversation_id,))
+            self.db.commit()
+            self.current_exchanges += 1
+
+            return assistant_message
+
+        except anthropic.APIError as e:
+            log.error(f"Claude API error: {e}")
+            raise
+
+    def detect_decision_moment(self, user_message: str) -> bool:
+        """Detect if user is working through a decision."""
+        decision_keywords = [
+            # Uncertainty/deliberation
+            "thinking about", "considering", "should i", "wondering if", "not sure",
+            "torn between", "can't decide", "trying to figure out",
+            # Emotional/concern
+            "worried about", "anxious about", "scared of", "nervous about",
+            "feel like", "want to", "need to", "should",
+            # Major life events
+            "career", "job", "relationship", "moving", "leave", "quit",
+            "break up", "ask them", "tell them", "change",
+            # Decision framing
+            "decision", "choice", "should i", "is it right", "am i making a mistake"
+        ]
+
+        message_lower = user_message.lower()
+        keyword_matches = sum(1 for kw in decision_keywords if kw in message_lower)
+
+        # If multiple decision keywords or specific decision phrases, activate decision mode
+        is_decision = keyword_matches >= 2 or any(
+            phrase in message_lower
+            for phrase in ["i'm thinking about", "should i", "i'm worried", "i'm considering"]
+        )
+
+        return is_decision
+
+    def analyze_decision_context(self, user_message: str, conversation_id: int) -> Dict:
+        """Analyze the decision being discussed."""
+        if not self.decision_analyzer:
+            return {}
+
+        analysis = {}
+
+        # Identify decision type
+        decision_type = self.decision_analyzer.identify_decision_type(user_message)
+        analysis['type'] = decision_type.value
+
+        # Extract stakeholders
+        stakeholders = self.decision_analyzer.extract_stakeholders(user_message)
+        analysis['stakeholders'] = stakeholders
+
+        # Identify hidden assumptions
+        assumptions = self.decision_analyzer.identify_hidden_assumptions(user_message)
+        analysis['assumptions'] = assumptions
+
+        # Generate probing questions
+        questions = self.decision_analyzer.generate_probing_questions(decision_type)
+        analysis['probing_questions'] = questions
+
+        # Get consequence map template
+        analysis['consequence_map'] = self.decision_analyzer.map_consequences(user_message)
+
+        # Research background if available
+        if self.web_search and self.web_search.is_available():
+            try:
+                research = self.web_search.research_decision(user_message, questions[:2])
+                analysis['research'] = research
+            except Exception as e:
+                log.debug(f"Background research failed: {e}")
+
+        return analysis
+
+    def enhance_response_with_decision_context(self, response: str, analysis: Dict, conversation_id: int) -> str:
+        """Enhance response with decision context (questions, research, etc.)."""
+        if not analysis:
+            return response
+
+        # Don't dump analysis - weave it naturally
+        # Claude's response should already incorporate probing questions naturally
+        # We just ensure the context was passed in the system prompt
+
+        return response
+
+    def get_jarvis_response_with_decisions(
+        self,
+        user_message: str,
+        conversation_id: int,
+        user_memories: List[str] = None,
+        tools: List[Dict] = None,
+        max_tokens: int = 1024
+    ) -> str:
+        """Enhanced get_jarvis_response that handles decisions specially."""
+
+        # Check if this is a decision moment
+        is_decision = self.detect_decision_moment(user_message)
+
+        enhanced_context = ""
+        system_prompt_addition = ""
+
+        if is_decision:
+            # Analyze the decision
+            analysis = self.analyze_decision_context(user_message, conversation_id)
+            self.in_decision_mode = True
+            self.current_decision_type = analysis.get('type')
+
+            # Build context for Claude about this decision
+            if analysis.get('stakeholders'):
+                affected = ", ".join([s['name'] for s in analysis['stakeholders']])
+                system_prompt_addition += f"\n\nThis appears to be a decision about {analysis.get('type')}. People affected: {affected}"
+
+            if analysis.get('assumptions'):
+                system_prompt_addition += f"\n\nHidden assumptions to gently surface: {'; '.join(analysis['assumptions'][:2])}"
+
+            if analysis.get('probing_questions'):
+                system_prompt_addition += f"\n\nKey questions to explore naturally: {'; '.join(analysis['probing_questions'][:3])}"
+
+        # Use the base get_jarvis_response but with enhanced context
+        return self._get_jarvis_response_with_context(
+            user_message,
+            conversation_id,
+            user_memories=user_memories,
+            tools=tools,
+            max_tokens=max_tokens,
+            system_addition=system_prompt_addition
+        )
+
+    def _get_jarvis_response_with_context(
+        self,
+        user_message: str,
+        conversation_id: int,
+        user_memories: List[str] = None,
+        tools: List[Dict] = None,
+        max_tokens: int = 1024,
+        system_addition: str = ""
+    ) -> str:
+        """Internal method - same as get_jarvis_response but with optional system prompt addition."""
+        history = self.get_conversation_history(conversation_id, limit=10)
+        context = self.build_context_for_claude(conversation_id, user_memories)
+
+        # Base system prompt
+        system_prompt = """You are Jarvis, a sophisticated personal AI assistant. You are their decision-making partner.
+
+Your personality:
+- British accent in tone (professional, warm, occasionally witty)
+- Like a smart friend who knows them well
+- Conversational and natural - ask questions that feel like real conversation, not interrogation
+- You proactively help them think through decisions they're facing
+- You help them see risks and consequences they might miss
+
+How you help with decisions:
+- Listen for what they really want vs. what they think they should do
+- Ask clarifying questions naturally ("What does 'growing' mean to you specifically?")
+- Help them think through who else is affected and how
+- Surface hidden assumptions they're making
+- Map out consequences across different timeframes (immediate, 1yr, 5yr, 10yr)
+- Reference similar past decisions if relevant ("This reminds me of when you...")
+- Never tell them what to do - help them think better
+- Ask the hard questions: "What would you regret most if you do this?" "What would you regret if you don't?"
+
+Remember:
+- Their biggest blind spot: missing hidden risks and consequences
+- They often make life/career and interpersonal decisions
+- Reversibility matters (can they undo this if it goes wrong?)
+- People impacts matter most (how does this affect relationships?)
+
+You're concise with simple questions, but you go deep with complex decisions.
+Always be truthful and admit what you don't know."""
+
+        # Add decision-specific context if provided
+        if system_addition:
+            system_prompt += system_addition
+
+        # Format messages
+        messages = []
+        for msg in history:
+            messages.append({"role": msg['role'], "content": msg['content']})
+        messages.append({"role": "user", "content": user_message})
+
+        # Call Claude
+        try:
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=messages,
+                tools=tools if tools else None
+            )
+
+            assistant_message = ""
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    assistant_message = block.text
+                    break
+
+            # Store messages
             self.add_message(conversation_id, "user", user_message)
             self.add_message(conversation_id, "assistant", assistant_message)
 
