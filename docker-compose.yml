@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: jarvis-db
+    environment:
+      POSTGRES_DB: jarvis
+      POSTGRES_USER: jarvis_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change-me-in-production}
+    volumes:
+      - jarvis_db:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jarvis_user -d jarvis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - jarvis_network
+
+  jarvis:
+    build:
+      context: .
+      dockerfile: Dockerfile.rpi
+    container_name: jarvis-assistant
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://jarvis_user:${DB_PASSWORD:-change-me-in-production}@postgres:5432/jarvis
+
+      # Flask
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      APP_PASSWORD: ${APP_PASSWORD:-jarvis2025}
+
+      # Voice APIs
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+
+      # Home Assistant (optional)
+      HA_URL: ${HA_URL:-}
+      HA_TOKEN: ${HA_TOKEN:-}
+
+      # Jarvis Configuration
+      JARVIS_WAKE_WORD: ${JARVIS_WAKE_WORD:-jarvis}
+      JARVIS_VOICE_ID: ${JARVIS_VOICE_ID:-alistair}
+      MORNING_BRIEFING_TIME: ${MORNING_BRIEFING_TIME:-0 6 * * *}
+      TIMEZONE: ${TIMEZONE:-America/Denver}
+
+      # Calendar URLs (optional - for existing functionality)
+      PERSONAL_ICAL_URL: ${PERSONAL_ICAL_URL:-}
+      CANVAS_ICAL_URL: ${CANVAS_ICAL_URL:-}
+      SPORTS_ICAL_URL: ${SPORTS_ICAL_URL:-}
+
+    volumes:
+      - /dev/snd:/dev/snd  # Audio device access
+      - jarvis_logs:/var/log/jarvis
+
+    ports:
+      - "5000:5000"
+
+    networks:
+      - jarvis_network
+
+    restart: unless-stopped
+
+    # Allow access to host audio devices
+    devices:
+      - /dev/snd
+      - /dev/dri  # GPU acceleration if available
+
+volumes:
+  jarvis_db:
+  jarvis_logs:
+
+networks:
+  jarvis_network:
+    driver: bridge

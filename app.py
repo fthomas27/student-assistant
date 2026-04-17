@@ -426,7 +426,7 @@ CREATE TABLE IF NOT EXISTS home_assistant_devices (
         "openai_api_key": "",
         "ha_url": "",
         "ha_token": "",
-        "jarvis_voice_id": "callum",
+        "jarvis_voice_id": "alistair",
         "timezone": "America/Denver",
     }
     for k, v in defaults.items():
