@@ -13,7 +13,8 @@ python-engineio
 openai
 
 # Voice & Audio (optional - gracefully degrades if not available)
-# porcupine-client  # Requires authentication from Picovoice console - install manually if needed
+# pvporcupine  # Requires authentication from Picovoice console - install manually if needed
+elevenlabs
 faster-whisper
 pyttsx3
 python-dotenv
