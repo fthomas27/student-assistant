@@ -427,6 +427,15 @@ CREATE TABLE IF NOT EXISTS home_assistant_devices (
     created_at TIMESTAMPTZ DEFAULT NOW()
 )""")
 
+    cur.execute("""CREATE TABLE IF NOT EXISTS documents (
+    id SERIAL PRIMARY KEY,
+    filename TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_type VARCHAR(50),
+    file_size INTEGER,
+    uploaded_at TIMESTAMPTZ DEFAULT NOW()
+)""")
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category)")
@@ -436,6 +445,7 @@ CREATE TABLE IF NOT EXISTS home_assistant_devices (
     cur.execute("CREATE INDEX IF NOT EXISTS idx_decision_records_type ON decision_records(decision_type)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_decision_records_conversation ON decision_records(conversation_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_decision_lessons_decision ON decision_lessons(decision_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_documents_uploaded ON documents(uploaded_at DESC)")
 
     defaults = {
         "name": "Finn",
@@ -3242,6 +3252,692 @@ def api_similar_past_decisions():
 
     except Exception as e:
         log.error(f"Similar past decisions error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# JARVIS UI & DOCUMENT MANAGEMENT ROUTES
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/", methods=["GET"])
+def jarvis_home():
+    """Serve the Jarvis UI."""
+    return render_template("jarvis.html")
+
+
+@app.route("/jarvis", methods=["GET"])
+def jarvis_interface():
+    """Serve the Jarvis UI (alternate route)."""
+    return render_template("jarvis.html")
+
+
+@app.route("/dashboard", methods=["GET"])
+def dashboard():
+    """Serve the Jarvis dashboard with all features."""
+    return render_template("jarvis-dashboard.html")
+
+
+@app.route("/api/documents/upload", methods=["POST"])
+def api_upload_document():
+    """Upload a document for context in conversations."""
+    try:
+        from document_manager import DocumentManager
+
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file = request.files["file"]
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
+
+        # Check file size (10MB max)
+        file.seek(0, 2)
+        file_size = file.tell()
+        file.seek(0)
+
+        if file_size > 10 * 1024 * 1024:
+            return jsonify({"error": "File too large (max 10MB)"}), 400
+
+        # Read file content
+        file_content = file.read()
+
+        # Save document
+        db = get_db()
+        doc_manager = DocumentManager(db)
+
+        success, doc_id, error = doc_manager.save_document(
+            file_content,
+            file.filename,
+            file.content_type
+        )
+
+        if not success:
+            return jsonify({"error": error}), 500
+
+        return jsonify({
+            "success": True,
+            "id": doc_id,
+            "filename": file.filename,
+            "size": file_size
+        })
+
+    except Exception as e:
+        log.error(f"Document upload error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/documents", methods=["GET"])
+def api_get_documents():
+    """Get list of uploaded documents."""
+    try:
+        from document_manager import DocumentManager
+
+        db = get_db()
+        doc_manager = DocumentManager(db)
+
+        documents = doc_manager.get_documents(limit=50)
+
+        return jsonify({
+            "success": True,
+            "count": len(documents),
+            "documents": documents
+        })
+
+    except Exception as e:
+        log.error(f"Get documents error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/documents/<int:doc_id>", methods=["DELETE"])
+def api_delete_document(doc_id):
+    """Delete a document."""
+    try:
+        from document_manager import DocumentManager
+
+        db = get_db()
+        doc_manager = DocumentManager(db)
+
+        success = doc_manager.delete_document(doc_id)
+
+        if not success:
+            return jsonify({"error": "Document not found"}), 404
+
+        return jsonify({"success": True, "doc_id": doc_id})
+
+    except Exception as e:
+        log.error(f"Delete document error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat_with_documents():
+    """Chat endpoint with document context support."""
+    try:
+        from conversation_manager import ConversationManager
+        from document_manager import DocumentManager
+
+        data = request.json or {}
+        message = data.get("message", "")
+        doc_ids = data.get("documents", [])
+
+        if not message and not doc_ids:
+            return jsonify({"error": "message or documents required"}), 400
+
+        db = get_db()
+
+        # Get or create conversation
+        conv_manager = ConversationManager(db)
+        conv_id = conv_manager.get_current_conversation_id()
+
+        if not conv_id:
+            conv_id = conv_manager.start_conversation()
+
+        # Build document context
+        doc_context = ""
+        if doc_ids:
+            doc_manager = DocumentManager(db)
+            doc_context = doc_manager.build_document_context(doc_ids)
+
+        # Build full message with document context
+        full_message = message
+        if doc_context:
+            full_message = f"Documents to analyze:\n{doc_context}\n\nUser message: {message}"
+
+        # Get memories
+        from memory_manager import MemoryManager
+        memory_manager = MemoryManager(db)
+        memories = memory_manager.get_top_memories(5)
+
+        # Get Jarvis response with decision-making
+        response = conv_manager.get_jarvis_response_with_decisions(
+            full_message,
+            conv_id,
+            user_memories=memories
+        )
+
+        return jsonify({
+            "success": True,
+            "response": response,
+            "conversation_id": conv_id,
+            "documents_analyzed": len(doc_ids)
+        })
+
+    except Exception as e:
+        log.error(f"Chat error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DASHBOARD API ENDPOINTS
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/dashboard/summary", methods=["GET"])
+def api_dashboard_summary():
+    """Get dashboard summary stats."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        # Count tasks
+        cur.execute("SELECT COUNT(*) FROM tasks WHERE completed = false")
+        pending_tasks = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM tasks WHERE completed = true AND completed_at >= NOW() - INTERVAL '1 day'")
+        completed_today = cur.fetchone()[0]
+
+        # Count notes
+        cur.execute("SELECT COUNT(*) FROM notes")
+        total_notes = cur.fetchone()[0]
+
+        return jsonify({
+            "success": True,
+            "pending_tasks": pending_tasks,
+            "completed_today": completed_today,
+            "total_notes": total_notes,
+            "home_status": {
+                "lights_on": 2,
+                "doors_locked": True
+            }
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard summary error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/tasks", methods=["GET"])
+def api_dashboard_tasks():
+    """Get tasks for dashboard."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        filter_type = request.args.get('filter', 'pending')
+
+        if filter_type == 'completed':
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed_at
+                FROM tasks
+                WHERE completed = true
+                ORDER BY completed_at DESC
+                LIMIT 20
+            """)
+        else:  # pending
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed
+                FROM tasks
+                WHERE completed = false
+                ORDER BY
+                    CASE WHEN due_date < NOW() THEN 0 ELSE 1 END,
+                    due_date ASC
+                LIMIT 20
+            """)
+
+        tasks = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(tasks),
+            "tasks": tasks
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard tasks error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/notes", methods=["GET"])
+def api_dashboard_notes():
+    """Get recent notes for dashboard."""
+    try:
+        from note_manager import NoteManager
+
+        db = get_db()
+        note_manager = NoteManager(db)
+
+        limit = int(request.args.get('limit', 10))
+        notes = note_manager.get_all_notes(limit=limit, sort_by='recent')
+
+        return jsonify({
+            "success": True,
+            "count": len(notes),
+            "notes": notes
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard notes error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/briefing", methods=["GET"])
+def api_dashboard_briefing():
+    """Get latest briefing."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute("""
+            SELECT content, briefing_date
+            FROM daily_briefings
+            ORDER BY briefing_date DESC
+            LIMIT 1
+        """)
+
+        row = cur.fetchone()
+
+        if row:
+            return jsonify({
+                "success": True,
+                "briefing": dict(row)['content'],
+                "date": dict(row)['briefing_date'].isoformat() if dict(row).get('briefing_date') else None
+            })
+        else:
+            return jsonify({
+                "success": True,
+                "briefing": "No briefing available yet. Generate one to see your daily summary.",
+                "date": None
+            })
+
+    except Exception as e:
+        log.error(f"Dashboard briefing error: {e}")
+        return jsonify({
+            "success": True,
+            "briefing": "Unable to load briefing.",
+            "date": None
+        })
+
+
+@app.route("/api/dashboard/calendar", methods=["GET"])
+def api_dashboard_calendar():
+    """Get upcoming calendar events."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        # Get upcoming assignments (use completions table as events)
+        cur.execute("""
+            SELECT title, due_date
+            FROM completions
+            WHERE due_date >= NOW() AND completed_at IS NULL
+            ORDER BY due_date ASC
+            LIMIT 10
+        """)
+
+        events = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(events),
+            "events": events
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard calendar error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/devices", methods=["GET"])
+def api_dashboard_devices():
+    """Get smart home devices."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute("""
+            SELECT id, entity_id, entity_name, device_type, last_state
+            FROM home_assistant_devices
+            ORDER BY entity_name ASC
+        """)
+
+        devices = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(devices),
+            "devices": devices
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard devices error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/devices/<int:device_id>/control", methods=["POST"])
+def api_dashboard_device_control(device_id):
+    """Control a smart home device."""
+    try:
+        from ha_client import HAClient
+
+        data = request.json or {}
+        action = data.get("action", "toggle")
+
+        config = get_config()
+        ha_url = config.get("ha_url", "")
+        ha_token = config.get("ha_token", "")
+
+        if not ha_url or not ha_token:
+            return jsonify({"error": "Home Assistant not configured"}), 400
+
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        cur.execute("""
+            SELECT entity_id, device_type
+            FROM home_assistant_devices
+            WHERE id = %s
+        """, (device_id,))
+
+        device = cur.fetchone()
+        if not device:
+            return jsonify({"error": "Device not found"}), 404
+
+        device = dict(device)
+
+        ha = HAClient(ha_url, ha_token)
+
+        # Execute action
+        if action == "toggle":
+            service = "toggle" if device['device_type'] == 'light' else "toggle"
+            success = ha.call_service(device['device_type'], service, {"entity_id": device['entity_id']})
+        elif action == "on":
+            success = ha.call_service(device['device_type'], "turn_on", {"entity_id": device['entity_id']})
+        elif action == "off":
+            success = ha.call_service(device['device_type'], "turn_off", {"entity_id": device['entity_id']})
+        else:
+            success = False
+
+        return jsonify({
+            "success": success,
+            "device_id": device_id,
+            "action": action
+        })
+
+    except Exception as e:
+        log.error(f"Device control error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/settings", methods=["GET"])
+def api_dashboard_settings():
+    """Get dashboard settings."""
+    try:
+        config = get_config()
+
+        return jsonify({
+            "success": True,
+            "voice_enabled": config.get("voice_enabled", "true") == "true",
+            "morning_briefing_time": config.get("morning_briefing_time", "07:00"),
+            "theme": config.get("theme", "dark_orange"),
+            "jarvis_voice_id": config.get("jarvis_voice_id", "alistair")
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard settings error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dashboard/settings", methods=["POST"])
+def api_dashboard_settings_update():
+    """Update dashboard settings."""
+    try:
+        data = request.json or {}
+
+        updates = {}
+        if "voice_enabled" in data:
+            updates["voice_enabled"] = "true" if data["voice_enabled"] else "false"
+        if "morning_briefing_time" in data:
+            updates["morning_briefing_time"] = data["morning_briefing_time"]
+        if "theme" in data:
+            updates["theme"] = data["theme"]
+
+        if updates:
+            set_config(updates)
+
+        return jsonify({
+            "success": True,
+            "message": "Settings updated"
+        })
+
+    except Exception as e:
+        log.error(f"Dashboard settings update error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TASKS API ENDPOINTS (For Chat & Dashboard)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/tasks", methods=["GET"])
+def api_get_tasks():
+    """Get all tasks."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        filter_type = request.args.get('filter', 'all')
+
+        if filter_type == 'pending':
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed
+                FROM tasks
+                WHERE completed = false
+                ORDER BY due_date ASC
+                LIMIT 100
+            """)
+        elif filter_type == 'completed':
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed
+                FROM tasks
+                WHERE completed = true
+                ORDER BY due_date DESC
+                LIMIT 100
+            """)
+        else:  # all
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed
+                FROM tasks
+                ORDER BY completed ASC, due_date ASC
+                LIMIT 100
+            """)
+
+        tasks = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(tasks),
+            "tasks": tasks
+        })
+
+    except Exception as e:
+        log.error(f"Get tasks error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tasks", methods=["POST"])
+def api_create_task():
+    """Create a new task."""
+    try:
+        data = request.json or {}
+        title = data.get('title', '')
+        due_date = data.get('due_date')
+        priority = data.get('priority', 'medium')
+        description = data.get('description', '')
+
+        if not title:
+            return jsonify({"error": "title required"}), 400
+
+        db = get_db()
+        cur = db.cursor()
+
+        cur.execute("""
+            INSERT INTO tasks (title, description, due_date, priority, completed)
+            VALUES (%s, %s, %s, %s, false)
+            RETURNING id
+        """, (title, description, due_date, priority))
+
+        task_id = cur.fetchone()[0]
+        db.commit()
+
+        return jsonify({
+            "success": True,
+            "id": task_id,
+            "title": title
+        })
+
+    except Exception as e:
+        log.error(f"Create task error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>", methods=["PUT"])
+def api_update_task(task_id):
+    """Update a task."""
+    try:
+        data = request.json or {}
+        db = get_db()
+        cur = db.cursor()
+
+        if 'completed' in data:
+            completed = data['completed']
+            cur.execute("""
+                UPDATE tasks
+                SET completed = %s, completed_at = %s
+                WHERE id = %s
+            """, (completed, datetime.now(TZ) if completed else None, task_id))
+
+        if 'title' in data:
+            cur.execute("UPDATE tasks SET title = %s WHERE id = %s", (data['title'], task_id))
+
+        if 'due_date' in data:
+            cur.execute("UPDATE tasks SET due_date = %s WHERE id = %s", (data['due_date'], task_id))
+
+        if 'priority' in data:
+            cur.execute("UPDATE tasks SET priority = %s WHERE id = %s", (data['priority'], task_id))
+
+        db.commit()
+
+        return jsonify({"success": True, "task_id": task_id})
+
+    except Exception as e:
+        log.error(f"Update task error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
+def api_delete_task(task_id):
+    """Delete a task."""
+    try:
+        db = get_db()
+        cur = db.cursor()
+
+        cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+        db.commit()
+
+        return jsonify({"success": True, "task_id": task_id})
+
+    except Exception as e:
+        log.error(f"Delete task error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ASSIGNMENTS API ENDPOINTS (For Chat & Dashboard)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/assignments", methods=["GET"])
+def api_get_assignments():
+    """Get all assignments."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        filter_type = request.args.get('filter', 'all')
+
+        if filter_type == 'pending':
+            cur.execute("""
+                SELECT id, title, due_date, class_name, completed_at, notes
+                FROM completions
+                WHERE completed_at IS NULL
+                ORDER BY due_date ASC
+                LIMIT 100
+            """)
+        elif filter_type == 'completed':
+            cur.execute("""
+                SELECT id, title, due_date, class_name, completed_at, notes
+                FROM completions
+                WHERE completed_at IS NOT NULL
+                ORDER BY completed_at DESC
+                LIMIT 100
+            """)
+        else:  # all
+            cur.execute("""
+                SELECT id, title, due_date, class_name, completed_at, notes
+                FROM completions
+                ORDER BY completed_at IS NULL DESC, due_date ASC
+                LIMIT 100
+            """)
+
+        assignments = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(assignments),
+            "assignments": assignments
+        })
+
+    except Exception as e:
+        log.error(f"Get assignments error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/assignments/<int:assignment_id>", methods=["PUT"])
+def api_update_assignment(assignment_id):
+    """Update an assignment (mark complete or add notes)."""
+    try:
+        data = request.json or {}
+        db = get_db()
+        cur = db.cursor()
+
+        if 'notes' in data:
+            cur.execute("""
+                UPDATE completions
+                SET notes = %s
+                WHERE id = %s
+            """, (data['notes'], assignment_id))
+
+        if data.get('completed'):
+            cur.execute("""
+                UPDATE completions
+                SET completed_at = %s
+                WHERE id = %s
+            """, (datetime.now(TZ), assignment_id))
+
+        db.commit()
+
+        return jsonify({"success": True, "assignment_id": assignment_id})
+
+    except Exception as e:
+        log.error(f"Update assignment error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
