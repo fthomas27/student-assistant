@@ -1,3 +1,4 @@
+# Core dependencies
 flask
 icalendar
 recurring-ical-events
@@ -10,7 +11,9 @@ gunicorn
 python-socketio
 python-engineio
 openai
-porcupine-client
+
+# Voice & Audio (optional - gracefully degrades if not available)
+# porcupine-client  # Requires authentication from Picovoice console - install manually if needed
 faster-whisper
 pyttsx3
 python-dotenv
@@ -18,3 +21,7 @@ numpy
 scipy
 sounddevice
 soundfile
+
+# Optional document processing
+# PyPDF2  # For PDF support - uncomment if needed
+# python-docx  # For DOCX support - uncomment if needed
