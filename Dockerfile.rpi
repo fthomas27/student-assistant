@@ -1,0 +1,60 @@
+# Jarvis Voice Assistant - Dockerfile for Raspberry Pi 5
+# Build with: docker build -f Dockerfile.rpi -t jarvis:latest .
+# Run with: docker run -d --name jarvis \
+#   -e DATABASE_URL=postgresql://user:pass@db:5432/jarvis \
+#   -e ANTHROPIC_API_KEY=your_key \
+#   -e ELEVENLABS_API_KEY=your_key \
+#   -e OPENAI_API_KEY=your_key \
+#   -p 5000:5000 \
+#   --device /dev/snd \
+#   jarvis:latest
+
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    portaudio19-dev \
+    alsa-utils \
+    sox \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY app.py .
+COPY conversation_manager.py .
+COPY memory_manager.py .
+COPY note_manager.py .
+COPY ha_client.py .
+COPY wake_word_detector.py .
+COPY stt_handler.py .
+COPY tts_handler.py .
+COPY voice_api.py .
+COPY notes_api.py .
+COPY templates/ ./templates/
+
+# Create logs directory
+RUN mkdir -p /var/log/jarvis
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/api/config')" || exit 1
+
+# Expose Flask port
+EXPOSE 5000
+
+# Set environment defaults
+ENV FLASK_ENV=production
+ENV PYTHONUNBUFFERED=1
+
+# Run Flask app
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:app"]

@@ -16,7 +16,7 @@ class TTSHandler:
     def __init__(
         self,
         api_key: str = None,
-        voice_id: str = "callum",
+        voice_id: str = "alistair",
         use_fallback: bool = False
     ):
         """
@@ -24,7 +24,7 @@ class TTSHandler:
 
         Args:
             api_key: ElevenLabs API key
-            voice_id: Voice ID to use (e.g., 'callum', 'ollie', 'grace')
+            voice_id: Voice ID to use (e.g., 'alistair', 'callum', 'ollie', 'grace')
             use_fallback: Force use of fallback TTS
         """
         self.api_key = api_key or os.environ.get("ELEVENLABS_API_KEY")
