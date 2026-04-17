@@ -1164,11 +1164,6 @@ def api_csrf_token():
     return jsonify({"csrf_token": session.get('csrf_token')})
 
 
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-
 @app.route("/api/assignments")
 def api_assignments():
     try:
