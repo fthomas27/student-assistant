@@ -406,12 +406,36 @@ CREATE TABLE IF NOT EXISTS home_assistant_devices (
     last_updated TIMESTAMPTZ
 )""")
 
+    cur.execute("""CREATE TABLE IF NOT EXISTS decision_records (
+    id SERIAL PRIMARY KEY,
+    conversation_id INTEGER REFERENCES conversations(id),
+    decision_summary TEXT NOT NULL,
+    decision_type VARCHAR(50),
+    stakeholders JSONB,
+    outcome TEXT,
+    satisfaction INTEGER,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ
+)""")
+
+    cur.execute("""CREATE TABLE IF NOT EXISTS decision_lessons (
+    id SERIAL PRIMARY KEY,
+    decision_id INTEGER REFERENCES decision_records(id) ON DELETE CASCADE,
+    lesson_text TEXT NOT NULL,
+    pattern TEXT,
+    confidence FLOAT DEFAULT 0.5,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+)""")
+
     cur.execute("CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_note_tags_note ON note_tags(note_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_user_memories_category ON user_memories(category)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_daily_briefings_date ON daily_briefings(briefing_date)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_decision_records_type ON decision_records(decision_type)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_decision_records_conversation ON decision_records(conversation_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_decision_lessons_decision ON decision_lessons(decision_id)")
 
     defaults = {
         "name": "Finn",
@@ -3117,6 +3141,107 @@ def api_ha_status():
 
     except Exception as e:
         log.error(f"HA status error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# DECISION TRACKING ROUTES
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/decisions", methods=["POST"])
+def api_record_decision():
+    """Record a decision for future learning and outcome tracking."""
+    try:
+        from conversation_manager import ConversationManager
+
+        data = request.json or {}
+        conversation_id = data.get('conversation_id')
+        decision_summary = data.get('decision_summary')
+        decision_type = data.get('decision_type')
+        stakeholders = data.get('stakeholders', [])
+
+        if not all([conversation_id, decision_summary, decision_type]):
+            return jsonify({"error": "conversation_id, decision_summary, and decision_type required"}), 400
+
+        db = get_db()
+        conv_manager = ConversationManager(db)
+
+        decision_id = conv_manager.record_decision(
+            conversation_id,
+            decision_summary,
+            decision_type,
+            stakeholders
+        )
+
+        return jsonify({
+            "success": decision_id is not None,
+            "decision_id": decision_id
+        })
+
+    except Exception as e:
+        log.error(f"Record decision error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/decisions/<int:decision_id>/outcome", methods=["POST"])
+def api_report_decision_outcome(decision_id):
+    """Report how a past decision turned out."""
+    try:
+        from conversation_manager import ConversationManager
+
+        data = request.json or {}
+        outcome_summary = data.get('outcome_summary')
+        satisfaction = data.get('satisfaction')  # 1-5 scale
+
+        if not outcome_summary:
+            return jsonify({"error": "outcome_summary required"}), 400
+
+        if satisfaction is not None:
+            if not (1 <= int(satisfaction) <= 5):
+                return jsonify({"error": "satisfaction must be 1-5"}), 400
+
+        db = get_db()
+        conv_manager = ConversationManager(db)
+
+        conv_manager.report_decision_outcome(decision_id, outcome_summary, satisfaction)
+
+        return jsonify({
+            "success": True,
+            "decision_id": decision_id,
+            "message": "Decision outcome recorded and lessons extracted"
+        })
+
+    except Exception as e:
+        log.error(f"Report decision outcome error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/decisions/similar", methods=["GET"])
+def api_similar_past_decisions():
+    """Retrieve similar past decisions to learn from patterns."""
+    try:
+        from conversation_manager import ConversationManager
+
+        decision_type = request.args.get('decision_type')
+        limit = int(request.args.get('limit', 3))
+
+        if not decision_type:
+            return jsonify({"error": "decision_type query parameter required"}), 400
+
+        db = get_db()
+        conv_manager = ConversationManager(db)
+
+        similar = conv_manager.get_similar_past_decisions(decision_type, limit=limit)
+
+        return jsonify({
+            "success": True,
+            "decision_type": decision_type,
+            "count": len(similar),
+            "similar_decisions": similar
+        })
+
+    except Exception as e:
+        log.error(f"Similar past decisions error: {e}")
         return jsonify({"error": str(e)}), 500
 
 

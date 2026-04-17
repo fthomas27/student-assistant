@@ -1,5 +1,6 @@
 """
 Conversation manager: Handles multi-turn context and Claude API integration for Jarvis.
+Now with decision-making superpowers for life/career/interpersonal decisions.
 """
 
 import os
@@ -23,6 +24,24 @@ class ConversationManager:
         self.model = "claude-sonnet-4-6"
         self.current_conversation_id: Optional[int] = None
         self.current_exchanges = 0
+
+        # Decision-making enhancements
+        self.in_decision_mode = False
+        self.current_decision_type = None
+        self.decision_stakeholders = []
+
+        # Initialize optional modules if available
+        try:
+            from decision_analyzer import DecisionAnalyzer
+            self.decision_analyzer = DecisionAnalyzer()
+        except ImportError:
+            self.decision_analyzer = None
+
+        try:
+            from web_search import WebSearch
+            self.web_search = WebSearch()
+        except ImportError:
+            self.web_search = None
 
     def start_conversation(self) -> int:
         """Start a new conversation session."""
@@ -97,26 +116,48 @@ class ConversationManager:
         max_tokens: int = 1024
     ) -> str:
         """Get a response from Claude with Jarvis personality."""
+        # Use Jarvis tools by default if none provided
+        if tools is None:
+            try:
+                from jarvis_tools import get_jarvis_tools
+                tools = get_jarvis_tools()
+            except ImportError:
+                tools = None
+
         # Get conversation history
         history = self.get_conversation_history(conversation_id, limit=10)
 
         # Build context
         context = self.build_context_for_claude(conversation_id, user_memories)
 
-        # System prompt for Jarvis personality
-        system_prompt = """You are Jarvis, a sophisticated and helpful personal AI assistant.
-Your personality is:
-- Professional but warm and friendly
-- British accent in speech (even though this is text, maintain that tone)
-- Helpful, proactive, and thoughtful
-- Occasionally witty, but never forced or annoying
-- Respectful of the user's time and preferences
-- Good at remembering context from previous conversations
+        # System prompt for Jarvis personality - now with decision-making focus
+        system_prompt = """You are Jarvis, a sophisticated personal AI assistant. You are their decision-making partner.
 
-You run smart home devices via Home Assistant, manage tasks and calendar, and keep detailed notes.
-You should be concise in responses (aim for 2-3 sentences for quick queries).
-For complex queries, ask if the user wants extended details or offer to dive deeper.
-Always be truthful and admit when you don't know something."""
+Your personality:
+- British accent in tone (professional, warm, occasionally witty)
+- Like a smart friend who knows them well
+- Conversational and natural - ask questions that feel like real conversation, not interrogation
+- You proactively help them think through decisions they're facing
+- You help them see risks and consequences they might miss
+
+How you help with decisions:
+- Listen for what they really want vs. what they think they should do
+- Ask clarifying questions naturally ("What does 'growing' mean to you specifically?")
+- Help them think through who else is affected and how
+- Surface hidden assumptions they're making
+- Map out consequences across different timeframes (immediate, 1yr, 5yr, 10yr)
+- Reference similar past decisions if relevant ("This reminds me of when you...")
+- Never tell them what to do - help them think better
+- Ask the hard questions: "What would you regret most if you do this?" "What would you regret if you don't?"
+
+Remember:
+- Their biggest blind spot: missing hidden risks and consequences
+- They often make life/career and interpersonal decisions
+- Reversibility matters (can they undo this if it goes wrong?)
+- People impacts matter most (how does this affect relationships?)
+
+You're concise with simple questions, but you go deep with complex decisions.
+Always be truthful and admit what you don't know."""
 
         # Format messages for Claude
         messages = []
@@ -152,6 +193,289 @@ Always be truthful and admit when you don't know something."""
                     break
 
             # Add messages to database
+            self.add_message(conversation_id, "user", user_message)
+            self.add_message(conversation_id, "assistant", assistant_message)
+
+            # Update exchange count
+            cur = self.db.cursor()
+            cur.execute("""
+                UPDATE conversations
+                SET total_exchanges = total_exchanges + 1
+                WHERE id = %s
+            """, (conversation_id,))
+            self.db.commit()
+            self.current_exchanges += 1
+
+            return assistant_message
+
+        except anthropic.APIError as e:
+            log.error(f"Claude API error: {e}")
+            raise
+
+    def detect_decision_moment(self, user_message: str) -> bool:
+        """Detect if user is working through a decision."""
+        decision_keywords = [
+            # Uncertainty/deliberation
+            "thinking about", "considering", "should i", "wondering if", "not sure",
+            "torn between", "can't decide", "trying to figure out",
+            # Emotional/concern
+            "worried about", "anxious about", "scared of", "nervous about",
+            "feel like", "want to", "need to", "should",
+            # Major life events
+            "career", "job", "relationship", "moving", "leave", "quit",
+            "break up", "ask them", "tell them", "change",
+            # Decision framing
+            "decision", "choice", "should i", "is it right", "am i making a mistake"
+        ]
+
+        message_lower = user_message.lower()
+        keyword_matches = sum(1 for kw in decision_keywords if kw in message_lower)
+
+        # If multiple decision keywords or specific decision phrases, activate decision mode
+        is_decision = keyword_matches >= 2 or any(
+            phrase in message_lower
+            for phrase in ["i'm thinking about", "should i", "i'm worried", "i'm considering"]
+        )
+
+        return is_decision
+
+    def should_use_extended_thinking(self, user_message: str, decision_type: str = None) -> bool:
+        """Determine if extended thinking (deep reasoning) should be activated.
+
+        Extended thinking is used for:
+        - Life-changing decisions (career change, major relationship decisions)
+        - Decisions with high emotional stakes or multiple stakeholders
+        - Complex trade-offs requiring systematic analysis
+        - When user explicitly asks for deep thinking
+        """
+        message_lower = user_message.lower()
+
+        # Explicit requests for deep thinking
+        if any(phrase in message_lower for phrase in [
+            "think deeply", "really think", "tell me everything", "comprehensive",
+            "pros and cons", "serious decision", "help me think through"
+        ]):
+            return True
+
+        # High-stakes decision types
+        if decision_type:
+            high_stakes_types = ["career", "life_major", "interpersonal"]
+            if decision_type in high_stakes_types:
+                # Also check for complexity indicators
+                complexity_indicators = [
+                    "multiple", "conflicting", "trade-off", "tension",
+                    "worried", "anxious", "torn", "both"
+                ]
+                has_complexity = any(ind in message_lower for ind in complexity_indicators)
+                if has_complexity:
+                    return True
+
+        # Major life/career/interpersonal keywords with emotional intensity
+        major_keywords = ["career", "job", "quit", "leave", "relationship", "marry", "break up"]
+        emotional_keywords = ["worried", "anxious", "scared", "nervous", "torn", "conflicted"]
+
+        has_major = any(kw in message_lower for kw in major_keywords)
+        has_emotion = any(kw in message_lower for kw in emotional_keywords)
+
+        if has_major and has_emotion:
+            return True
+
+        return False
+
+    def analyze_decision_context(self, user_message: str, conversation_id: int) -> Dict:
+        """Analyze the decision being discussed."""
+        if not self.decision_analyzer:
+            return {}
+
+        analysis = {}
+
+        # Identify decision type
+        decision_type = self.decision_analyzer.identify_decision_type(user_message)
+        analysis['type'] = decision_type.value
+
+        # Extract stakeholders
+        stakeholders = self.decision_analyzer.extract_stakeholders(user_message)
+        analysis['stakeholders'] = stakeholders
+
+        # Identify hidden assumptions
+        assumptions = self.decision_analyzer.identify_hidden_assumptions(user_message)
+        analysis['assumptions'] = assumptions
+
+        # Generate probing questions
+        questions = self.decision_analyzer.generate_probing_questions(decision_type)
+        analysis['probing_questions'] = questions
+
+        # Get consequence map template
+        analysis['consequence_map'] = self.decision_analyzer.map_consequences(user_message)
+
+        # Research background if available
+        if self.web_search and self.web_search.is_available():
+            try:
+                research = self.web_search.research_decision(user_message, questions[:2])
+                analysis['research'] = research
+            except Exception as e:
+                log.debug(f"Background research failed: {e}")
+
+        return analysis
+
+    def enhance_response_with_decision_context(self, response: str, analysis: Dict, conversation_id: int) -> str:
+        """Enhance response with decision context (questions, research, etc.)."""
+        if not analysis:
+            return response
+
+        # Don't dump analysis - weave it naturally
+        # Claude's response should already incorporate probing questions naturally
+        # We just ensure the context was passed in the system prompt
+
+        return response
+
+    def get_jarvis_response_with_decisions(
+        self,
+        user_message: str,
+        conversation_id: int,
+        user_memories: List[str] = None,
+        tools: List[Dict] = None,
+        max_tokens: int = 1024
+    ) -> str:
+        """Enhanced get_jarvis_response that handles decisions specially with extended thinking for complex decisions."""
+
+        # Use Jarvis tools by default if none provided
+        if tools is None:
+            try:
+                from jarvis_tools import get_jarvis_tools
+                tools = get_jarvis_tools()
+            except ImportError:
+                tools = None
+
+        # Check if this is a decision moment
+        is_decision = self.detect_decision_moment(user_message)
+
+        enhanced_context = ""
+        system_prompt_addition = ""
+        use_extended_thinking = False
+
+        if is_decision:
+            # Analyze the decision
+            analysis = self.analyze_decision_context(user_message, conversation_id)
+            self.in_decision_mode = True
+            self.current_decision_type = analysis.get('type')
+
+            # Determine if deep reasoning is needed
+            use_extended_thinking = self.should_use_extended_thinking(
+                user_message,
+                decision_type=self.current_decision_type
+            )
+
+            # Build context for Claude about this decision
+            if analysis.get('stakeholders'):
+                affected = ", ".join([s['name'] for s in analysis['stakeholders']])
+                system_prompt_addition += f"\n\nThis appears to be a decision about {analysis.get('type')}. People affected: {affected}"
+
+            if analysis.get('assumptions'):
+                system_prompt_addition += f"\n\nHidden assumptions to gently surface: {'; '.join(analysis['assumptions'][:2])}"
+
+            if analysis.get('probing_questions'):
+                system_prompt_addition += f"\n\nKey questions to explore naturally: {'; '.join(analysis['probing_questions'][:3])}"
+
+            # Add extended thinking notice to system prompt
+            if use_extended_thinking:
+                system_prompt_addition += f"\n\n[EXTENDED THINKING ACTIVATED] This is a complex {self.current_decision_type} decision. Take time to reason deeply about: consequences across time horizons, stakeholder impacts, reversibility, hidden assumptions, and what the user really wants vs. what they think they should do."
+
+        # Use the base get_jarvis_response but with enhanced context
+        return self._get_jarvis_response_with_context(
+            user_message,
+            conversation_id,
+            user_memories=user_memories,
+            tools=tools,
+            max_tokens=max_tokens,
+            system_addition=system_prompt_addition,
+            use_extended_thinking=use_extended_thinking
+        )
+
+    def _get_jarvis_response_with_context(
+        self,
+        user_message: str,
+        conversation_id: int,
+        user_memories: List[str] = None,
+        tools: List[Dict] = None,
+        max_tokens: int = 1024,
+        system_addition: str = "",
+        use_extended_thinking: bool = False
+    ) -> str:
+        """Internal method - same as get_jarvis_response but with optional system prompt addition and extended thinking."""
+        history = self.get_conversation_history(conversation_id, limit=10)
+        context = self.build_context_for_claude(conversation_id, user_memories)
+
+        # Base system prompt
+        system_prompt = """You are Jarvis, a sophisticated personal AI assistant. You are their decision-making partner.
+
+Your personality:
+- British accent in tone (professional, warm, occasionally witty)
+- Like a smart friend who knows them well
+- Conversational and natural - ask questions that feel like real conversation, not interrogation
+- You proactively help them think through decisions they're facing
+- You help them see risks and consequences they might miss
+
+How you help with decisions:
+- Listen for what they really want vs. what they think they should do
+- Ask clarifying questions naturally ("What does 'growing' mean to you specifically?")
+- Help them think through who else is affected and how
+- Surface hidden assumptions they're making
+- Map out consequences across different timeframes (immediate, 1yr, 5yr, 10yr)
+- Reference similar past decisions if relevant ("This reminds me of when you...")
+- Never tell them what to do - help them think better
+- Ask the hard questions: "What would you regret most if you do this?" "What would you regret if you don't?"
+
+Remember:
+- Their biggest blind spot: missing hidden risks and consequences
+- They often make life/career and interpersonal decisions
+- Reversibility matters (can they undo this if it goes wrong?)
+- People impacts matter most (how does this affect relationships?)
+
+You're concise with simple questions, but you go deep with complex decisions.
+Always be truthful and admit what you don't know."""
+
+        # Add decision-specific context if provided
+        if system_addition:
+            system_prompt += system_addition
+
+        # Format messages
+        messages = []
+        for msg in history:
+            messages.append({"role": msg['role'], "content": msg['content']})
+        messages.append({"role": "user", "content": user_message})
+
+        # Call Claude
+        try:
+            api_kwargs = {
+                "model": self.model,
+                "max_tokens": max_tokens,
+                "system": system_prompt,
+                "messages": messages,
+            }
+
+            # Add extended thinking for complex decisions
+            if use_extended_thinking:
+                api_kwargs["thinking"] = {
+                    "type": "enabled",
+                    "budget_tokens": 10000
+                }
+                # Extended thinking needs larger max_tokens for response
+                api_kwargs["max_tokens"] = 16000
+
+            # Add tools if provided
+            if tools:
+                api_kwargs["tools"] = tools
+
+            response = self.client.messages.create(**api_kwargs)
+
+            assistant_message = ""
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    assistant_message = block.text
+                    break
+
+            # Store messages
             self.add_message(conversation_id, "user", user_message)
             self.add_message(conversation_id, "assistant", assistant_message)
 
@@ -235,6 +559,163 @@ Return ONLY the JSON array, no other text."""
 
         self.db.commit()
         log.info(f"Stored {len(extracted_memories)} extracted memories")
+
+    def record_decision(self, conversation_id: int, decision_summary: str, decision_type: str, stakeholders: List[str]) -> int:
+        """Record a decision for future learning and outcome tracking.
+
+        Returns decision record ID for later outcome updates.
+        """
+        cur = self.db.cursor()
+
+        try:
+            cur.execute("""
+                INSERT INTO decision_records (
+                    conversation_id, decision_summary, decision_type,
+                    stakeholders, created_at, outcome
+                )
+                VALUES (%s, %s, %s, %s, NOW(), %s)
+                RETURNING id
+            """, (
+                conversation_id,
+                decision_summary,
+                decision_type,
+                json.dumps(stakeholders),
+                None  # outcome unknown initially
+            ))
+
+            decision_id = cur.fetchone()[0]
+            self.db.commit()
+            log.info(f"Recorded decision {decision_id} of type {decision_type}")
+            return decision_id
+
+        except Exception as e:
+            log.error(f"Error recording decision: {e}")
+            return None
+
+    def report_decision_outcome(self, decision_id: int, outcome_summary: str, satisfaction: int = None):
+        """User reports back on how a past decision turned out.
+
+        Allows Jarvis to learn patterns and improve future decision guidance.
+        satisfaction: 1-5 scale (1=regret, 5=very satisfied)
+        """
+        if not decision_id:
+            return
+
+        cur = self.db.cursor()
+
+        try:
+            cur.execute("""
+                UPDATE decision_records
+                SET outcome = %s, satisfaction = %s, updated_at = NOW()
+                WHERE id = %s
+            """, (outcome_summary, satisfaction, decision_id))
+
+            self.db.commit()
+
+            # Extract lessons from the outcome
+            if satisfaction:
+                self._learn_from_decision_outcome(decision_id, outcome_summary, satisfaction)
+
+            log.info(f"Updated decision {decision_id} with outcome and satisfaction {satisfaction}")
+
+        except Exception as e:
+            log.error(f"Error reporting decision outcome: {e}")
+
+    def _learn_from_decision_outcome(self, decision_id: int, outcome_summary: str, satisfaction: int):
+        """Extract lessons from a decision outcome to improve future guidance."""
+        if not self.client:
+            return
+
+        try:
+            cur = self.db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute("""
+                SELECT decision_summary, decision_type, stakeholders
+                FROM decision_records
+                WHERE id = %s
+            """, (decision_id,))
+
+            row = cur.fetchone()
+            if not row:
+                return
+
+            decision_info = dict(row)
+            stakeholders = json.loads(decision_info.get('stakeholders', '[]'))
+
+            # Use Claude to extract lessons
+            lesson_prompt = f"""Analyze this decision and its outcome to extract lessons:
+
+Decision ({decision_info['decision_type']}): {decision_info['decision_summary']}
+
+Outcome: {outcome_summary}
+
+User satisfaction: {satisfaction}/5
+
+What can we learn from this?
+Focus on: What risks materialized? What went better than expected? What would the user recommend to themselves?
+Return JSON: {{"lessons": ["...", "..."], "pattern": "...", "confidence": 0.0-1.0}}
+Return ONLY JSON, no other text."""
+
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=500,
+                messages=[{"role": "user", "content": lesson_prompt}]
+            )
+
+            response_text = response.content[0].text
+            lessons_data = json.loads(response_text)
+
+            # Store lessons
+            if lessons_data.get('lessons'):
+                for lesson in lessons_data['lessons']:
+                    cur.execute("""
+                        INSERT INTO decision_lessons (
+                            decision_id, lesson_text, pattern, confidence, created_at
+                        )
+                        VALUES (%s, %s, %s, %s, NOW())
+                    """, (
+                        decision_id,
+                        lesson,
+                        lessons_data.get('pattern'),
+                        lessons_data.get('confidence', 0.5)
+                    ))
+
+            self.db.commit()
+            log.info(f"Extracted {len(lessons_data.get('lessons', []))} lessons from decision {decision_id}")
+
+        except (json.JSONDecodeError, Exception) as e:
+            log.error(f"Error extracting lessons: {e}")
+
+    def get_similar_past_decisions(self, decision_type: str, limit: int = 3) -> List[Dict]:
+        """Retrieve similar past decisions to learn from patterns."""
+        cur = self.db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        try:
+            cur.execute("""
+                SELECT id, decision_summary, outcome, satisfaction, created_at
+                FROM decision_records
+                WHERE decision_type = %s AND outcome IS NOT NULL
+                ORDER BY updated_at DESC
+                LIMIT %s
+            """, (decision_type, limit))
+
+            similar = [dict(row) for row in cur.fetchall()]
+
+            # Enrich with lessons
+            for decision in similar:
+                cur.execute("""
+                    SELECT lesson_text, pattern, confidence
+                    FROM decision_lessons
+                    WHERE decision_id = %s
+                    ORDER BY confidence DESC
+                """, (decision['id'],))
+
+                decision['lessons'] = [dict(row) for row in cur.fetchall()]
+
+            return similar
+
+        except Exception as e:
+            log.error(f"Error retrieving similar decisions: {e}")
+            return []
 
     def end_conversation(self, conversation_id: int):
         """End the current conversation."""
