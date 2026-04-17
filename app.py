@@ -3723,6 +3723,224 @@ def api_dashboard_settings_update():
         return jsonify({"error": str(e)}), 500
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# TASKS API ENDPOINTS (For Chat & Dashboard)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/tasks", methods=["GET"])
+def api_get_tasks():
+    """Get all tasks."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        filter_type = request.args.get('filter', 'all')
+
+        if filter_type == 'pending':
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed
+                FROM tasks
+                WHERE completed = false
+                ORDER BY due_date ASC
+                LIMIT 100
+            """)
+        elif filter_type == 'completed':
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed
+                FROM tasks
+                WHERE completed = true
+                ORDER BY due_date DESC
+                LIMIT 100
+            """)
+        else:  # all
+            cur.execute("""
+                SELECT id, title, due_date, priority, completed
+                FROM tasks
+                ORDER BY completed ASC, due_date ASC
+                LIMIT 100
+            """)
+
+        tasks = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(tasks),
+            "tasks": tasks
+        })
+
+    except Exception as e:
+        log.error(f"Get tasks error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tasks", methods=["POST"])
+def api_create_task():
+    """Create a new task."""
+    try:
+        data = request.json or {}
+        title = data.get('title', '')
+        due_date = data.get('due_date')
+        priority = data.get('priority', 'medium')
+        description = data.get('description', '')
+
+        if not title:
+            return jsonify({"error": "title required"}), 400
+
+        db = get_db()
+        cur = db.cursor()
+
+        cur.execute("""
+            INSERT INTO tasks (title, description, due_date, priority, completed)
+            VALUES (%s, %s, %s, %s, false)
+            RETURNING id
+        """, (title, description, due_date, priority))
+
+        task_id = cur.fetchone()[0]
+        db.commit()
+
+        return jsonify({
+            "success": True,
+            "id": task_id,
+            "title": title
+        })
+
+    except Exception as e:
+        log.error(f"Create task error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>", methods=["PUT"])
+def api_update_task(task_id):
+    """Update a task."""
+    try:
+        data = request.json or {}
+        db = get_db()
+        cur = db.cursor()
+
+        if 'completed' in data:
+            completed = data['completed']
+            cur.execute("""
+                UPDATE tasks
+                SET completed = %s, completed_at = %s
+                WHERE id = %s
+            """, (completed, datetime.now(TZ) if completed else None, task_id))
+
+        if 'title' in data:
+            cur.execute("UPDATE tasks SET title = %s WHERE id = %s", (data['title'], task_id))
+
+        if 'due_date' in data:
+            cur.execute("UPDATE tasks SET due_date = %s WHERE id = %s", (data['due_date'], task_id))
+
+        if 'priority' in data:
+            cur.execute("UPDATE tasks SET priority = %s WHERE id = %s", (data['priority'], task_id))
+
+        db.commit()
+
+        return jsonify({"success": True, "task_id": task_id})
+
+    except Exception as e:
+        log.error(f"Update task error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tasks/<int:task_id>", methods=["DELETE"])
+def api_delete_task(task_id):
+    """Delete a task."""
+    try:
+        db = get_db()
+        cur = db.cursor()
+
+        cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
+        db.commit()
+
+        return jsonify({"success": True, "task_id": task_id})
+
+    except Exception as e:
+        log.error(f"Delete task error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ASSIGNMENTS API ENDPOINTS (For Chat & Dashboard)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@app.route("/api/assignments", methods=["GET"])
+def api_get_assignments():
+    """Get all assignments."""
+    try:
+        db = get_db()
+        cur = db.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+        filter_type = request.args.get('filter', 'all')
+
+        if filter_type == 'pending':
+            cur.execute("""
+                SELECT id, title, due_date, class_name, completed_at, notes
+                FROM completions
+                WHERE completed_at IS NULL
+                ORDER BY due_date ASC
+                LIMIT 100
+            """)
+        elif filter_type == 'completed':
+            cur.execute("""
+                SELECT id, title, due_date, class_name, completed_at, notes
+                FROM completions
+                WHERE completed_at IS NOT NULL
+                ORDER BY completed_at DESC
+                LIMIT 100
+            """)
+        else:  # all
+            cur.execute("""
+                SELECT id, title, due_date, class_name, completed_at, notes
+                FROM completions
+                ORDER BY completed_at IS NULL DESC, due_date ASC
+                LIMIT 100
+            """)
+
+        assignments = [dict(row) for row in cur.fetchall()]
+
+        return jsonify({
+            "success": True,
+            "count": len(assignments),
+            "assignments": assignments
+        })
+
+    except Exception as e:
+        log.error(f"Get assignments error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/assignments/<int:assignment_id>", methods=["PUT"])
+def api_update_assignment(assignment_id):
+    """Update an assignment (mark complete or add notes)."""
+    try:
+        data = request.json or {}
+        db = get_db()
+        cur = db.cursor()
+
+        if 'notes' in data:
+            cur.execute("""
+                UPDATE completions
+                SET notes = %s
+                WHERE id = %s
+            """, (data['notes'], assignment_id))
+
+        if data.get('completed'):
+            cur.execute("""
+                UPDATE completions
+                SET completed_at = %s
+                WHERE id = %s
+            """, (datetime.now(TZ), assignment_id))
+
+        db.commit()
+
+        return jsonify({"success": True, "assignment_id": assignment_id})
+
+    except Exception as e:
+        log.error(f"Update assignment error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 # Initialize database if available
 try:
     init_db()

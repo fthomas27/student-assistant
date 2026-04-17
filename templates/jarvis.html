@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jarvis - Personal AI Assistant</title>
+    <title>Jarvis Chat</title>
     <style>
         * {
             margin: 0;
@@ -22,6 +22,9 @@
             --white-tint-muted: #a0a0a0;
             --border-color: #333333;
             --hover-bg: #2a2a2a;
+            --success: #22c55e;
+            --warning: #eab308;
+            --danger: #ef4444;
         }
 
         body {
@@ -34,7 +37,7 @@
 
         .container {
             display: grid;
-            grid-template-columns: 300px 1fr;
+            grid-template-columns: 280px 1fr;
             height: 100vh;
             gap: 0;
         }
@@ -49,41 +52,41 @@
             padding: 20px;
         }
 
-        .jarvis-header {
+        .sidebar-header {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
             margin-bottom: 30px;
             padding-bottom: 20px;
             border-bottom: 2px solid var(--accent-orange);
         }
 
-        .jarvis-logo {
-            width: 40px;
-            height: 40px;
+        .logo {
+            width: 44px;
+            height: 44px;
             background: linear-gradient(135deg, var(--accent-orange), var(--accent-orange-light));
-            border-radius: 8px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
             color: var(--darker-bg);
-            font-size: 18px;
+            font-size: 20px;
         }
 
-        .jarvis-title {
-            font-size: 20px;
-            font-weight: 600;
+        .logo-text {
+            font-size: 22px;
+            font-weight: 700;
             color: var(--accent-orange-light);
         }
 
         .status-indicator {
             width: 8px;
             height: 8px;
-            background-color: #22c55e;
+            background-color: var(--success);
             border-radius: 50%;
             display: inline-block;
-            margin-left: 10px;
+            margin-left: 8px;
             animation: pulse 2s infinite;
         }
 
@@ -92,51 +95,63 @@
             50% { opacity: 0.5; }
         }
 
-        /* ── Navigation ── */
-        .nav-section {
-            margin-bottom: 30px;
+        /* ── Tabs ── */
+        .tabs {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
-        .nav-label {
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            color: var(--white-tint-muted);
-            margin-bottom: 10px;
-            letter-spacing: 0.5px;
-        }
-
-        .nav-item {
-            padding: 12px;
-            margin-bottom: 8px;
+        .tab-btn {
+            padding: 12px 14px;
             border-radius: 6px;
+            border: 1px solid transparent;
+            background-color: transparent;
+            color: var(--white-tint);
             cursor: pointer;
             transition: all 0.2s;
+            text-align: left;
+            font-size: 14px;
+            font-weight: 500;
             display: flex;
             align-items: center;
             gap: 10px;
-            color: var(--white-tint);
-            border: 1px solid transparent;
         }
 
-        .nav-item:hover {
+        .tab-btn:hover {
             background-color: var(--hover-bg);
             border-color: var(--accent-orange);
             color: var(--accent-orange-light);
         }
 
-        .nav-item.active {
+        .tab-btn.active {
             background-color: var(--accent-orange);
             color: var(--darker-bg);
             font-weight: 600;
+            border-color: var(--accent-orange-light);
         }
 
-        .nav-icon {
+        .tab-icon {
+            font-size: 18px;
             width: 20px;
-            height: 20px;
             display: flex;
             align-items: center;
             justify-content: center;
+        }
+
+        .tab-badge {
+            margin-left: auto;
+            background-color: var(--accent-orange);
+            color: var(--darker-bg);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .tab-btn.active .tab-badge {
+            background-color: var(--darker-bg);
+            color: var(--accent-orange);
         }
 
         /* ── Main Content ── */
@@ -147,88 +162,33 @@
             overflow: hidden;
         }
 
-        .top-bar {
-            padding: 15px 25px;
-            border-bottom: 1px solid var(--border-color);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-shrink: 0;
-        }
-
-        .top-bar-left {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .page-title {
-            font-size: 18px;
-            font-weight: 600;
-            color: var(--white-tint-light);
-        }
-
-        .mode-indicator {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 12px;
-            color: var(--white-tint-muted);
-            padding: 6px 12px;
-            background-color: var(--hover-bg);
-            border-radius: 4px;
-        }
-
-        .mode-badge {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-
-        .mode-badge.voice { background-color: #3b82f6; }
-        .mode-badge.text { background-color: var(--accent-orange); }
-
-        .top-bar-right {
-            display: flex;
-            gap: 10px;
-        }
-
-        .icon-btn {
-            width: 36px;
-            height: 36px;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-            background-color: var(--hover-bg);
-            color: var(--white-tint);
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            font-size: 16px;
-        }
-
-        .icon-btn:hover {
-            border-color: var(--accent-orange);
-            color: var(--accent-orange-light);
-            background-color: var(--accent-orange-dark);
-        }
-
-        /* ── Chat Area ── */
-        .chat-container {
+        .content-area {
             flex: 1;
+            overflow-y: auto;
             display: flex;
             flex-direction: column;
-            overflow: hidden;
         }
 
-        .chat-messages {
+        .tab-content {
+            display: none;
             flex: 1;
             overflow-y: auto;
             padding: 20px 25px;
+            flex-direction: column;
+        }
+
+        .tab-content.active {
+            display: flex;
+        }
+
+        /* ── Chat Tab ── */
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
             display: flex;
             flex-direction: column;
             gap: 15px;
+            margin-bottom: 20px;
         }
 
         .message {
@@ -266,10 +226,151 @@
             font-weight: 500;
         }
 
-        .message-time {
-            font-size: 11px;
+        /* ── Tasks Tab ── */
+        .tasks-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .task-item {
+            padding: 14px;
+            background-color: var(--hover-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .task-item:hover {
+            border-color: var(--accent-orange);
+            background-color: var(--accent-orange-dark);
+        }
+
+        .task-checkbox {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--accent-orange);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            flex-shrink: 0;
+            font-size: 12px;
+            color: var(--darker-bg);
+            background-color: transparent;
+        }
+
+        .task-checkbox.checked {
+            background-color: var(--accent-orange);
+            color: var(--darker-bg);
+        }
+
+        .task-content {
+            flex: 1;
+        }
+
+        .task-title {
+            font-weight: 500;
+            color: var(--white-tint-light);
+            word-break: break-word;
+        }
+
+        .task-due {
+            font-size: 12px;
             color: var(--white-tint-muted);
             margin-top: 4px;
+        }
+
+        .task-priority {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 3px;
+            text-transform: uppercase;
+        }
+
+        .task-priority.high {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        .task-priority.medium {
+            background-color: rgba(234, 179, 8, 0.2);
+            color: #fde047;
+        }
+
+        .task-priority.low {
+            background-color: rgba(34, 197, 94, 0.2);
+            color: #86efac;
+        }
+
+        .task-delete {
+            cursor: pointer;
+            color: var(--accent-orange-light);
+            font-size: 16px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .task-delete:hover {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+
+        /* ── Assignments Tab ── */
+        .assignments-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .assignment-item {
+            padding: 14px;
+            background-color: var(--hover-bg);
+            border: 1px solid var(--accent-orange);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .assignment-item:hover {
+            background-color: var(--accent-orange-dark);
+            border-color: var(--accent-orange-light);
+        }
+
+        .assignment-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .assignment-title {
+            font-weight: 600;
+            color: var(--white-tint-light);
+        }
+
+        .assignment-due {
+            font-size: 12px;
+            color: var(--white-tint-muted);
+        }
+
+        .assignment-note {
+            font-size: 13px;
+            color: var(--white-tint);
+            padding: 8px;
+            background-color: var(--darker-bg);
+            border-radius: 4px;
+            border-left: 3px solid var(--accent-orange);
         }
 
         /* ── Input Area ── */
@@ -278,12 +379,6 @@
             border-top: 1px solid var(--border-color);
             background-color: var(--darker-bg);
             flex-shrink: 0;
-        }
-
-        .input-wrapper {
-            display: flex;
-            gap: 10px;
-            flex-direction: column;
         }
 
         .document-preview {
@@ -312,10 +407,6 @@
             margin-left: 4px;
         }
 
-        .doc-chip .remove:hover {
-            color: var(--accent-orange-dark);
-        }
-
         .input-controls {
             display: flex;
             gap: 10px;
@@ -335,6 +426,7 @@
             justify-content: center;
             transition: all 0.2s;
             font-size: 18px;
+            flex-shrink: 0;
         }
 
         .upload-btn:hover {
@@ -395,6 +487,7 @@
             transition: all 0.2s;
             font-weight: bold;
             font-size: 16px;
+            flex-shrink: 0;
         }
 
         .send-btn:hover {
@@ -412,153 +505,22 @@
             transform: none;
         }
 
-        /* ── Document Panel ── */
-        .document-panel {
-            display: none;
-            flex: 0 0 300px;
-            border-left: 1px solid var(--border-color);
-            background-color: var(--darker-bg);
-            padding: 20px;
-            overflow-y: auto;
-        }
-
-        .document-panel.active {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .panel-title {
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 15px;
-            color: var(--accent-orange-light);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .document-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .document-item {
-            padding: 10px;
-            background-color: var(--hover-bg);
-            border: 1px solid var(--border-color);
+        /* ── Add Item Buttons ── */
+        .add-item-btn {
+            padding: 10px 14px;
+            background-color: var(--accent-orange);
+            color: var(--darker-bg);
+            border: none;
             border-radius: 6px;
             cursor: pointer;
+            font-weight: 600;
+            margin-bottom: 15px;
             transition: all 0.2s;
-            font-size: 12px;
         }
 
-        .document-item:hover {
-            border-color: var(--accent-orange);
-            background-color: var(--accent-orange-dark);
-        }
-
-        .document-item.selected {
-            border-color: var(--accent-orange-light);
-            background-color: var(--accent-orange-dark);
-        }
-
-        /* ── Responsive ── */
-        @media (max-width: 1024px) {
-            .container {
-                grid-template-columns: 1fr;
-            }
-
-            .sidebar {
-                display: none;
-            }
-
-            .message-content {
-                max-width: 85%;
-            }
-
-            .document-panel {
-                flex: 0 0 250px;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                grid-template-columns: 1fr;
-            }
-
-            .chat-messages {
-                padding: 15px;
-            }
-
-            .input-area {
-                padding: 15px;
-            }
-
-            .message-content {
-                max-width: 90%;
-                font-size: 13px;
-            }
-
-            .doc-chip {
-                font-size: 11px;
-            }
-
-            .document-panel {
-                position: absolute;
-                right: 0;
-                top: 0;
-                height: 100%;
-                z-index: 100;
-                box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
-            }
-        }
-
-        /* ── Scrollbar ── */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--accent-orange-dark);
-            border-radius: 4px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--accent-orange);
-        }
-
-        /* ── Loading State ── */
-        .loading {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            color: var(--white-tint-muted);
-            font-size: 13px;
-        }
-
-        .loading-dot {
-            width: 6px;
-            height: 6px;
-            background-color: var(--accent-orange);
-            border-radius: 50%;
-            animation: bounce 1.4s infinite;
-        }
-
-        .loading-dot:nth-child(2) {
-            animation-delay: 0.2s;
-        }
-
-        .loading-dot:nth-child(3) {
-            animation-delay: 0.4s;
-        }
-
-        @keyframes bounce {
-            0%, 100% { opacity: 0.3; transform: translateY(0); }
-            50% { opacity: 1; transform: translateY(-8px); }
+        .add-item-btn:hover {
+            background-color: var(--accent-orange-light);
+            transform: translateY(-1px);
         }
 
         /* ── Empty State ── */
@@ -579,9 +541,120 @@
             opacity: 0.5;
         }
 
-        .empty-text {
-            font-size: 14px;
-            line-height: 1.6;
+        /* ── Modal ── */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background-color: var(--darker-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 25px;
+            max-width: 500px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: var(--accent-orange-light);
+        }
+
+        .modal-input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            background-color: var(--hover-bg);
+            border: 1px solid var(--border-color);
+            color: var(--white-tint);
+            border-radius: 6px;
+            font-family: inherit;
+        }
+
+        .modal-input::placeholder {
+            color: var(--white-tint-muted);
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .modal-btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .modal-btn.save {
+            background-color: var(--accent-orange);
+            color: var(--darker-bg);
+        }
+
+        .modal-btn.save:hover {
+            background-color: var(--accent-orange-light);
+        }
+
+        .modal-btn.cancel {
+            background-color: var(--hover-bg);
+            color: var(--white-tint);
+            border: 1px solid var(--border-color);
+        }
+
+        .modal-btn.cancel:hover {
+            border-color: var(--accent-orange);
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--accent-orange-dark);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-orange);
+        }
+
+        /* ── Responsive ── */
+        @media (max-width: 1024px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                display: none;
+            }
         }
     </style>
 </head>
@@ -589,100 +662,69 @@
     <div class="container">
         <!-- Sidebar -->
         <div class="sidebar">
-            <div class="jarvis-header">
-                <div class="jarvis-logo">J</div>
+            <div class="sidebar-header">
+                <div class="logo">J</div>
                 <div>
-                    <div class="jarvis-title">Jarvis</div>
+                    <div class="logo-text">Jarvis</div>
                     <span class="status-indicator"></span>
                 </div>
             </div>
 
-            <!-- Conversation Section -->
-            <div class="nav-section">
-                <div class="nav-label">Conversation</div>
-                <div class="nav-item active" data-view="chat">
-                    <div class="nav-icon">💬</div>
-                    <span>New Chat</span>
-                </div>
-                <div class="nav-item" data-view="history">
-                    <div class="nav-icon">📚</div>
-                    <span>History</span>
-                </div>
-            </div>
-
-            <!-- Tools Section -->
-            <div class="nav-section">
-                <div class="nav-label">Dashboard</div>
-                <div class="nav-item" data-view="tasks">
-                    <div class="nav-icon">✓</div>
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="chat">
+                    <div class="tab-icon">💬</div>
+                    <span>Chat</span>
+                    <div class="tab-badge" id="chat-badge" style="display:none;">0</div>
+                </button>
+                <button class="tab-btn" data-tab="tasks">
+                    <div class="tab-icon">✓</div>
                     <span>Tasks</span>
-                </div>
-                <div class="nav-item" data-view="notes">
-                    <div class="nav-icon">📝</div>
-                    <span>Notes</span>
-                </div>
-                <div class="nav-item" data-view="calendar">
-                    <div class="nav-icon">📅</div>
-                    <span>Calendar</span>
-                </div>
-                <div class="nav-item" data-view="briefing">
-                    <div class="nav-icon">🌅</div>
-                    <span>Briefing</span>
-                </div>
-            </div>
-
-            <!-- Smart Home Section -->
-            <div class="nav-section">
-                <div class="nav-label">Smart Home</div>
-                <div class="nav-item" data-view="devices">
-                    <div class="nav-icon">🏠</div>
-                    <span>Devices</span>
-                </div>
-            </div>
-
-            <!-- Settings Section -->
-            <div class="nav-section">
-                <div class="nav-label">Settings</div>
-                <div class="nav-item" data-view="settings">
-                    <div class="nav-icon">⚙️</div>
-                    <span>Settings</span>
-                </div>
+                    <div class="tab-badge" id="tasks-badge">0</div>
+                </button>
+                <button class="tab-btn" data-tab="assignments">
+                    <div class="tab-icon">📝</div>
+                    <span>Assignments</span>
+                    <div class="tab-badge" id="assignments-badge">0</div>
+                </button>
             </div>
         </div>
 
         <!-- Main Content -->
         <div class="main-content">
-            <!-- Top Bar -->
-            <div class="top-bar">
-                <div class="top-bar-left">
-                    <div class="page-title">Chat with Jarvis</div>
-                    <div class="mode-indicator">
-                        <span class="mode-badge text"></span>
-                        <span>Text Mode</span>
-                    </div>
-                </div>
-                <div class="top-bar-right">
-                    <button class="icon-btn" id="toggle-docs" title="Toggle Document Panel">📄</button>
-                    <button class="icon-btn" id="settings-btn" title="Settings">⚙️</button>
-                </div>
-            </div>
-
-            <!-- Chat Messages -->
-            <div class="chat-messages" id="chat-messages">
-                <div class="empty-state">
-                    <div class="empty-icon">🤖</div>
-                    <div class="empty-text">
-                        <p>Hello! I'm Jarvis, your personal AI assistant.</p>
-                        <p style="margin-top: 8px; font-size: 12px;">
-                            Start a conversation, upload documents for analysis, or use the dashboard tools.
-                        </p>
+            <!-- Chat Tab -->
+            <div class="tab-content active" id="content-chat">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="empty-state">
+                        <div class="empty-icon">🤖</div>
+                        <div>Hello! I'm Jarvis, your AI assistant.<br>Start chatting or upload a document.</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Input Area -->
-            <div class="input-area">
-                <div class="input-wrapper">
+            <!-- Tasks Tab -->
+            <div class="tab-content" id="content-tasks">
+                <button class="add-item-btn" id="add-task-btn">+ Add Task</button>
+                <div class="tasks-list" id="tasks-list">
+                    <div class="empty-state" style="height: auto; padding: 40px 20px;">
+                        <div class="empty-icon">📋</div>
+                        <div>No tasks yet. Click "Add Task" to create one!</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Assignments Tab -->
+            <div class="tab-content" id="content-assignments">
+                <div class="assignments-list" id="assignments-list">
+                    <div class="empty-state" style="height: auto; padding: 40px 20px;">
+                        <div class="empty-icon">📚</div>
+                        <div>No assignments yet. Assignments sync from the main app.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Area (Chat tab only) -->
+            <div class="input-area" id="input-area">
+                <div style="display: flex; flex-direction: column; gap: 10px;">
                     <div class="document-preview" id="document-preview"></div>
                     <div class="input-controls">
                         <button class="upload-btn" id="upload-btn" title="Upload Document">+</button>
@@ -690,7 +732,7 @@
                         <div class="input-box">
                             <textarea
                                 id="message-input"
-                                placeholder="Type your message... (or upload a document to analyze)"
+                                placeholder="Ask me anything..."
                                 rows="1"
                             ></textarea>
                             <button class="send-btn" id="send-btn">→</button>
@@ -699,25 +741,34 @@
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- Document Panel -->
-        <div class="document-panel" id="document-panel">
-            <div class="panel-title">📄 Documents</div>
-            <div class="document-list" id="document-list">
-                <div style="color: var(--white-tint-muted); font-size: 12px; text-align: center; padding: 20px;">
-                    No documents loaded
-                </div>
+    <!-- Task Modal -->
+    <div class="modal" id="task-modal">
+        <div class="modal-content">
+            <div class="modal-title">Add New Task</div>
+            <input type="text" class="modal-input" id="task-title" placeholder="Task title">
+            <input type="date" class="modal-input" id="task-due-date">
+            <select class="modal-input" id="task-priority">
+                <option value="low">Low Priority</option>
+                <option value="medium" selected>Medium Priority</option>
+                <option value="high">High Priority</option>
+            </select>
+            <div class="modal-buttons">
+                <button class="modal-btn cancel" onclick="closeTaskModal()">Cancel</button>
+                <button class="modal-btn save" onclick="saveTask()">Create Task</button>
             </div>
         </div>
     </div>
 
     <script>
-        // State management
+        // State
         const state = {
-            currentView: 'chat',
+            currentTab: 'chat',
             documents: [],
             selectedDocuments: [],
-            messages: [],
+            tasks: [],
+            assignments: [],
             isLoading: false
         };
 
@@ -727,19 +778,50 @@
         const sendBtn = document.getElementById('send-btn');
         const uploadBtn = document.getElementById('upload-btn');
         const fileInput = document.getElementById('file-input');
-        const toggleDocsBtn = document.getElementById('toggle-docs');
-        const documentPanel = document.getElementById('document-panel');
-        const documentList = document.getElementById('document-list');
-        const documentPreview = document.getElementById('document-preview');
-        const navItems = document.querySelectorAll('.nav-item');
+        const tasksList = document.getElementById('tasks-list');
+        const assignmentsList = document.getElementById('assignments-list');
+        const inputArea = document.getElementById('input-area');
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const tabContents = document.querySelectorAll('.tab-content');
 
-        // Auto-resize textarea
+        // Tab Switching
+        tabBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const tab = btn.dataset.tab;
+                switchTab(tab);
+            });
+        });
+
+        function switchTab(tab) {
+            // Update buttons
+            tabBtns.forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+
+            // Update content
+            tabContents.forEach(content => content.classList.remove('active'));
+            document.getElementById(`content-${tab}`).classList.add('active');
+
+            // Show/hide input area
+            inputArea.style.display = tab === 'chat' ? 'block' : 'none';
+
+            state.currentTab = tab;
+
+            // Load data if needed
+            if (tab === 'tasks' && state.tasks.length === 0) {
+                loadTasks();
+            }
+            if (tab === 'assignments' && state.assignments.length === 0) {
+                loadAssignments();
+            }
+        }
+
+        // ── Chat Functions ──
+
         messageInput.addEventListener('input', () => {
             messageInput.style.height = 'auto';
             messageInput.style.height = Math.min(messageInput.scrollHeight, 100) + 'px';
         });
 
-        // Send message
         sendBtn.addEventListener('click', sendMessage);
         messageInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -752,23 +834,19 @@
             const text = messageInput.value.trim();
             if (!text && state.selectedDocuments.length === 0) return;
 
-            // Add user message to UI
             addMessage(text || '(analyzing documents)', 'user');
             messageInput.value = '';
             messageInput.style.height = 'auto';
-
-            // Show loading state
-            state.isLoading = true;
             sendBtn.disabled = true;
 
             try {
-                // Prepare request
                 const requestData = {
                     message: text,
-                    documents: state.selectedDocuments
+                    documents: state.selectedDocuments,
+                    tasks: state.tasks,
+                    assignments: state.assignments
                 };
 
-                // Send to server
                 const response = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -779,13 +857,20 @@
 
                 if (data.success) {
                     addMessage(data.response, 'assistant');
+
+                    // If AI made changes to tasks, reload them
+                    if (data.tasks_modified) {
+                        await loadTasks();
+                    }
+                    if (data.assignments_modified) {
+                        await loadAssignments();
+                    }
                 } else {
-                    addMessage(`Error: ${data.error || 'Unknown error'}`, 'assistant');
+                    addMessage(`Error: ${data.error}`, 'assistant');
                 }
             } catch (error) {
                 addMessage(`Connection error: ${error.message}`, 'assistant');
             } finally {
-                state.isLoading = false;
                 sendBtn.disabled = false;
                 messageInput.focus();
             }
@@ -806,21 +891,20 @@
             messageEl.innerHTML = `
                 <div style="display: flex; flex-direction: column; width: 100%;">
                     <div class="message-content">${escapeHtml(text)}</div>
-                    <div class="message-time">${time}</div>
                 </div>
             `;
 
             chatMessages.appendChild(messageEl);
             chatMessages.scrollTop = chatMessages.scrollHeight;
 
-            // Clear empty state
             const emptyState = chatMessages.querySelector('.empty-state');
             if (emptyState) {
                 emptyState.remove();
             }
         }
 
-        // Document upload
+        // ── Document Functions ──
+
         uploadBtn.addEventListener('click', () => fileInput.click());
 
         fileInput.addEventListener('change', async (e) => {
@@ -829,25 +913,6 @@
                 await uploadDocument(file);
             }
             fileInput.value = '';
-        });
-
-        // Drag and drop
-        chatMessages.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            chatMessages.style.backgroundColor = 'rgba(217, 119, 6, 0.1)';
-        });
-
-        chatMessages.addEventListener('dragleave', () => {
-            chatMessages.style.backgroundColor = 'transparent';
-        });
-
-        chatMessages.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            chatMessages.style.backgroundColor = 'transparent';
-            const files = Array.from(e.dataTransfer.files);
-            for (const file of files) {
-                await uploadDocument(file);
-            }
         });
 
         async function uploadDocument(file) {
@@ -866,64 +931,26 @@
                     state.documents.push({
                         id: data.id,
                         name: file.name,
-                        size: file.size,
-                        type: file.type
+                        size: file.size
                     });
-
                     updateDocumentUI();
                     addMessage(`✓ Uploaded: ${file.name}`, 'assistant');
                 } else {
-                    addMessage(`✗ Failed to upload ${file.name}: ${data.error}`, 'assistant');
+                    addMessage(`✗ Failed to upload ${file.name}`, 'assistant');
                 }
             } catch (error) {
-                addMessage(`✗ Error uploading ${file.name}: ${error.message}`, 'assistant');
+                addMessage(`✗ Error uploading ${file.name}`, 'assistant');
             }
         }
 
         function updateDocumentUI() {
-            // Update preview
-            documentPreview.innerHTML = state.selectedDocuments
-                .map(docId => {
-                    const doc = state.documents.find(d => d.id === docId);
-                    return doc ? `
-                        <div class="doc-chip">
-                            <span>📄 ${doc.name}</span>
-                            <span class="remove" onclick="removeDocument('${docId}')">×</span>
-                        </div>
-                    ` : '';
-                })
-                .join('');
-
-            // Update document list
-            if (state.documents.length === 0) {
-                documentList.innerHTML = `
-                    <div style="color: var(--white-tint-muted); font-size: 12px; text-align: center; padding: 20px;">
-                        No documents loaded
-                    </div>
-                `;
-            } else {
-                documentList.innerHTML = state.documents
-                    .map(doc => `
-                        <div class="document-item ${state.selectedDocuments.includes(doc.id) ? 'selected' : ''}"
-                             onclick="toggleDocument('${doc.id}')">
-                            <div style="font-weight: 500;">📄 ${doc.name}</div>
-                            <div style="font-size: 11px; color: var(--white-tint-muted); margin-top: 4px;">
-                                ${(doc.size / 1024).toFixed(0)} KB
-                            </div>
-                        </div>
-                    `)
-                    .join('');
-            }
-        }
-
-        function toggleDocument(docId) {
-            const index = state.selectedDocuments.indexOf(docId);
-            if (index > -1) {
-                state.selectedDocuments.splice(index, 1);
-            } else {
-                state.selectedDocuments.push(docId);
-            }
-            updateDocumentUI();
+            const preview = document.getElementById('document-preview');
+            preview.innerHTML = state.documents.map(doc => `
+                <div class="doc-chip">
+                    <span>📄 ${doc.name}</span>
+                    <span class="remove" onclick="removeDocument('${doc.id}')">×</span>
+                </div>
+            `).join('');
         }
 
         function removeDocument(docId) {
@@ -932,32 +959,181 @@
             updateDocumentUI();
         }
 
-        // Navigation
-        navItems.forEach(item => {
-            item.addEventListener('click', () => {
-                navItems.forEach(i => i.classList.remove('active'));
-                item.classList.add('active');
-                state.currentView = item.dataset.view;
-                // Handle navigation (stub for future implementation)
-            });
-        });
+        // ── Tasks Functions ──
 
-        // Toggle document panel
-        toggleDocsBtn.addEventListener('click', () => {
-            documentPanel.classList.toggle('active');
-            toggleDocsBtn.style.color = documentPanel.classList.contains('active')
-                ? 'var(--accent-orange-light)'
-                : 'var(--white-tint)';
-        });
+        document.getElementById('add-task-btn').addEventListener('click', openTaskModal);
 
-        // Utility function to escape HTML
+        async function loadTasks() {
+            try {
+                const response = await fetch('/api/tasks');
+                const data = await response.json();
+
+                if (data.success) {
+                    state.tasks = data.tasks || [];
+                    renderTasks();
+                    updateBadge('tasks-badge', state.tasks.length);
+                }
+            } catch (error) {
+                console.error('Error loading tasks:', error);
+            }
+        }
+
+        function renderTasks() {
+            const list = document.getElementById('tasks-list');
+
+            if (state.tasks.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state" style="height: auto; padding: 40px 20px;">
+                        <div class="empty-icon">📋</div>
+                        <div>No tasks yet. Click "Add Task" to create one!</div>
+                    </div>
+                `;
+                return;
+            }
+
+            list.innerHTML = state.tasks.map(task => `
+                <div class="task-item" onclick="toggleTask(${task.id})">
+                    <div class="task-checkbox ${task.completed ? 'checked' : ''}">
+                        ${task.completed ? '✓' : ''}
+                    </div>
+                    <div class="task-content">
+                        <div class="task-title" style="${task.completed ? 'text-decoration: line-through; opacity: 0.6;' : ''}">${escapeHtml(task.title)}</div>
+                        ${task.due_date ? `<div class="task-due">Due: ${new Date(task.due_date).toLocaleDateString()}</div>` : ''}
+                    </div>
+                    <div class="task-priority ${task.priority || 'medium'}">${(task.priority || 'medium').toUpperCase()}</div>
+                    <div class="task-delete" onclick="event.stopPropagation(); deleteTask(${task.id})">🗑️</div>
+                </div>
+            `).join('');
+        }
+
+        function openTaskModal() {
+            document.getElementById('task-modal').classList.add('active');
+        }
+
+        function closeTaskModal() {
+            document.getElementById('task-modal').classList.remove('active');
+        }
+
+        async function saveTask() {
+            const title = document.getElementById('task-title').value.trim();
+            const dueDate = document.getElementById('task-due-date').value;
+            const priority = document.getElementById('task-priority').value;
+
+            if (!title) return;
+
+            try {
+                const response = await fetch('/api/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, due_date: dueDate, priority })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    await loadTasks();
+                    closeTaskModal();
+                    document.getElementById('task-title').value = '';
+                    document.getElementById('task-due-date').value = '';
+                }
+            } catch (error) {
+                console.error('Error saving task:', error);
+            }
+        }
+
+        async function toggleTask(taskId) {
+            try {
+                const task = state.tasks.find(t => t.id === taskId);
+                const response = await fetch(`/api/tasks/${taskId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ completed: !task.completed })
+                });
+
+                if (response.ok) {
+                    await loadTasks();
+                }
+            } catch (error) {
+                console.error('Error toggling task:', error);
+            }
+        }
+
+        async function deleteTask(taskId) {
+            try {
+                const response = await fetch(`/api/tasks/${taskId}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    await loadTasks();
+                }
+            } catch (error) {
+                console.error('Error deleting task:', error);
+            }
+        }
+
+        // ── Assignments Functions ──
+
+        async function loadAssignments() {
+            try {
+                const response = await fetch('/api/assignments');
+                const data = await response.json();
+
+                if (data.success) {
+                    state.assignments = data.assignments || [];
+                    renderAssignments();
+                    updateBadge('assignments-badge', state.assignments.filter(a => !a.completed_at).length);
+                }
+            } catch (error) {
+                console.error('Error loading assignments:', error);
+            }
+        }
+
+        function renderAssignments() {
+            const list = document.getElementById('assignments-list');
+
+            if (state.assignments.length === 0) {
+                list.innerHTML = `
+                    <div class="empty-state" style="height: auto; padding: 40px 20px;">
+                        <div class="empty-icon">📚</div>
+                        <div>No assignments. Assignments sync from the main app.</div>
+                    </div>
+                `;
+                return;
+            }
+
+            list.innerHTML = state.assignments.map(assignment => `
+                <div class="assignment-item">
+                    <div class="assignment-header">
+                        <div class="assignment-title">${escapeHtml(assignment.title)}</div>
+                    </div>
+                    <div class="assignment-due">
+                        Due: ${new Date(assignment.due_date).toLocaleDateString()}
+                        ${assignment.completed_at ? '✓ Completed' : ''}
+                    </div>
+                    ${assignment.notes ? `<div class="assignment-note">${escapeHtml(assignment.notes)}</div>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function updateBadge(badgeId, count) {
+            const badge = document.getElementById(badgeId);
+            if (count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // Utility
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
 
-        // Focus input on load
+        // Init
         messageInput.focus();
     </script>
 </body>

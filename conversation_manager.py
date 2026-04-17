@@ -335,7 +335,9 @@ Always be truthful and admit what you don't know."""
         conversation_id: int,
         user_memories: List[str] = None,
         tools: List[Dict] = None,
-        max_tokens: int = 1024
+        max_tokens: int = 1024,
+        tasks: List[Dict] = None,
+        assignments: List[Dict] = None
     ) -> str:
         """Enhanced get_jarvis_response that handles decisions specially with extended thinking for complex decisions."""
 
@@ -380,6 +382,23 @@ Always be truthful and admit what you don't know."""
             # Add extended thinking notice to system prompt
             if use_extended_thinking:
                 system_prompt_addition += f"\n\n[EXTENDED THINKING ACTIVATED] This is a complex {self.current_decision_type} decision. Take time to reason deeply about: consequences across time horizons, stakeholder impacts, reversibility, hidden assumptions, and what the user really wants vs. what they think they should do."
+
+        # Build task and assignment context
+        task_context = ""
+        if tasks:
+            pending = [t for t in tasks if not t.get('completed')]
+            if pending:
+                task_context = "\n\nPending tasks:\n" + "\n".join([f"- {t.get('title')} (due {t.get('due_date', 'no date')})" for t in pending[:5]])
+
+        assignment_context = ""
+        if assignments:
+            pending_assignments = [a for a in assignments if not a.get('completed_at')]
+            if pending_assignments:
+                assignment_context = "\n\nPending assignments:\n" + "\n".join([f"- {a.get('title')} (due {a.get('due_date', 'no date')})" for a in pending_assignments[:5]])
+
+        # Combine all context into system prompt
+        if task_context or assignment_context:
+            system_prompt_addition += task_context + assignment_context
 
         # Use the base get_jarvis_response but with enhanced context
         return self._get_jarvis_response_with_context(
