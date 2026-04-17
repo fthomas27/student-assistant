@@ -3271,6 +3271,12 @@ def jarvis_interface():
     return render_template("jarvis.html")
 
 
+@app.route("/dashboard", methods=["GET"])
+def dashboard():
+    """Serve the Jarvis dashboard with all features."""
+    return render_template("jarvis-dashboard.html")
+
+
 @app.route("/api/documents/upload", methods=["POST"])
 def api_upload_document():
     """Upload a document for context in conversations."""
